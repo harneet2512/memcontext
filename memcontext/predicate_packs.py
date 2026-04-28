@@ -111,12 +111,47 @@ def load_pack(pack_dir: str | Path) -> PredicatePack:
     )
 
 
+def load_packs(pack_ids: list[str]) -> PredicatePack:
+    """Load multiple packs and merge them.
+
+    Merges predicate_families (union), concatenates few_shot_examples,
+    merges sub_slots, and creates a composite pack_id.
+    """
+    if not pack_ids:
+        raise ValueError("pack_ids must be non-empty")
+    if len(pack_ids) == 1:
+        return load_pack(pack_ids[0])
+
+    packs = [load_pack(pid) for pid in pack_ids]
+    merged_families = frozenset().union(*(p.predicate_families for p in packs))
+    merged_sub_slots: dict[str, frozenset[str]] = {}
+    for p in packs:
+        merged_sub_slots.update(p.sub_slots)
+    merged_examples: tuple[FewShotExample, ...] = ()
+    for p in packs:
+        merged_examples = merged_examples + p.few_shot_examples
+    merged_id = "merged:" + "+".join(p.pack_id for p in packs)
+    merged_desc = " | ".join(p.description for p in packs if p.description)
+
+    return PredicatePack(
+        pack_id=merged_id,
+        predicate_families=merged_families,
+        sub_slots=merged_sub_slots,
+        few_shot_examples=merged_examples,
+        description=merged_desc,
+    )
+
+
 @lru_cache(maxsize=None)
 def active_pack() -> PredicatePack:
     """Return the active pack.
 
-    Controlled by env var ACTIVE_PACK (default: "general"). Cached —
-    tests should call active_pack.cache_clear() after changing the env var.
+    Controlled by env var ACTIVE_PACK (default: "general"). Supports
+    comma-separated pack IDs for composition (e.g. "general,developer").
+    Cached — tests should call active_pack.cache_clear() after changing
+    the env var.
     """
     pack_id = os.environ.get("ACTIVE_PACK", "general")
+    if "," in pack_id:
+        return load_packs([p.strip() for p in pack_id.split(",")])
     return load_pack(pack_id)

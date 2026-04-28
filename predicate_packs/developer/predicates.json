@@ -1,0 +1,17 @@
+{
+  "pack_id": "developer",
+  "description": "Developer-context predicates for coding assistant memory. Tracks decisions, bugs, architecture, conventions, dependencies, APIs, TODOs, blockers, preferences, and project status.",
+  "predicate_families": [
+    "decision_made",
+    "bug_fixed",
+    "convention_established",
+    "file_purpose",
+    "dependency_reason",
+    "api_contract",
+    "todo",
+    "blocker",
+    "user_preference",
+    "project_status"
+  ],
+  "sub_slots": {}
+}

@@ -1,0 +1,120 @@
+"""MemContext MCP server — exposes memory tools over Model Context Protocol.
+
+Requires the 'mcp' package: pip install mcp
+All MCP-specific imports are lazy so mcp_tools.py works standalone.
+"""
+from __future__ import annotations
+
+import json
+
+def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> None:
+    """Start the MCP server. Called by `memcontext serve`."""
+    try:
+        import mcp.server.stdio
+        from mcp.server import Server
+        from mcp.types import TextContent, Tool
+    except ImportError:
+        raise ImportError(
+            "MCP server requires the 'mcp' package. Install with: pip install memcontext[mcp]"
+        ) from None
+
+    import asyncio
+    from memcontext.schema import open_database
+    from memcontext.mcp_tools import (
+        handle_memory_correct,
+        handle_memory_query,
+        handle_memory_store,
+        handle_memory_trace,
+    )
+
+    conn = open_database(db_path)
+    server = Server("memcontext")
+
+    @server.list_tools()
+    async def list_tools():
+        return [
+            Tool(
+                name="memory_store",
+                description="Store a conversation turn and extract claims into memory.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string", "description": "The text to store"},
+                        "speaker": {"type": "string", "enum": ["user", "assistant"], "default": "user"},
+                        "session_id": {"type": "string", "description": "Session ID (auto-generated if omitted)"},
+                        "claims": {
+                            "type": "array",
+                            "description": "Pre-extracted claims. If provided, bypasses automatic extraction.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "subject": {"type": "string"},
+                                    "predicate": {"type": "string"},
+                                    "value": {"type": "string"},
+                                    "confidence": {"type": "number"},
+                                },
+                                "required": ["value"],
+                            },
+                        },
+                    },
+                    "required": ["text"],
+                },
+            ),
+            Tool(
+                name="memory_query",
+                description="Query active memory claims matching a question.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query"},
+                        "session_id": {"type": "string", "default": "default"},
+                        "top_k": {"type": "integer", "default": 10},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            Tool(
+                name="memory_trace",
+                description="Trace a claim back to its source turn and supersession history.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "claim_id": {"type": "string", "description": "The claim ID to trace"},
+                    },
+                    "required": ["claim_id"],
+                },
+            ),
+            Tool(
+                name="memory_correct",
+                description="Correct or dismiss an existing claim.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "claim_id": {"type": "string"},
+                        "action": {"type": "string", "enum": ["dismiss", "correct"]},
+                        "new_value": {"type": "string", "description": "Required when action is 'correct'"},
+                    },
+                    "required": ["claim_id", "action"],
+                },
+            ),
+        ]
+
+    @server.call_tool()
+    async def call_tool(name: str, arguments: dict):
+        if name == "memory_store":
+            result = handle_memory_store(conn, **arguments)
+        elif name == "memory_query":
+            result = handle_memory_query(conn, **arguments)
+        elif name == "memory_trace":
+            result = handle_memory_trace(conn, **arguments)
+        elif name == "memory_correct":
+            result = handle_memory_correct(conn, **arguments)
+        else:
+            result = {"error": f"Unknown tool: {name}"}
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    async def _run():
+        async with mcp.server.stdio.stdio_server() as (read, write):
+            await server.run(read, write, server.create_initialization_options())
+
+    asyncio.run(_run())

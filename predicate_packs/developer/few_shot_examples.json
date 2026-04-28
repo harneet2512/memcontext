@@ -1,0 +1,95 @@
+{
+  "examples": [
+    {
+      "name": "architecture_decision",
+      "scenario": "Developer discusses choosing a database for a new service.",
+      "prior_turns": [
+        {"speaker": "user", "text": "We need a database for the new service"}
+      ],
+      "current_turn": {
+        "speaker": "user",
+        "text": "We decided to use PostgreSQL because we need ACID transactions and complex joins"
+      },
+      "active_claims_summary": "",
+      "expected_output": "[{\"subject\": \"new_service\", \"predicate\": \"decision_made\", \"value\": \"use PostgreSQL for ACID transactions and complex joins\", \"confidence\": 0.9}]"
+    },
+    {
+      "name": "bug_fix_record",
+      "scenario": "Developer describes a bug they just fixed.",
+      "prior_turns": [
+        {"speaker": "user", "text": "I've been chasing a weird race condition in the payment queue all morning"}
+      ],
+      "current_turn": {
+        "speaker": "user",
+        "text": "Found it. The worker wasn't acking messages before the timeout, so RabbitMQ redelivered them. Fixed by increasing the prefetch timeout to 30s and adding idempotency keys."
+      },
+      "active_claims_summary": "c_012: payment_queue.blocker = 'race condition causing duplicate processing' (confidence 0.85)",
+      "expected_output": "[{\"subject\": \"payment_queue\", \"predicate\": \"bug_fixed\", \"value\": \"race condition from RabbitMQ redelivery — fixed by increasing prefetch timeout to 30s and adding idempotency keys\", \"confidence\": 0.95}]"
+    },
+    {
+      "name": "convention_established",
+      "scenario": "Developer establishes a coding convention for the team.",
+      "prior_turns": [
+        {"speaker": "assistant", "text": "How should I name the new API handler files?"}
+      ],
+      "current_turn": {
+        "speaker": "user",
+        "text": "All API handlers go in src/handlers/ and follow the pattern {resource}_handler.py. Use snake_case for everything."
+      },
+      "active_claims_summary": "",
+      "expected_output": "[{\"subject\": \"project\", \"predicate\": \"convention_established\", \"value\": \"API handlers in src/handlers/, named {resource}_handler.py, snake_case\", \"confidence\": 0.95}]"
+    },
+    {
+      "name": "tool_preference",
+      "scenario": "Developer states a preference about their toolchain.",
+      "prior_turns": [
+        {"speaker": "assistant", "text": "Should I set up the linter configuration?"}
+      ],
+      "current_turn": {
+        "speaker": "user",
+        "text": "Use ruff instead of flake8. It's way faster and we've standardized on it across all our Python repos."
+      },
+      "active_claims_summary": "",
+      "expected_output": "[{\"subject\": \"user\", \"predicate\": \"user_preference\", \"value\": \"use ruff over flake8 for Python linting — team standard\", \"confidence\": 0.95}]"
+    },
+    {
+      "name": "project_status_update",
+      "scenario": "Developer gives a status update on the current project.",
+      "prior_turns": [
+        {"speaker": "assistant", "text": "Where are we on the auth migration?"}
+      ],
+      "current_turn": {
+        "speaker": "user",
+        "text": "Auth migration is about 70% done. We've migrated the login and signup flows but still need to do password reset and OAuth providers. Target is end of next week."
+      },
+      "active_claims_summary": "c_045: auth_migration.project_status = 'in progress, login flow migrated' (confidence 0.88)",
+      "expected_output": "[{\"subject\": \"auth_migration\", \"predicate\": \"project_status\", \"value\": \"~70% complete — login and signup done, password reset and OAuth remaining, target end of next week\", \"confidence\": 0.92}]"
+    },
+    {
+      "name": "file_purpose_documentation",
+      "scenario": "Developer explains what a specific file or module does.",
+      "prior_turns": [
+        {"speaker": "assistant", "text": "I see there's a src/middleware/rate_limiter.py — what does it do?"}
+      ],
+      "current_turn": {
+        "speaker": "user",
+        "text": "rate_limiter.py implements a sliding-window rate limiter using Redis. It's middleware that wraps all public API endpoints and enforces per-tenant request quotas."
+      },
+      "active_claims_summary": "",
+      "expected_output": "[{\"subject\": \"src/middleware/rate_limiter.py\", \"predicate\": \"file_purpose\", \"value\": \"sliding-window rate limiter via Redis, enforces per-tenant request quotas on public API endpoints\", \"confidence\": 0.95}]"
+    },
+    {
+      "name": "dependency_reason",
+      "scenario": "Developer explains why a specific dependency was added.",
+      "prior_turns": [
+        {"speaker": "assistant", "text": "I noticed you added pydantic to the requirements. What's it for?"}
+      ],
+      "current_turn": {
+        "speaker": "user",
+        "text": "We need pydantic for request/response validation on the API layer. It gives us automatic OpenAPI schema generation too, which saves a ton of manual docs work."
+      },
+      "active_claims_summary": "",
+      "expected_output": "[{\"subject\": \"pydantic\", \"predicate\": \"dependency_reason\", \"value\": \"request/response validation on API layer + automatic OpenAPI schema generation\", \"confidence\": 0.93}]"
+    }
+  ]
+}
