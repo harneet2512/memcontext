@@ -1,0 +1,121 @@
+{
+  "suite": "supersession",
+  "description": "Gold supersession test cases",
+  "cases": [
+    {
+      "name": "user_correction_kids",
+      "turns": [
+        {"speaker": "user", "text": "I have two kids at home currently", "claims": [{"subject": "user", "predicate": "user_fact", "value": "has two kids at home", "confidence": 0.9}]},
+        {"speaker": "user", "text": "Actually I have three kids at home", "claims": [{"subject": "user", "predicate": "user_fact", "value": "has three kids at home", "confidence": 0.9}]}
+      ],
+      "gold_claims": [
+        {"subject": "user", "predicate": "user_fact", "value": "has three kids at home"}
+      ],
+      "queries": []
+    },
+    {
+      "name": "preference_change_editor",
+      "turns": [
+        {"speaker": "user", "text": "I prefer Vim as my daily editor", "claims": [{"subject": "user", "predicate": "user_preference", "value": "prefers Vim as daily editor", "confidence": 0.9}]},
+        {"speaker": "user", "text": "Now I prefer Neovim as daily editor", "claims": [{"subject": "user", "predicate": "user_preference", "value": "prefers Neovim as daily editor", "confidence": 0.9}]}
+      ],
+      "gold_claims": [
+        {"subject": "user", "predicate": "user_preference", "value": "prefers Neovim as daily editor"}
+      ],
+      "queries": []
+    },
+    {
+      "name": "location_update",
+      "turns": [
+        {"speaker": "user", "text": "I currently live in Toronto downtown area", "claims": [{"subject": "user", "predicate": "user_fact", "value": "lives in Toronto downtown area", "confidence": 0.9}]},
+        {"speaker": "user", "text": "I moved and live in Vancouver downtown area", "claims": [{"subject": "user", "predicate": "user_fact", "value": "lives in Vancouver downtown area", "confidence": 0.9}]}
+      ],
+      "gold_claims": [
+        {"subject": "user", "predicate": "user_fact", "value": "lives in Vancouver downtown area"}
+      ],
+      "queries": []
+    },
+    {
+      "name": "job_change",
+      "turns": [
+        {"speaker": "user", "text": "I work at Google as a software engineer", "claims": [{"subject": "user", "predicate": "user_fact", "value": "works at Google as software engineer", "confidence": 0.9}]},
+        {"speaker": "user", "text": "I work at Meta as a software engineer", "claims": [{"subject": "user", "predicate": "user_fact", "value": "works at Meta as software engineer", "confidence": 0.9}]}
+      ],
+      "gold_claims": [
+        {"subject": "user", "predicate": "user_fact", "value": "works at Meta as software engineer"}
+      ],
+      "queries": []
+    },
+    {
+      "name": "no_supersession_different_predicates",
+      "turns": [
+        {"speaker": "user", "text": "I live in Toronto and enjoy hiking", "claims": [{"subject": "user", "predicate": "user_fact", "value": "lives in Toronto", "confidence": 0.9}]},
+        {"speaker": "user", "text": "I prefer hiking in the mountains weekly", "claims": [{"subject": "user", "predicate": "user_preference", "value": "prefers hiking in mountains weekly", "confidence": 0.9}]}
+      ],
+      "gold_claims": [
+        {"subject": "user", "predicate": "user_fact", "value": "lives in Toronto"},
+        {"subject": "user", "predicate": "user_preference", "value": "prefers hiking in mountains weekly"}
+      ],
+      "queries": []
+    },
+    {
+      "name": "medication_time_change",
+      "turns": [
+        {"speaker": "user", "text": "I take medication every morning daily routine", "claims": [{"subject": "user", "predicate": "user_fact", "value": "takes medication every morning daily", "confidence": 0.9}]},
+        {"speaker": "user", "text": "I take medication every evening daily routine", "claims": [{"subject": "user", "predicate": "user_fact", "value": "takes medication every evening daily", "confidence": 0.9}]}
+      ],
+      "gold_claims": [
+        {"subject": "user", "predicate": "user_fact", "value": "takes medication every evening daily"}
+      ],
+      "queries": []
+    },
+    {
+      "name": "language_preference_update",
+      "turns": [
+        {"speaker": "user", "text": "I prefer using Python for scripting tasks", "claims": [{"subject": "user", "predicate": "user_preference", "value": "prefers Python for scripting tasks", "confidence": 0.9}]},
+        {"speaker": "user", "text": "I prefer using Rust for scripting tasks", "claims": [{"subject": "user", "predicate": "user_preference", "value": "prefers Rust for scripting tasks", "confidence": 0.9}]}
+      ],
+      "gold_claims": [
+        {"subject": "user", "predicate": "user_preference", "value": "prefers Rust for scripting tasks"}
+      ],
+      "queries": []
+    },
+    {
+      "name": "additive_same_turn",
+      "turns": [
+        {"speaker": "user", "text": "I have a cat and a dog at home", "claims": [
+          {"subject": "user", "predicate": "user_fact", "value": "has a cat at home", "confidence": 0.9},
+          {"subject": "user", "predicate": "user_event", "value": "has a dog at home", "confidence": 0.9}
+        ]}
+      ],
+      "gold_claims": [
+        {"subject": "user", "predicate": "user_fact", "value": "has a cat at home"},
+        {"subject": "user", "predicate": "user_event", "value": "has a dog at home"}
+      ],
+      "queries": []
+    },
+    {
+      "name": "assistant_confirm",
+      "turns": [
+        {"speaker": "user", "text": "I have two dogs as my pets", "claims": [{"subject": "user", "predicate": "user_fact", "value": "has two dogs as pets", "confidence": 0.9}]},
+        {"speaker": "assistant", "text": "You mentioned having three dogs as pets", "claims": [{"subject": "user", "predicate": "user_fact", "value": "has three dogs as pets", "confidence": 0.8}]}
+      ],
+      "gold_claims": [
+        {"subject": "user", "predicate": "user_fact", "value": "has three dogs as pets"}
+      ],
+      "queries": []
+    },
+    {
+      "name": "low_jaccard_no_supersession",
+      "turns": [
+        {"speaker": "user", "text": "I currently live in Toronto Canada downtown", "claims": [{"subject": "user", "predicate": "user_fact", "value": "lives in Toronto Canada downtown", "confidence": 0.9}]},
+        {"speaker": "user", "text": "My favorite color is definitely bright blue", "claims": [{"subject": "user", "predicate": "user_fact", "value": "favorite color is definitely bright blue", "confidence": 0.9}]}
+      ],
+      "gold_claims": [
+        {"subject": "user", "predicate": "user_fact", "value": "lives in Toronto Canada downtown"},
+        {"subject": "user", "predicate": "user_fact", "value": "favorite color is definitely bright blue"}
+      ],
+      "queries": []
+    }
+  ]
+}
