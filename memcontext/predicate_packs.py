@@ -18,7 +18,8 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-_DEFAULT_PACKS_DIR = Path.cwd() / "predicate_packs"
+_PACKAGE_DIR = Path(__file__).resolve().parent.parent
+_DEFAULT_PACKS_DIR = _PACKAGE_DIR / "predicate_packs"
 
 
 def _packs_dir() -> Path:
