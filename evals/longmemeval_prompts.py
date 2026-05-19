@@ -46,12 +46,47 @@ PROMPTS: dict[str, str] = {
         "'Not mentioned in memory.'\n\n"
         "Claims:\n{claims}\n\nQuestion: {question}\nAnswer:"
     ),
+    "single_session_assistant": (
+        "Based on the following memory claims from a single conversation, "
+        "answer the question about what the assistant said, recommended, or "
+        "provided. Focus on the assistant's contributions, not the user's.\n\n"
+        "Claims:\n{claims}\n\nQuestion: {question}\nAnswer:"
+    ),
+    "default": (
+        "Based on the following memory claims, answer the question directly "
+        "and concisely. Use only information from these claims.\n\n"
+        "Claims:\n{claims}\n\nQuestion: {question}\nAnswer:"
+    ),
+}
+
+
+# Maps LongMemEval dataset category names to prompt template keys.
+# The dataset uses hyphenated names; our prompts use underscored keys.
+CATEGORY_MAP: dict[str, str] = {
+    # Dataset name → prompt key
+    "single-session-user": "single_session_user_fact",
+    "single-session-assistant": "single_session_assistant",
+    "single-session-preference": "single_session_preference",
+    "temporal-reasoning": "temporal_ordering",
+    "knowledge-update": "knowledge_update",
+    "multi-session": "cross_session_user_fact",
+    "abstention": "abstention",
+    # Internal / underscore variants (direct match)
+    "single_session_user_fact": "single_session_user_fact",
+    "single_session_assistant": "single_session_assistant",
+    "single_session_preference": "single_session_preference",
+    "cross_session_preference": "cross_session_preference",
+    "cross_session_user_fact": "cross_session_user_fact",
+    "temporal_ordering": "temporal_ordering",
+    "knowledge_update": "knowledge_update",
 }
 
 
 def get_prompt(category: str, claims_text: str, question: str) -> str:
-    """Format a category-specific prompt. Falls back to generic if unknown."""
-    template = PROMPTS.get(category, PROMPTS["single_session_user_fact"])
+    """Format a category-specific prompt. Falls back to default if unknown."""
+    # Resolve via CATEGORY_MAP first, then direct lookup, then default
+    prompt_key = CATEGORY_MAP.get(category, category)
+    template = PROMPTS.get(prompt_key, PROMPTS["default"])
     return template.format(claims=claims_text, question=question)
 
 

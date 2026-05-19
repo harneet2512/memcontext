@@ -56,3 +56,32 @@ def test_eval_case_dataclass():
     case = EvalCase(name="test", turns=[], queries=[], gold_claims=[])
     assert case.name == "test"
     assert case.turns == []
+
+
+def test_answer_question_none_mode():
+    from evals.runner import ReaderMode, answer_question
+
+    result = answer_question(
+        question="What does the user prefer?",
+        category="single_session_preference",
+        claims=[{"subject": "user", "predicate": "user_preference", "value": "dark mode"}],
+        reader=ReaderMode.NONE,
+    )
+    assert result["predicted_answer"] is None  # NO fake answer
+    assert result["reader_mode"] == "none"
+    assert result["category"] == "single_session_preference"
+    assert "dark mode" in result["formatted_claims"]
+
+
+def test_answer_question_configured_raises():
+    import pytest
+
+    from evals.runner import ReaderMode, answer_question
+
+    with pytest.raises(NotImplementedError):
+        answer_question(
+            question="test",
+            category="single_session_user_fact",
+            claims=[],
+            reader=ReaderMode.CONFIGURED,
+        )

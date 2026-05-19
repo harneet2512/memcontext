@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 
 from memcontext.extractors import PassthroughExtractor, SimpleExtractor
@@ -126,3 +127,50 @@ def print_results(results: list[EvalResult]) -> None:
         if r.errors:
             for e in r.errors:
                 print(f"    ERROR: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Reader / prompt-routing layer
+# ---------------------------------------------------------------------------
+
+
+class ReaderMode(StrEnum):
+    NONE = "none"  # retrieval context only, no LLM call, no fake answer
+    CONFIGURED = "configured"  # call LLM if configured (not implemented yet)
+
+
+def answer_question(
+    *,
+    question: str,
+    category: str,
+    claims: list[dict],
+    reader: ReaderMode = ReaderMode.NONE,
+) -> dict:
+    """Select category prompt and prepare answer context.
+
+    reader="none": returns retrieval context + selected prompt. NO fake answer.
+    reader="configured": would call LLM (not yet implemented).
+    """
+    from evals.longmemeval_prompts import format_claims_for_prompt, get_prompt
+
+    claims_text = format_claims_for_prompt(claims)
+    prompt = get_prompt(category, claims_text, question)
+
+    result = {
+        "category": category,
+        "prompt_template_used": category,
+        "formatted_claims": claims_text,
+        "full_prompt": prompt,
+        "num_claims": len(claims),
+    }
+
+    if reader == ReaderMode.NONE:
+        result["predicted_answer"] = None  # NO fake answer
+        result["reader_mode"] = "none"
+    elif reader == ReaderMode.CONFIGURED:
+        raise NotImplementedError(
+            "reader='configured' requires LLM configuration. "
+            "Set MEMCONTEXT_READER_MODEL and MEMCONTEXT_READER_API_KEY."
+        )
+
+    return result

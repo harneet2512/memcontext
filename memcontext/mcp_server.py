@@ -31,6 +31,7 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
     from memcontext.schema import open_database
     from memcontext.mcp_tools import (
         handle_memory_correct,
+        handle_memory_observe,
         handle_memory_query,
         handle_memory_store,
         handle_memory_trace,
@@ -106,6 +107,20 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
                     "required": ["claim_id", "action"],
                 },
             ),
+            Tool(
+                name="memory_observe",
+                description="Store browser observation claims from a page accessibility snapshot.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "Page URL"},
+                        "title": {"type": "string", "description": "Page title"},
+                        "accessibility_tree": {"type": "object", "description": "Playwright accessibility tree snapshot"},
+                        "session_id": {"type": "string"},
+                    },
+                    "required": ["url"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -118,6 +133,8 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
             result = handle_memory_trace(conn, **arguments)
         elif name == "memory_correct":
             result = handle_memory_correct(conn, **arguments)
+        elif name == "memory_observe":
+            result = handle_memory_observe(conn, **arguments)
         else:
             result = {"error": f"Unknown tool: {name}"}
         return [TextContent(type="text", text=json.dumps(result, indent=2))]

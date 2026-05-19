@@ -187,3 +187,36 @@ def handle_memory_correct(
         }
 
     return {"error": f"Unknown action: {action}"}
+
+
+def handle_memory_observe(
+    conn: sqlite3.Connection,
+    *,
+    url: str,
+    title: str = "",
+    accessibility_tree: dict | None = None,
+    session_id: str | None = None,
+) -> dict:
+    """Store browser observation claims from a page snapshot."""
+    from datetime import datetime, timezone
+
+    from memcontext.observe.browser import PageSnapshot, observe_page
+
+    sid = session_id or f"observe_{uuid.uuid4().hex[:8]}"
+    snapshot = PageSnapshot(
+        url=url,
+        title=title,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        accessibility_tree=accessibility_tree or {},
+    )
+    result = observe_page(conn, snapshot=snapshot, session_id=sid)
+    return {
+        "session_id": sid,
+        "turn_id": result.turn_id,
+        "claims_stored": len(result.claims),
+        "claims": [
+            {"subject": c.get("subject", ""), "predicate": c.get("predicate", ""), "value": c.get("value", "")}
+            for c in result.claims
+        ],
+        "snapshot_id": snapshot.snapshot_id,
+    }

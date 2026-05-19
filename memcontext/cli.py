@@ -171,3 +171,39 @@ def serve(db: str, transport: str) -> None:
             "MCP server not available. Install with: pip install memcontext[mcp]", err=True
         )
         raise SystemExit(1)
+
+
+@main.command("eval")
+@click.option("--suite", required=True, help="Suite: preflight, longmemeval-s, internal")
+@click.option("--limit", default=None, type=int, help="Limit number of questions")
+@click.option(
+    "--reader",
+    default="none",
+    type=click.Choice(["none", "configured"]),
+    help="Reader mode",
+)
+@click.option("--db", default=":memory:", help="Database path")
+@click.option("--dataset", default=None, help="Path to LongMemEval dataset directory")
+def eval_cmd(suite: str, limit: int | None, reader: str, db: str, dataset: str | None) -> None:
+    """Run evaluation suite."""
+    if suite == "internal":
+        from evals.runner import print_results, run_suite
+
+        suites_dir = os.path.join(os.path.dirname(__file__), "..", "evals", "suites")
+        for name in ["extraction", "retrieval", "supersession"]:
+            path = os.path.join(suites_dir, f"{name}.json")
+            if os.path.exists(path):
+                click.echo(f"\n--- {name} ---")
+                results = run_suite(path)
+                print_results(results)
+    elif suite in ("longmemeval-s", "preflight"):
+        from evals.longmemeval import run_preflight
+
+        if not dataset:
+            click.echo("Error: --dataset PATH required for longmemeval-s", err=True)
+            raise SystemExit(1)
+        result = run_preflight(dataset_path=dataset, limit=limit or 5, reader=reader)
+        click.echo(json.dumps(result, indent=2, default=str))
+    else:
+        click.echo(f"Unknown suite: {suite}", err=True)
+        raise SystemExit(1)
