@@ -231,46 +231,77 @@ def _find_char_span(text: str, value: str) -> tuple[int | None, int | None]:
 
 
 # ---------------------------------------------------------------------------
-# LLMExtractor — Ollama-backed, local-only, no cloud API
+# LLMExtractor — production/benchmark extraction via local or cloud LLM
 # ---------------------------------------------------------------------------
 
 
 class LLMExtractor:
-    """Local LLM claim extractor via Ollama. Production/benchmark grade.
+    """LLM claim extractor. Production/benchmark grade.
 
-    Calls a local Ollama instance (default: localhost:11434) with the same
-    prompt architecture used for the 88.4% LongMemEval baseline. No cloud
-    API calls — fully offline once the model is pulled.
+    Supports two backends:
+    - "ollama" (default): local Ollama instance, no cloud API, free
+    - "openrouter": OpenRouter API for cloud models (GPT-4.1-nano etc.)
 
-    Setup:
-        1. Install Ollama: https://ollama.com
-        2. Pull a model: ollama pull qwen3:8b
-        3. The extractor auto-connects to localhost:11434
+    The prompt, JSON parsing, validation, and char span resolution are
+    identical regardless of backend — only the transport differs.
+
+    Setup (Ollama — default, free):
+        ollama pull qwen3:8b
+
+    Setup (OpenRouter — cheap cloud, ~$0.0002/turn):
+        export MEMCONTEXT_EXTRACTOR_BACKEND=openrouter
+        export MEMCONTEXT_EXTRACTOR_API_KEY=sk-or-v1-...
+        export MEMCONTEXT_EXTRACTOR_MODEL=openai/gpt-4.1-nano
 
     Environment variables:
+        MEMCONTEXT_EXTRACTOR_BACKEND: "ollama" (default) or "openrouter"
+        MEMCONTEXT_EXTRACTOR_MODEL: model name (default depends on backend)
+        MEMCONTEXT_EXTRACTOR_API_KEY: API key (required for openrouter)
         MEMCONTEXT_OLLAMA_URL: Ollama base URL (default: http://localhost:11434)
-        MEMCONTEXT_OLLAMA_MODEL: Model name (default: qwen3:8b)
+        MEMCONTEXT_EXTRACTOR_ENDPOINT: OpenRouter endpoint override
     """
 
     def __init__(
         self,
         *,
+        backend: str | None = None,
         model: str | None = None,
         base_url: str | None = None,
+        api_key: str | None = None,
         timeout: float = 60.0,
     ) -> None:
         import os
-        self._model = model or os.environ.get("MEMCONTEXT_OLLAMA_MODEL", "qwen3:8b")
-        self._base_url = (
-            base_url or os.environ.get("MEMCONTEXT_OLLAMA_URL", "http://localhost:11434")
-        ).rstrip("/")
+
+        self._backend = backend or os.environ.get("MEMCONTEXT_EXTRACTOR_BACKEND", "ollama")
         self._timeout = timeout
         self._system_prompt: str | None = None
         self._allowed_predicates: frozenset[str] | None = None
 
+        if self._backend == "ollama":
+            self._model = model or os.environ.get("MEMCONTEXT_EXTRACTOR_MODEL", "qwen3:8b")
+            self._base_url = (
+                base_url or os.environ.get("MEMCONTEXT_OLLAMA_URL", "http://localhost:11434")
+            ).rstrip("/")
+            self._api_key = None
+        elif self._backend == "openrouter":
+            self._model = model or os.environ.get(
+                "MEMCONTEXT_EXTRACTOR_MODEL", "openai/gpt-4.1-nano"
+            )
+            self._base_url = (
+                base_url
+                or os.environ.get(
+                    "MEMCONTEXT_EXTRACTOR_ENDPOINT",
+                    "https://openrouter.ai/api/v1/chat/completions",
+                )
+            )
+            self._api_key = api_key or os.environ.get("MEMCONTEXT_EXTRACTOR_API_KEY", "")
+        else:
+            raise ValueError(f"Unknown backend: {self._backend}. Use 'ollama' or 'openrouter'.")
+
     def _ensure_prompt(self) -> None:
         if self._system_prompt is None:
             from memcontext.predicate_packs import active_pack
+
             self._system_prompt = _build_system_prompt()
             self._allowed_predicates = active_pack().predicate_families
 
@@ -288,38 +319,80 @@ class LLMExtractor:
         )
         user_content = f"Current turn:\n    {speaker_label}: {text}"
 
+        messages = [
+            {"role": "system", "content": self._system_prompt},
+            {"role": "user", "content": user_content},
+        ]
+
         try:
-            import requests
-            resp = requests.post(
-                f"{self._base_url}/api/chat",
-                json={
-                    "model": self._model,
-                    "messages": [
-                        {"role": "system", "content": self._system_prompt},
-                        {"role": "user", "content": user_content},
-                    ],
-                    "format": "json",
-                    "stream": False,
-                    "options": {"temperature": 0.0},
-                },
-                timeout=self._timeout,
-            )
-            resp.raise_for_status()
-            content = resp.json().get("message", {}).get("content", "{}")
+            if self._backend == "ollama":
+                content = self._call_ollama(messages)
+            else:
+                content = self._call_openrouter(messages)
         except Exception as exc:
-            log.warning("extractor.ollama_error", turn_id=turn.turn_id, err=str(exc)[:200])
+            log.warning(
+                "extractor.llm_error",
+                turn_id=turn.turn_id,
+                backend=self._backend,
+                err=str(exc)[:200],
+            )
             return []
 
         raw_claims = _parse_claims(content)
         return _to_extracted_claims(raw_claims, turn, self._allowed_predicates)
 
+    def _call_ollama(self, messages: list[dict]) -> str:
+        import requests
+
+        resp = requests.post(
+            f"{self._base_url}/api/chat",
+            json={
+                "model": self._model,
+                "messages": messages,
+                "format": "json",
+                "stream": False,
+                "options": {"temperature": 0.0},
+            },
+            timeout=self._timeout,
+        )
+        resp.raise_for_status()
+        return resp.json().get("message", {}).get("content", "{}")
+
+    def _call_openrouter(self, messages: list[dict]) -> str:
+        import requests
+
+        if not self._api_key:
+            raise ValueError(
+                "MEMCONTEXT_EXTRACTOR_API_KEY required for openrouter backend."
+            )
+        resp = requests.post(
+            self._base_url,
+            headers={"Authorization": f"Bearer {self._api_key}"},
+            json={
+                "model": self._model,
+                "messages": messages,
+                "max_tokens": 500,
+                "temperature": 0.0,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=self._timeout,
+        )
+        resp.raise_for_status()
+        return resp.json().get("choices", [{}])[0].get("message", {}).get("content") or "{}"
+
     @staticmethod
-    def is_available() -> bool:
-        """Check if Ollama is running and reachable."""
+    def is_available(backend: str | None = None) -> bool:
+        """Check if the configured backend is reachable."""
         import os
+
+        be = backend or os.environ.get("MEMCONTEXT_EXTRACTOR_BACKEND", "ollama")
+        if be == "openrouter":
+            return bool(os.environ.get("MEMCONTEXT_EXTRACTOR_API_KEY", ""))
+        # Ollama: check localhost
         base_url = os.environ.get("MEMCONTEXT_OLLAMA_URL", "http://localhost:11434")
         try:
             import requests
+
             resp = requests.get(f"{base_url.rstrip('/')}/api/tags", timeout=3)
             return resp.status_code == 200
         except Exception:
@@ -420,15 +493,32 @@ class SimpleExtractor:
 def auto_extractor() -> PassthroughExtractor | LLMExtractor | SimpleExtractor:
     """Return the best available extractor for the current environment.
 
-    Priority: LLMExtractor (Ollama running) > SimpleExtractor (fallback).
+    Priority:
+    1. LLMExtractor with configured backend (env var MEMCONTEXT_EXTRACTOR_BACKEND)
+    2. LLMExtractor with Ollama (if running locally)
+    3. LLMExtractor with OpenRouter (if API key set)
+    4. SimpleExtractor (regex fallback — warns loudly)
+
     PassthroughExtractor is not returned here — it requires explicit claims.
     """
-    if LLMExtractor.is_available():
-        log.info("extractor.auto_selected", extractor="LLMExtractor")
-        return LLMExtractor()
+    import os
+
+    configured_backend = os.environ.get("MEMCONTEXT_EXTRACTOR_BACKEND", "")
+    if configured_backend and LLMExtractor.is_available(configured_backend):
+        log.info("extractor.auto_selected", extractor="LLMExtractor", backend=configured_backend)
+        return LLMExtractor(backend=configured_backend)
+
+    if LLMExtractor.is_available("ollama"):
+        log.info("extractor.auto_selected", extractor="LLMExtractor", backend="ollama")
+        return LLMExtractor(backend="ollama")
+
+    if LLMExtractor.is_available("openrouter"):
+        log.info("extractor.auto_selected", extractor="LLMExtractor", backend="openrouter")
+        return LLMExtractor(backend="openrouter")
+
     log.warning(
         "extractor.auto_fallback",
         extractor="SimpleExtractor",
-        reason="Ollama not available at localhost:11434",
+        reason="No LLM backend available (no Ollama, no MEMCONTEXT_EXTRACTOR_API_KEY)",
     )
     return SimpleExtractor()
