@@ -184,7 +184,15 @@ def serve(db: str, transport: str) -> None:
 )
 @click.option("--db", default=":memory:", help="Database path")
 @click.option("--dataset", default=None, help="Path to LongMemEval dataset directory")
-def eval_cmd(suite: str, limit: int | None, reader: str, db: str, dataset: str | None) -> None:
+@click.option("--target-categories", default=None, help="Comma-separated category filter")
+def eval_cmd(
+    suite: str,
+    limit: int | None,
+    reader: str,
+    db: str,
+    dataset: str | None,
+    target_categories: str | None,
+) -> None:
     """Run evaluation suite."""
     if suite == "internal":
         from evals.runner import print_results, run_suite
@@ -202,8 +210,31 @@ def eval_cmd(suite: str, limit: int | None, reader: str, db: str, dataset: str |
         if not dataset:
             click.echo("Error: --dataset PATH required for longmemeval-s", err=True)
             raise SystemExit(1)
-        result = run_preflight(dataset_path=dataset, limit=limit or 5, reader=reader)
-        click.echo(json.dumps(result, indent=2, default=str))
+        cats = (
+            [c.strip() for c in target_categories.split(",")]
+            if target_categories
+            else None
+        )
+        result = run_preflight(
+            dataset_path=dataset,
+            limit=limit or 5,
+            reader=reader,
+            target_categories=cats,
+        )
+        # Print compact summary, not full JSON with all prompts
+        summary = {k: v for k, v in result.items() if k != "questions"}
+        click.echo(json.dumps(summary, indent=2, default=str))
+        click.echo(f"\nPer-question details:")
+        for q in result["questions"]:
+            score_str = f" score={q['score']:.3f}" if "score" in q else ""
+            correct_str = f" {'CORRECT' if q.get('correct') else 'WRONG'}" if "correct" in q else ""
+            click.echo(
+                f"  [{q['category']}] {q['question_id']}: "
+                f"{q['num_claims_retrieved']} claims{score_str}{correct_str}"
+            )
+            if q.get("predicted_answer"):
+                click.echo(f"    predicted: {q['predicted_answer'][:100]}")
+                click.echo(f"    gold:      {q['gold_answer'][:100]}")
     else:
         click.echo(f"Unknown suite: {suite}", err=True)
         raise SystemExit(1)

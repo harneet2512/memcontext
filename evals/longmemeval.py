@@ -294,26 +294,53 @@ def run_preflight(
             reader=reader_mode,
         )
 
-        question_results.append(
-            {
-                "question_id": q.question_id,
-                "category": q.category,
-                "gold_answer": q.gold_answer,
-                "ingested_sessions": ingested_sessions,
-                "ingested_turns": ingested_turns,
-                "num_claims_retrieved": len(claims),
-                **answer_result,
-            }
-        )
+        qr_entry: dict = {
+            "question_id": q.question_id,
+            "category": q.category,
+            "gold_answer": q.gold_answer,
+            "ingested_sessions": ingested_sessions,
+            "ingested_turns": ingested_turns,
+            "num_claims_retrieved": len(claims),
+            **answer_result,
+        }
+
+        predicted = answer_result.get("predicted_answer")
+        if predicted is not None:
+            from evals.metrics import answer_accuracy_fuzzy
+            score = answer_accuracy_fuzzy(predicted, str(q.gold_answer))
+            qr_entry["score"] = score
+            qr_entry["correct"] = score > 0.3
+
+        question_results.append(qr_entry)
         conn.close()
 
     # Compute summary stats
     categories_seen = list({r["category"] for r in question_results})
+    scored = [r for r in question_results if "score" in r]
+
+    per_cat: dict[str, dict] = {}
+    for r in scored:
+        cat = r["category"]
+        if cat not in per_cat:
+            per_cat[cat] = {"correct": 0, "total": 0}
+        per_cat[cat]["total"] += 1
+        if r.get("correct"):
+            per_cat[cat]["correct"] += 1
+
     return {
         "dataset_path": str(dataset_path),
         "reader_mode": reader,
         "total_questions": len(question_results),
+        "scored_questions": len(scored),
         "categories_seen": sorted(categories_seen),
+        "per_category_accuracy": {
+            cat: {"correct": v["correct"], "total": v["total"],
+                  "accuracy": round(v["correct"] / v["total"], 4) if v["total"] else 0}
+            for cat, v in per_cat.items()
+        },
+        "overall_accuracy": round(
+            sum(1 for r in scored if r.get("correct")) / len(scored), 4
+        ) if scored else None,
         "scoring_method": str(CURRENT_SCORING),
         "scoring_notes": SCORING_NOTES,
         "questions": question_results,

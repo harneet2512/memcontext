@@ -168,9 +168,42 @@ def answer_question(
         result["predicted_answer"] = None  # NO fake answer
         result["reader_mode"] = "none"
     elif reader == ReaderMode.CONFIGURED:
-        raise NotImplementedError(
-            "reader='configured' requires LLM configuration. "
-            "Set MEMCONTEXT_READER_MODEL and MEMCONTEXT_READER_API_KEY."
-        )
+        result["predicted_answer"] = _call_reader_llm(prompt)
+        result["reader_mode"] = "configured"
 
     return result
+
+
+def _call_reader_llm(prompt: str) -> str:
+    """Call the configured reader LLM via OpenRouter-compatible API."""
+    import os
+
+    import requests
+
+    api_key = os.environ.get("MEMCONTEXT_READER_API_KEY", "")
+    if not api_key:
+        raise ValueError(
+            "MEMCONTEXT_READER_API_KEY not set. "
+            "Export it before running with --reader configured."
+        )
+
+    model = os.environ.get("MEMCONTEXT_READER_MODEL", "openai/gpt-5-mini")
+    endpoint = os.environ.get(
+        "MEMCONTEXT_READER_ENDPOINT", "https://openrouter.ai/api/v1/chat/completions"
+    )
+
+    resp = requests.post(
+        endpoint,
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 200,
+            "temperature": 0.0,
+        },
+        timeout=60,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    content = data.get("choices", [{}])[0].get("message", {}).get("content")
+    return (content or "").strip()

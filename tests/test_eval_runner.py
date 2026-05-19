@@ -73,12 +73,12 @@ def test_answer_question_none_mode():
     assert "dark mode" in result["formatted_claims"]
 
 
-def test_answer_question_configured_raises():
+def test_answer_question_configured_requires_key():
     import pytest
 
     from evals.runner import ReaderMode, answer_question
 
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError, match="MEMCONTEXT_READER_API_KEY not set"):
         answer_question(
             question="test",
             category="single_session_user_fact",
