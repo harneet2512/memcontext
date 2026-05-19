@@ -19,6 +19,15 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
         ) from None
 
     import asyncio
+    import logging
+    import sys
+    import structlog
+    # Redirect structlog to stderr so it doesn't pollute the stdio JSON-RPC transport
+    structlog.configure(
+        wrapper_class=structlog.make_filtering_bound_logger(logging.WARNING),
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+    )
+
     from memcontext.schema import open_database
     from memcontext.mcp_tools import (
         handle_memory_correct,

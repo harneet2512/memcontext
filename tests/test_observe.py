@@ -173,10 +173,10 @@ def test_observe_page_empty_tree(db):
 
 
 def test_diff_detects_additions():
-    old = [{"subject": "s", "predicate": "observation", "value": "A"}]
+    old = [{"subject": "s", "predicate": "observation", "value": "A", "obs_key": "heading:a"}]
     new = [
-        {"subject": "s", "predicate": "observation", "value": "A"},
-        {"subject": "s", "predicate": "context", "value": "B"},
+        {"subject": "s", "predicate": "observation", "value": "A", "obs_key": "heading:a"},
+        {"subject": "s", "predicate": "observation", "value": "B", "obs_key": "link:b"},
     ]
     report = diff_snapshots(old, new, "https://example.com")
     assert len(report.added_claims) == 1
@@ -185,17 +185,17 @@ def test_diff_detects_additions():
 
 def test_diff_detects_removals():
     old = [
-        {"subject": "s", "predicate": "observation", "value": "A"},
-        {"subject": "s", "predicate": "context", "value": "B"},
+        {"subject": "s", "predicate": "observation", "value": "A", "obs_key": "heading:a"},
+        {"subject": "s", "predicate": "observation", "value": "B", "obs_key": "link:b"},
     ]
-    new = [{"subject": "s", "predicate": "observation", "value": "A"}]
+    new = [{"subject": "s", "predicate": "observation", "value": "A", "obs_key": "heading:a"}]
     report = diff_snapshots(old, new, "https://example.com")
     assert len(report.removed_claims) == 1
 
 
 def test_diff_detects_changes():
-    old = [{"subject": "s", "predicate": "observation", "value": "old value"}]
-    new = [{"subject": "s", "predicate": "observation", "value": "new value"}]
+    old = [{"subject": "s", "predicate": "observation", "value": "old value", "obs_key": "field:email"}]
+    new = [{"subject": "s", "predicate": "observation", "value": "new value", "obs_key": "field:email"}]
     report = diff_snapshots(old, new, "https://example.com")
     assert len(report.changed_claims) == 1
     assert report.changed_claims[0][0]["value"] == "old value"
@@ -203,12 +203,55 @@ def test_diff_detects_changes():
 
 
 def test_diff_no_changes():
-    claims = [{"subject": "s", "predicate": "observation", "value": "same"}]
+    claims = [{"subject": "s", "predicate": "observation", "value": "same", "obs_key": "heading:x"}]
     report = diff_snapshots(claims, claims, "https://example.com")
     assert report.unchanged_count == 1
     assert not report.added_claims
     assert not report.removed_claims
     assert not report.changed_claims
+
+
+def test_diff_realistic_multi_claim_page():
+    """Black-box test: multiple claims sharing (subject, observation) from a real page."""
+    ext = AccessibilityTreeExtractor()
+    tree_v1 = {
+        "role": "WebArea", "name": "Board", "children": [
+            {"role": "heading", "name": "Sprint 42", "children": []},
+            {"role": "text", "name": "Migration is 75% complete today", "children": []},
+            {"role": "link", "name": "TICKET-123: Auth refactor", "children": []},
+            {"role": "textbox", "name": "Search", "value": "auth", "children": []},
+        ]
+    }
+    tree_v2 = {
+        "role": "WebArea", "name": "Board", "children": [
+            {"role": "heading", "name": "Sprint 42", "children": []},
+            {"role": "text", "name": "Migration is 100% complete shipped", "children": []},
+            {"role": "link", "name": "TICKET-123: Auth refactor", "children": []},
+            {"role": "link", "name": "TICKET-456: Dashboard feature added", "children": []},
+            {"role": "textbox", "name": "Search", "value": "dashboard", "children": []},
+        ]
+    }
+    snap_v1 = PageSnapshot(
+        url="http://board.test/sprint", title="Board",
+        timestamp="2026-01-01T00:00:00Z", accessibility_tree=tree_v1,
+    )
+    snap_v2 = PageSnapshot(
+        url="http://board.test/sprint", title="Board",
+        timestamp="2026-01-01T01:00:00Z", accessibility_tree=tree_v2,
+    )
+    claims_v1 = ext.extract(snap_v1)
+    claims_v2 = ext.extract(snap_v2)
+    assert len(claims_v1) == 5  # title + heading + text + link + field
+    assert len(claims_v2) == 6  # title + heading + text + 2 links + field
+
+    report = diff_snapshots(claims_v1, claims_v2, "http://board.test/sprint")
+    # text claims use content-hash keys, so changed text = old removed + new added
+    # new link = 1 added. Changed text content = 1 removed + 1 added. Field value change = 1 changed.
+    assert len(report.added_claims) == 2, f"Expected 2 added (new link + new text hash), got {len(report.added_claims)}"
+    assert any("TICKET-456" in c["value"] for c in report.added_claims)
+    assert len(report.removed_claims) == 1, f"Expected 1 removed (old text hash), got {len(report.removed_claims)}"
+    assert len(report.changed_claims) == 1, f"Expected 1 changed (field value), got {len(report.changed_claims)}"
+    assert report.unchanged_count == 3, f"Title + heading + old link unchanged, got {report.unchanged_count}"
 
 
 # --- apply_changes ---

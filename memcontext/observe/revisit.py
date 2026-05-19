@@ -21,6 +21,25 @@ class ChangeReport:
     unchanged_count: int = 0
 
 
+def _claim_diff_key(claim: dict) -> str:
+    """Stable identity key for diffing observation claims.
+
+    Uses obs_key (set by AccessibilityTreeExtractor) when present,
+    which encodes the a11y role + label. Falls back to
+    subject:predicate:value_hash for claims without obs_key.
+    """
+    obs_key = claim.get("obs_key", "")
+    if obs_key:
+        subj = claim.get("subject", "")
+        return f"{subj}|{obs_key}"
+    import hashlib
+    subj = claim.get("subject", "")
+    pred = claim.get("predicate", "")
+    val = claim.get("value", "")
+    val_hash = hashlib.sha256(val.encode()).hexdigest()[:12]
+    return f"{subj}|{pred}|{val_hash}"
+
+
 def diff_snapshots(
     old_claims: list[dict],
     new_claims: list[dict],
@@ -28,21 +47,20 @@ def diff_snapshots(
 ) -> ChangeReport:
     """Compare claims from two visits to the same page.
 
-    Matching is by (subject, predicate) identity. If a claim has the same
-    subject and predicate but different value, it's a change. New subjects
-    are additions. Missing subjects are removals.
+    Matching uses obs_key (role+label identity) when available,
+    falling back to value hash. This correctly distinguishes multiple
+    claims sharing the same (subject, predicate) — e.g., multiple
+    headings or links from the same page.
     """
     report = ChangeReport(url=url)
 
-    old_by_key: dict[tuple[str, str], dict] = {}
+    old_by_key: dict[str, dict] = {}
     for c in old_claims:
-        key = (c.get("subject", ""), c.get("predicate", ""))
-        old_by_key[key] = c
+        old_by_key[_claim_diff_key(c)] = c
 
-    new_by_key: dict[tuple[str, str], dict] = {}
+    new_by_key: dict[str, dict] = {}
     for c in new_claims:
-        key = (c.get("subject", ""), c.get("predicate", ""))
-        new_by_key[key] = c
+        new_by_key[_claim_diff_key(c)] = c
 
     all_keys = set(old_by_key.keys()) | set(new_by_key.keys())
 

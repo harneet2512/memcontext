@@ -51,6 +51,7 @@ class AccessibilityTreeExtractor:
                     "predicate": "observation",
                     "value": f"page title: {title}",
                     "confidence": 0.95,
+                    "obs_key": "title",
                 }
             )
 
@@ -80,6 +81,7 @@ class AccessibilityTreeExtractor:
                     "predicate": "observation",
                     "value": f"heading: {name}",
                     "confidence": 0.9,
+                    "obs_key": f"heading:{name.lower().strip()[:40]}",
                 }
             )
 
@@ -92,6 +94,7 @@ class AccessibilityTreeExtractor:
                         f"field '{name}': {value}" if value else f"field: {name}"
                     ),
                     "confidence": 0.8,
+                    "obs_key": f"field:{name.lower().strip()[:40]}",
                 }
             )
 
@@ -102,18 +105,21 @@ class AccessibilityTreeExtractor:
                     "predicate": "observation",
                     "value": f"link: {name}",
                     "confidence": 0.7,
+                    "obs_key": f"link:{name.lower().strip()[:40]}",
                 }
             )
 
         elif role in ("text", "paragraph", "article") and name and len(name) > 10:
-            # Only capture meaningful text content
             truncated = name[:200] if len(name) > 200 else name
+            import hashlib
+            val_hash = hashlib.sha256(name.encode()).hexdigest()[:8]
             claims.append(
                 {
                     "subject": subject,
                     "predicate": "observation",
                     "value": truncated,
                     "confidence": 0.6,
+                    "obs_key": f"text:{val_hash}",
                 }
             )
 
