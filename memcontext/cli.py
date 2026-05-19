@@ -75,21 +75,9 @@ def ingest(text: str, db: str, session: str, speaker: str) -> None:
 
     conn = open_database(db)
 
-    try:
-        from memcontext.extractors import SimpleExtractor
+    from memcontext.extractors import auto_extractor
 
-        extractor = SimpleExtractor()
-    except ImportError:
-        from memcontext.on_new_turn import ExtractedClaim
-        from memcontext.predicate_packs import active_pack
-
-        families = active_pack().predicate_families
-        predicate = "user_fact" if "user_fact" in families else next(iter(families))
-
-        def extractor(turn):  # type: ignore[misc]
-            return [
-                ExtractedClaim(subject="user", predicate=predicate, value=turn.text, confidence=0.5)
-            ]
+    extractor = auto_extractor()
 
     sp = Speaker.USER if speaker == "user" else Speaker.ASSISTANT
     result = on_new_turn(conn, session_id=session, speaker=sp, text=text, extractor=extractor)

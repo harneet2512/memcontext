@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from memcontext.extractors import PassthroughExtractor, SimpleExtractor
+from memcontext.extractors import (
+    LLMExtractor,
+    PassthroughExtractor,
+    SimpleExtractor,
+    _find_char_span,
+    _parse_claims,
+    _to_extracted_claims,
+    auto_extractor,
+)
 from memcontext.schema import Speaker, Turn
 
 
@@ -86,3 +94,114 @@ def test_simple_extractor_no_network():
     result = ext(_make_turn("I live in Toronto"))
     assert len(result) >= 1
     assert all(c.confidence <= 0.5 for c in result)
+
+
+# --- JSON parsing (ported from RobbyMD) ---
+
+
+def test_parse_claims_bare_list():
+    result = _parse_claims('[{"subject": "user", "predicate": "user_fact", "value": "x", "confidence": 0.9}]')
+    assert len(result) == 1
+    assert result[0]["value"] == "x"
+
+
+def test_parse_claims_wrapper_dict():
+    result = _parse_claims('{"claims": [{"subject": "u", "predicate": "p", "value": "v", "confidence": 0.5}]}')
+    assert len(result) == 1
+
+
+def test_parse_claims_single_claim():
+    result = _parse_claims('{"subject": "u", "predicate": "p", "value": "v", "confidence": 0.8}')
+    assert len(result) == 1
+
+
+def test_parse_claims_empty_dict():
+    result = _parse_claims("{}")
+    assert result == []
+
+
+def test_parse_claims_malformed():
+    result = _parse_claims("not json at all")
+    assert result == []
+
+
+def test_parse_claims_empty_list():
+    result = _parse_claims("[]")
+    assert result == []
+
+
+# --- Claim validation ---
+
+
+def test_to_extracted_claims_valid():
+    raw = [{"subject": "user", "predicate": "user_fact", "value": "lives in Toronto", "confidence": 0.9}]
+    turn = _make_turn("I live in Toronto")
+    result = _to_extracted_claims(raw, turn, frozenset({"user_fact", "user_preference"}))
+    assert len(result) == 1
+    assert result[0].value == "lives in Toronto"
+
+
+def test_to_extracted_claims_invalid_predicate():
+    raw = [{"subject": "user", "predicate": "invalid_xyz", "value": "x", "confidence": 0.9}]
+    turn = _make_turn("text")
+    result = _to_extracted_claims(raw, turn, frozenset({"user_fact"}))
+    assert result == []
+
+
+def test_to_extracted_claims_bad_confidence():
+    raw = [{"subject": "user", "predicate": "user_fact", "value": "x", "confidence": 1.5}]
+    turn = _make_turn("text")
+    result = _to_extracted_claims(raw, turn, frozenset({"user_fact"}))
+    assert result == []
+
+
+def test_to_extracted_claims_missing_fields():
+    raw = [{"subject": "user"}]  # missing predicate, value, confidence
+    turn = _make_turn("text")
+    result = _to_extracted_claims(raw, turn, frozenset({"user_fact"}))
+    assert result == []
+
+
+# --- Char span resolution ---
+
+
+def test_find_char_span_exact():
+    start, end = _find_char_span("I live in Toronto", "Toronto")
+    assert start == 10
+    assert end == 17
+
+
+def test_find_char_span_case_insensitive():
+    start, end = _find_char_span("I live in toronto", "Toronto")
+    assert start == 10
+    assert end == 17
+
+
+def test_find_char_span_not_found():
+    start, end = _find_char_span("I live in Toronto", "Vancouver")
+    assert start is None
+    assert end is None
+
+
+# --- Auto-extractor ---
+
+
+def test_auto_extractor_returns_callable():
+    ext = auto_extractor()
+    assert callable(ext)
+    # Without Ollama, should fall back to SimpleExtractor
+    assert isinstance(ext, (LLMExtractor, SimpleExtractor))
+
+
+# --- LLMExtractor class exists and has right interface ---
+
+
+def test_llm_extractor_has_is_available():
+    assert hasattr(LLMExtractor, "is_available")
+    avail = LLMExtractor.is_available()
+    assert isinstance(avail, bool)
+
+
+def test_llm_extractor_callable():
+    ext = LLMExtractor(model="test", base_url="http://localhost:99999")
+    assert callable(ext)

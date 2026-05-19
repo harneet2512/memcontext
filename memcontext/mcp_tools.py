@@ -17,7 +17,7 @@ from memcontext.claims import (
     list_active_claims,
     set_claim_status,
 )
-from memcontext.extractors import PassthroughExtractor, SimpleExtractor
+from memcontext.extractors import PassthroughExtractor, auto_extractor
 from memcontext.on_new_turn import on_new_turn
 from memcontext.provenance import span_for_claim
 from memcontext.schema import ClaimStatus, EdgeType, Speaker
@@ -38,7 +38,7 @@ def handle_memory_store(
     if claims:
         extractor = PassthroughExtractor(claims)
     else:
-        extractor = SimpleExtractor()
+        extractor = auto_extractor()
 
     result = on_new_turn(conn, session_id=sid, speaker=sp, text=text, extractor=extractor)
 
