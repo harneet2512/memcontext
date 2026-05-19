@@ -40,10 +40,13 @@ log = structlog.get_logger(__name__)
 
 # --- constants ---------------------------------------------------------------
 
-BGE_M3_MODEL_ID = "BAAI/bge-m3"
+_DEFAULT_EMBED_MODEL = "BAAI/bge-small-en-v1.5"
+_DEFAULT_EMBED_DIM = 384
+
+BGE_M3_MODEL_ID = os.environ.get("MEMCONTEXT_EMBED_MODEL", _DEFAULT_EMBED_MODEL)
 BGE_M3_MODEL_REVISION = "main"
 BGE_M3_VERSION_TAG = f"{BGE_M3_MODEL_ID}@{BGE_M3_MODEL_REVISION}"
-BGE_M3_EMBED_DIM = 1024
+BGE_M3_EMBED_DIM = _DEFAULT_EMBED_DIM if "bge-small" in BGE_M3_MODEL_ID else 1024
 
 MODAL_URL_ENV = "MODAL_BGE_M3_URL"
 CACHE_DIR_ENV = "SUBSTRATE_EMBED_CACHE_DIR"

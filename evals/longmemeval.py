@@ -230,61 +230,87 @@ def run_preflight(
 ) -> dict:
     """Run a tiny LongMemEval preflight.
 
-    Loads real dataset, ingests sessions, runs questions with prompt routing.
-    reader="none": outputs retrieval context + prompt only (no LLM, no score).
+    OMEGA-style pipeline: store raw turns as claims, embed with bge-m3,
+    retrieve via hybrid RRF (semantic + entity + temporal + BM25), route
+    through category-specific prompt, score with reader if configured.
 
-    Returns dict with results per question and overall stats.
+    No separate extraction LLM — raw turn text is stored directly and
+    retrieved by semantic similarity, matching OMEGA's 95.4% approach.
     """
     from evals.runner import ReaderMode, answer_question
-    from memcontext.mcp_tools import handle_memory_query, handle_memory_store
-    from memcontext.schema import open_database
+    from memcontext.claims import insert_claim, insert_turn, new_turn_id, now_ns
+    from memcontext.retrieval import EmbeddingClient, backfill_embeddings, retrieve_hybrid
+    from memcontext.schema import Speaker, open_database
 
     sessions, questions = load_dataset(dataset_path)
 
-    # Filter by target categories if specified
     if target_categories:
         questions = [q for q in questions if q.category in target_categories]
 
-    # Apply limit
     questions = questions[:limit]
 
-    # Build session lookup
     session_map: dict[str, LongMemEvalSession] = {s.session_id: s for s in sessions}
 
     reader_mode = ReaderMode(reader)
     question_results = []
+    embedding_client = EmbeddingClient()
 
-    for q in questions:
-        # Create a fresh DB per question to avoid cross-contamination
+    for qi, q in enumerate(questions):
         conn = open_database(":memory:")
         conn.row_factory = sqlite3.Row
 
-        # Ingest the sessions relevant to this question
+        # Ingest all turns into ONE unified session so retrieval searches
+        # the full haystack at once (not per-session with incomparable scores)
+        unified_sid = f"haystack_{q.question_id}"
         ingested_sessions = 0
         ingested_turns = 0
+
         for sid in q.session_ids:
             sess = session_map.get(sid)
             if sess is None:
                 continue
-            for turn in sess.turns:
-                role = turn.get("role", "user")
-                content = turn.get("content", "")
-                if not content:
+            ingested_sessions += 1
+            for turn_data in sess.turns:
+                role = turn_data.get("role", "user")
+                content = turn_data.get("content", "")
+                if not content or not content.strip():
                     continue
-                handle_memory_store(
-                    conn,
-                    text=content,
-                    speaker=role,
-                    session_id=sid,
+                sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
+                tid = new_turn_id()
+                from memcontext.schema import Turn
+                turn_obj = Turn(
+                    turn_id=tid, session_id=unified_sid, speaker=sp,
+                    text=content, ts=now_ns(), asr_confidence=None,
+                )
+                insert_turn(conn, turn_obj)
+                insert_claim(
+                    conn, session_id=unified_sid, subject=role,
+                    predicate="user_fact" if role == "user" else "context",
+                    value=content[:500],
+                    confidence=0.8, source_turn_id=tid,
+                    allowed_predicates=None,
                 )
                 ingested_turns += 1
-            ingested_sessions += 1
 
-        # Query memory for relevant claims
-        qr = handle_memory_query(
-            conn, query=q.question, session_id=q.session_ids[0] if q.session_ids else "default", top_k=10,
+        embedded_count = backfill_embeddings(conn, unified_sid, client=embedding_client)
+
+        top_claims = retrieve_hybrid(
+            conn, session_id=unified_sid, query=q.question,
+            top_k=10, embedding_client=embedding_client,
         )
-        claims = qr.get("claims", [])
+
+        claims = [
+            {
+                "claim_id": c.claim_id,
+                "subject": c.subject,
+                "predicate": c.predicate,
+                "value": c.value,
+                "confidence": c.confidence,
+                "status": c.status.value,
+                "score": round(s, 4),
+            }
+            for c, s in top_claims
+        ]
 
         # Route through category prompt
         answer_result = answer_question(
@@ -300,6 +326,7 @@ def run_preflight(
             "gold_answer": q.gold_answer,
             "ingested_sessions": ingested_sessions,
             "ingested_turns": ingested_turns,
+            "embedded_count": embedded_count,
             "num_claims_retrieved": len(claims),
             **answer_result,
         }

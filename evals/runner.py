@@ -198,10 +198,10 @@ def _call_reader_llm(prompt: str) -> str:
         json={
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 200,
+            "max_tokens": 2048,
             "temperature": 0.0,
         },
-        timeout=60,
+        timeout=120,
     )
     resp.raise_for_status()
     data = resp.json()
