@@ -144,6 +144,67 @@ def query_cmd(query_text: str, db: str, session: str, top_k: int) -> None:
 
 
 @main.command()
+@click.argument("url")
+@click.option("--db", default="memcontext.db", help="Database file path.")
+@click.option("--session", default="observe_default", help="Session ID.")
+@click.option("--login-email", default=None, help="Email/username for authenticated access.")
+@click.option("--login-password", default=None, help="Password for authenticated access.")
+@click.option("--login-url", default=None, help="Login page URL if different from target.")
+@click.option("--connect-browser", is_flag=True, default=False, help="Attach to running Chrome on port 9222. Inherits all auth sessions.")
+def observe(url: str, db: str, session: str, login_email: str | None, login_password: str | None, login_url: str | None, connect_browser: bool) -> None:
+    """Observe a live URL — open browser, capture accessibility tree, extract claims."""
+    import logging
+
+    import structlog
+    structlog.configure(
+        wrapper_class=structlog.make_filtering_bound_logger(logging.WARNING),
+    )
+
+    from memcontext.mcp_tools import handle_memory_observe_url
+    from memcontext.schema import open_database
+
+    conn = open_database(db)
+    click.echo(f"[memcontext] Observing: {url}")
+
+    try:
+        result = handle_memory_observe_url(
+            conn, url=url, session_id=session,
+            login_email=login_email, login_password=login_password,
+            login_url=login_url, connect_browser=connect_browser,
+        )
+    except Exception as exc:
+        click.echo(f"[memcontext] Error: {exc}", err=True)
+        conn.close()
+        raise SystemExit(1) from exc
+
+    click.echo(f"[memcontext] Page title: {result['title']}")
+    click.echo(f"[memcontext] Accessibility tree: {result['a11y_nodes']} nodes")
+    click.echo(f"[memcontext] DOM hash: {result['dom_hash']}")
+    click.echo(f"[memcontext] {result['claims_stored']} claims stored:")
+
+    for c in result["claims"]:
+        click.echo(f"  ({c['subject']}, {c['predicate']}, \"{c['value']}\")")
+
+    if result.get("is_revisit"):
+        changes = result.get("changes_detected", [])
+        if changes:
+            click.echo(f"[memcontext] Changes detected: {len(changes)}")
+            for ch in changes:
+                click.echo(
+                    f"  CHANGED: \"{ch['old_value']}\" -> \"{ch['new_value']}\""
+                    f"  edge: {ch['edge_type']}"
+                )
+        else:
+            click.echo("[memcontext] Re-visit: no changes detected")
+
+    click.echo(
+        f"[memcontext] Provenance: url={url} dom_hash={result['dom_hash']} "
+        f"session={result['session_id']}"
+    )
+    conn.close()
+
+
+@main.command()
 @click.option("--db", default="memcontext.db", help="Database file path.")
 @click.option(
     "--transport", type=click.Choice(["stdio"]), default="stdio", help="MCP transport."

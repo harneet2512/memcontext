@@ -32,6 +32,7 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
     from memcontext.mcp_tools import (
         handle_memory_correct,
         handle_memory_observe,
+        handle_memory_observe_url,
         handle_memory_query,
         handle_memory_store,
         handle_memory_trace,
@@ -121,6 +122,48 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
                     "required": ["url"],
                 },
             ),
+            Tool(
+                name="memory_observe_url",
+                description=(
+                    "Observe a live URL — capture its accessibility tree, extract "
+                    "structured claims, store with provenance. Set connect_browser=true "
+                    "to read from the user's running Chrome (inherits all auth — SSO, "
+                    "2FA, OAuth). Or provide login_email/password for form-based auth. "
+                    "Works on any page the user can see: internal tools, ChatGPT, "
+                    "GitHub, SAP, ServiceNow, etc. Re-observing detects changes."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "The URL to observe"},
+                        "session_id": {
+                            "type": "string",
+                            "description": "Session ID. Omit to use shared default session for cross-app queries.",
+                        },
+                        "login_email": {
+                            "type": "string",
+                            "description": "Email/username for authentication. Agent fills the login form automatically.",
+                        },
+                        "login_password": {
+                            "type": "string",
+                            "description": "Password for authentication.",
+                        },
+                        "login_url": {
+                            "type": "string",
+                            "description": "Login page URL if different from the target URL.",
+                        },
+                        "connect_browser": {
+                            "type": "boolean",
+                            "description": (
+                                "Attach to the user's running Chrome (port 9222) instead of "
+                                "launching headless. Inherits all auth sessions — no credentials needed."
+                            ),
+                            "default": False,
+                        },
+                    },
+                    "required": ["url"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -135,6 +178,10 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
             result = handle_memory_correct(conn, **arguments)
         elif name == "memory_observe":
             result = handle_memory_observe(conn, **arguments)
+        elif name == "memory_observe_url":
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: handle_memory_observe_url(conn, **arguments)
+            )
         else:
             result = {"error": f"Unknown tool: {name}"}
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
