@@ -186,6 +186,18 @@ _JUDGE_PROMPTS: dict[str, str] = {
 }
 
 
+_JUDGE_CATEGORY_MAP: dict[str, str] = {
+    "single_session_preference": "single-session-preference",
+    "single_session_user_fact": "default",
+    "single_session_assistant": "default",
+    "cross_session_user_fact": "default",
+    "cross_session_preference": "single-session-preference",
+    "temporal_ordering": "temporal-reasoning",
+    "knowledge_update": "knowledge-update",
+    "abstention": "abstention",
+}
+
+
 def _get_judge_prompt(
     question_type: str, question: str, gold: str, prediction: str,
     question_id: str = "",
@@ -194,10 +206,10 @@ def _get_judge_prompt(
     is_abstention = question_id.endswith("_abs") or question_type == "abstention"
     if is_abstention:
         key = "abstention"
-    elif question_type in _JUDGE_PROMPTS:
-        key = question_type
     else:
-        key = "default"
+        key = _JUDGE_CATEGORY_MAP.get(question_type, question_type)
+        if key not in _JUDGE_PROMPTS:
+            key = "default"
     return _JUDGE_PROMPTS[key].format(
         question=question, gold=gold, prediction=prediction,
     )
