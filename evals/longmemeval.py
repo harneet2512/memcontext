@@ -228,19 +228,26 @@ def run_preflight(
     reader: str = "none",
     target_categories: list[str] | None = None,
 ) -> dict:
-    """Run a tiny LongMemEval preflight.
+    """Run a LongMemEval preflight using the full MemContext pipeline.
 
-    OMEGA-style pipeline: store raw turns as claims, embed with bge-m3,
-    retrieve via hybrid RRF (semantic + entity + temporal + BM25), route
-    through category-specific prompt, score with reader if configured.
+    Per CLAUDE.md: this is a diagnostic, not a target. The pipeline is
+    general-purpose and not LongMemEval-specific:
 
-    No separate extraction LLM — raw turn text is stored directly and
-    retrieved by semantic similarity, matching OMEGA's 95.4% approach.
+    1. Ingest turns through on_new_turn (admission → extract → supersede)
+    2. LLMExtractor with prior-turn context for coreference resolution
+    3. Embed structured claims via backfill_embeddings
+    4. Retrieve via hybrid RRF (semantic + entity + temporal)
+    5. Route through category-specific answer prompt
+    6. Score with reader if configured (reader=none → retrieval context only)
+
+    Requires MEMCONTEXT_EXTRACTOR_BACKEND + key for extraction.
+    Requires MEMCONTEXT_READER_API_KEY for reader=configured.
     """
     from evals.runner import ReaderMode, answer_question
-    from memcontext.claims import insert_claim, insert_turn, new_turn_id, now_ns
+    from memcontext.extractors import auto_extractor, LLMExtractor
+    from memcontext.on_new_turn import on_new_turn
     from memcontext.retrieval import EmbeddingClient, backfill_embeddings, retrieve_hybrid
-    from memcontext.schema import Speaker, open_database
+    from memcontext.schema import Speaker, Turn, open_database
 
     sessions, questions = load_dataset(dataset_path)
 
@@ -254,16 +261,17 @@ def run_preflight(
     reader_mode = ReaderMode(reader)
     question_results = []
     embedding_client = EmbeddingClient()
+    extractor = auto_extractor()
 
     for qi, q in enumerate(questions):
         conn = open_database(":memory:")
         conn.row_factory = sqlite3.Row
 
-        # Ingest all turns into ONE unified session so retrieval searches
-        # the full haystack at once (not per-session with incomparable scores)
         unified_sid = f"haystack_{q.question_id}"
         ingested_sessions = 0
         ingested_turns = 0
+        claims_created = 0
+        prior_turns: list[Turn] = []
 
         for sid in q.session_ids:
             sess = session_map.get(sid)
@@ -276,21 +284,22 @@ def run_preflight(
                 if not content or not content.strip():
                     continue
                 sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
-                tid = new_turn_id()
-                from memcontext.schema import Turn
-                turn_obj = Turn(
-                    turn_id=tid, session_id=unified_sid, speaker=sp,
-                    text=content, ts=now_ns(), asr_confidence=None,
+
+                if isinstance(extractor, LLMExtractor):
+                    extractor.set_context(prior_turns[-4:])
+
+                result = on_new_turn(
+                    conn,
+                    session_id=unified_sid,
+                    speaker=sp,
+                    text=content,
+                    extractor=extractor,
                 )
-                insert_turn(conn, turn_obj)
-                insert_claim(
-                    conn, session_id=unified_sid, subject=role,
-                    predicate="user_fact" if role == "user" else "context",
-                    value=content[:500],
-                    confidence=0.8, source_turn_id=tid,
-                    allowed_predicates=None,
-                )
+                claims_created += len(result.created_claims)
                 ingested_turns += 1
+
+                if result.turn is not None:
+                    prior_turns.append(result.turn)
 
         embedded_count = backfill_embeddings(conn, unified_sid, client=embedding_client)
 
@@ -326,6 +335,7 @@ def run_preflight(
             "gold_answer": q.gold_answer,
             "ingested_sessions": ingested_sessions,
             "ingested_turns": ingested_turns,
+            "claims_created": claims_created,
             "embedded_count": embedded_count,
             "num_claims_retrieved": len(claims),
             **answer_result,

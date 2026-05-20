@@ -74,11 +74,11 @@ def detect_pass1(
     Returns the created edge (and marks the old claim superseded) or None if
     no prior matching active/confirmed claim exists.
     """
-    row = conn.execute(
+    rows = conn.execute(
         "SELECT * FROM claims WHERE session_id = ? AND subject = ? AND predicate = ?"
         " AND status IN ('active','confirmed') AND claim_id != ?"
         " AND source_turn_id != ?"
-        " ORDER BY created_ts DESC LIMIT 1",
+        " ORDER BY created_ts DESC",
         (
             new_claim.session_id,
             new_claim.subject,
@@ -86,29 +86,37 @@ def detect_pass1(
             new_claim.claim_id,
             new_claim.source_turn_id,
         ),
-    ).fetchone()
-    if row is None:
+    ).fetchall()
+    if not rows:
         return None
 
     from memcontext.claims import row_to_claim
-
-    old_claim = row_to_claim(row)
-
-    if old_claim.value.strip().lower() == new_claim.value.strip().lower():
-        return None
-
-    # Scope guard: only supersede if values describe the same fact.
     import re as _re
     _noise = {"the","a","an","is","was","to","for","and","or","of","in","on","at",
               "it","my","i","me","we","up","so","no","not","but","with","has","had",
               "be","do","did","will","been","just","very","really","also","about",
               "some","from","that","this","more","than","each","during"}
-    old_content = set(_re.findall(r"[a-z0-9]+", old_claim.value.lower())) - _noise
+
     new_content = set(_re.findall(r"[a-z0-9]+", new_claim.value.lower())) - _noise
-    if old_content and new_content:
-        jaccard = len(old_content & new_content) / len(old_content | new_content)
-        if jaccard < 0.3:
-            return None
+
+    best_match: Claim | None = None
+    best_jaccard: float = 0.0
+
+    for row in rows:
+        candidate = row_to_claim(row)
+        if candidate.value.strip().lower() == new_claim.value.strip().lower():
+            continue
+        old_content = set(_re.findall(r"[a-z0-9]+", candidate.value.lower())) - _noise
+        if old_content and new_content:
+            jaccard = len(old_content & new_content) / len(old_content | new_content)
+            if jaccard >= 0.3 and jaccard > best_jaccard:
+                best_jaccard = jaccard
+                best_match = candidate
+
+    if best_match is None:
+        return None
+
+    old_claim = best_match
 
     new_speaker = _get_speaker(conn, new_claim.source_turn_id)
     old_speaker = _get_speaker(conn, old_claim.source_turn_id)
