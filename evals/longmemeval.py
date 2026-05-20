@@ -245,10 +245,13 @@ def run_preflight(
     Requires MEMCONTEXT_EXTRACTOR_BACKEND + key for extraction.
     Requires MEMCONTEXT_READER_API_KEY for reader=configured.
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     from evals.runner import ReaderMode, answer_question
-    from memcontext.extractors import auto_extractor, LLMExtractor
-    from memcontext.on_new_turn import on_new_turn
-    from memcontext.retrieval import EmbeddingClient, backfill_embeddings, retrieve_hybrid
+    from memcontext.extractors import LLMExtractor, auto_extractor
+    from memcontext.on_new_turn import ExtractedClaim, on_new_turn
+    from memcontext.extractors import PassthroughExtractor
+    from memcontext.retrieval import EmbeddingClient, backfill_embeddings
     from memcontext.schema import Speaker, Turn, open_database
 
     sessions, questions = load_dataset(dataset_path)
@@ -270,38 +273,69 @@ def run_preflight(
         conn.row_factory = sqlite3.Row
 
         unified_sid = f"haystack_{q.question_id}"
-        ingested_sessions = 0
-        ingested_turns = 0
-        claims_created = 0
-        prior_turns: list[Turn] = []
 
+        # Collect all turns first
+        all_turns: list[tuple[str, str]] = []
         for sid in q.session_ids:
             sess = session_map.get(sid)
             if sess is None:
                 continue
-            ingested_sessions += 1
             for turn_data in sess.turns:
                 role = turn_data.get("role", "user")
                 content = turn_data.get("content", "")
-                if not content or not content.strip():
-                    continue
-                sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
+                if content and content.strip():
+                    all_turns.append((role, content))
 
-                if isinstance(extractor, LLMExtractor):
-                    extractor.set_context(prior_turns[-4:])
+        # Parallel extraction: fire all LLM calls concurrently
+        from memcontext.claims import new_turn_id, now_ns
 
-                result = on_new_turn(
-                    conn,
-                    session_id=unified_sid,
-                    speaker=sp,
-                    text=content,
-                    extractor=extractor,
-                )
-                claims_created += len(result.created_claims)
-                ingested_turns += 1
+        def _extract_one(idx_role_text: tuple[int, str, str]) -> tuple[int, list[dict]]:
+            idx, role, text = idx_role_text
+            sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
+            t = Turn(turn_id=new_turn_id(), session_id=unified_sid,
+                     speaker=sp, text=text, ts=now_ns(), asr_confidence=None)
+            claims = extractor(t)
+            return (idx, [
+                {"subject": c.subject, "predicate": c.predicate,
+                 "value": c.value, "confidence": c.confidence}
+                for c in claims
+            ])
 
-                if result.turn is not None:
-                    prior_turns.append(result.turn)
+        extracted_by_idx: dict[int, list[dict]] = {}
+        work = [(i, role, text) for i, (role, text) in enumerate(all_turns)]
+
+        if isinstance(extractor, LLMExtractor):
+            with ThreadPoolExecutor(max_workers=20) as pool:
+                futures = {pool.submit(_extract_one, w): w[0] for w in work}
+                for fut in as_completed(futures):
+                    try:
+                        idx, claims = fut.result()
+                        extracted_by_idx[idx] = claims
+                    except Exception:
+                        extracted_by_idx[futures[fut]] = []
+        else:
+            for w in work:
+                idx, claims = _extract_one(w)
+                extracted_by_idx[idx] = claims
+
+        # Sequential storage: insert in order for supersession to work
+        ingested_turns = len(all_turns)
+        ingested_sessions = len(set(
+            sid for sid in q.session_ids if session_map.get(sid)
+        ))
+        claims_created = 0
+
+        for i, (role, text) in enumerate(all_turns):
+            claims_data = extracted_by_idx.get(i, [])
+            if not claims_data:
+                continue
+            sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
+            pt = PassthroughExtractor(claims_data)
+            result = on_new_turn(
+                conn, session_id=unified_sid, speaker=sp,
+                text=text, extractor=pt,
+            )
+            claims_created += len(result.created_claims)
 
         embedded_count = backfill_embeddings(conn, unified_sid, client=embedding_client)
 
