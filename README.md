@@ -26,6 +26,7 @@ MemContext observes information from conversations, browser pages, tools, and do
                                    ▼
                         ┌──────────────────────────┐
                         │    Claim Extraction       │
+                        │  LLMExtractor (Ollama/OR) │
                         │  PassthroughExtractor     │
                         │  SimpleExtractor (regex)  │
                         └──────────┬───────────────┘
@@ -84,7 +85,8 @@ When new information conflicts with old, MemContext doesn't delete — it supers
 Closed vocabularies that define what a domain cares about. Packs compose — `general,developer` merges both.
 
 - **General** (10 families): `user_fact`, `user_preference`, `user_event`, `user_relationship`, `user_goal`, `user_constraint`, `context`, `action`, `observation`, `metadata`
-- **Developer** (10 families): domain-specific predicates for code, tooling, and workflow context
+- **Developer** (10 families): `decision_made`, `bug_fixed`, `convention_established`, `file_purpose`, `dependency_reason`, `api_contract`, `todo`, `blocker`, `user_preference`, `project_status`
+- **Personal Assistant** (6 families): `user_fact`, `user_preference`, `user_event`, `user_relationship`, `user_goal`, `user_constraint`
 
 ### Projections
 
@@ -162,7 +164,7 @@ Four-signal hybrid retrieval fused via Reciprocal Rank Fusion (k=60):
 
 | Signal | Method |
 |--------|--------|
-| **Semantic** | Cosine similarity on BGE-M3 embeddings |
+| **Semantic** | Cosine similarity on all-MiniLM-L6-v2 embeddings (384-dim, local) |
 | **BM25** | Token-level scoring for exact matches |
 | **Entity** | Binary match on normalized subject keys |
 | **Temporal** | Recency ranking via `valid_from_ts` |
@@ -193,17 +195,31 @@ turns ──┐
 
 ## Benchmark: LongMemEval-S
 
-Honest results on LongMemEval-S (500 questions, GPT-5-mini reader):
+**Predecessor system (RobbyMD):** 442/500 (88.4%)
+Reader: GPT-5-mini | Judge: GPT-4o | Scoring: official LongMemEval protocol
 
-| Category | Accuracy | Status |
-|----------|----------|--------|
-| single-session-user | ~solved | -- |
-| single-session-assistant | ~solved | -- |
-| knowledge-update | 93.6% | Strong |
-| temporal-reasoning | 88.0% | Good |
-| multi-session | 79.7% | Active work |
-| single-session-preference | 73.3% | Active work |
-| **Overall** | **88.4%** | |
+| Category | Score | Accuracy | Status |
+|----------|-------|----------|--------|
+| single-session-user | 69/70 | 98.6% | Solved |
+| single-session-assistant | 55/56 | 98.2% | Solved |
+| knowledge-update | 73/78 | 93.6% | Strong |
+| abstention | 27/30 | 90.0% | Strong |
+| temporal-reasoning | 117/133 | 88.0% | Good |
+| multi-session | 106/133 | 79.7% | Active work |
+| single-session-preference | 22/30 | 73.3% | Active work |
+| **Overall** | **442/500** | **88.4%** | |
+
+**MemContext (generalized substrate):** Diagnostic only — full 500 not yet run.
+
+| Category | Diagnostic (30q) | Direction |
+|----------|-------------------|-----------|
+| preference | 5/10 (50%) | Improving — source excerpts approach working |
+| multi-session | 5/10 (50%) | Improving — retrieval recall with top-50 |
+| temporal | 8/10 (80%) | Strong — per-excerpt temporal offsets working |
+
+Methodology: same reader (GPT-5-mini), same official judge protocol, same dataset. MemContext adds generalized LLM extraction, per-excerpt temporal offsets with gap markers, and source-turn context to reader. Full 500-question run pending.
+
+**Scoring protocol:** Two-tier system matching official LongMemEval evaluation — strict normalized boundary match for short answers (≤3 tokens), LLM-as-judge (GPT-4o) with task-specific rubrics for everything else.
 
 ---
 
@@ -219,7 +235,7 @@ memcontext/
   on_new_turn.py         # Pipeline orchestrator
   projections.py         # Active-claims projections
   provenance.py          # Forward/back-link provenance utilities
-  extractors.py          # PassthroughExtractor + SimpleExtractor (regex)
+  extractors.py          # LLMExtractor + PassthroughExtractor + SimpleExtractor
   predicate_packs.py     # Domain vocabulary management
   mcp_tools.py           # MCP tool handlers (no protocol dependency)
   mcp_server.py          # MCP server over stdio transport
@@ -231,10 +247,16 @@ memcontext/
 evals/
   metrics.py             # Scoring functions
   runner.py              # Suite runner
-  longmemeval.py         # LongMemEval benchmark scaffold
+  longmemeval.py         # LongMemEval benchmark integration
+  longmemeval_prompts.py # Category-specific answer prompts
+  ceiling.py             # Failure classification
 predicate_packs/
   general/               # General-purpose vocabulary (10 families)
   developer/             # Developer-context vocabulary (10 families)
+  personal_assistant/    # Conversational memory (6 families)
+scripts/
+  demo/                  # Pyright observation demo
+  smoke/                 # CLI, MCP, browser, memory loop smoke tests
 ```
 
 ---
@@ -246,7 +268,16 @@ pip install -e ".[dev]"
 python -m pytest tests/ -v
 ```
 
-All tests use `:memory:` SQLite and `NullEmbedder`. Zero model downloads in CI. 168 tests, strict pyright, ruff linting.
+All tests use `:memory:` SQLite and `NullEmbedder`. Zero model downloads in CI. 189 tests, strict pyright, ruff linting.
+
+```bash
+# External smoke tests (run from outside the repo)
+python scripts/smoke/cli_smoke.py            # 10 checks
+python scripts/smoke/mcp_smoke.py            # 22 checks (handlers + stdio protocol)
+python scripts/smoke/observe_smoke.py        # 15 checks
+python scripts/smoke/memory_loop_smoke.py    # 20 checks (5 core behaviors)
+python scripts/smoke/browser_agent_smoke.py  # 17 checks (real Playwright)
+```
 
 ---
 
