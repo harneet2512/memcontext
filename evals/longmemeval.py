@@ -303,10 +303,12 @@ def run_preflight(
 
         embedded_count = backfill_embeddings(conn, unified_sid, client=embedding_client)
 
-        top_claims = retrieve_hybrid(
-            conn, session_id=unified_sid, query=q.question,
-            top_k=10, embedding_client=embedding_client,
+        from memcontext.retrieval import retrieve_relevant_claims
+        semantic_results = retrieve_relevant_claims(
+            conn, session_id=unified_sid, question=q.question,
+            k=20, client=embedding_client,
         )
+        top_claims = [(rc.claim, rc.similarity_score) for rc in semantic_results]
 
         claims = [
             {

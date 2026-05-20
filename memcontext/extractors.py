@@ -389,7 +389,7 @@ class LLMExtractor:
             self._api_key = None
         elif self._backend == "openrouter":
             self._model = model or os.environ.get(
-                "MEMCONTEXT_EXTRACTOR_MODEL", "openai/gpt-4.1-nano"
+                "MEMCONTEXT_EXTRACTOR_MODEL", "openai/gpt-4o-mini"
             )
             self._base_url = (
                 base_url
