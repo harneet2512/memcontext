@@ -89,3 +89,59 @@ def test_provenance_integrity_missing():
     conn = open_database(":memory:")
     result = provenance_integrity(conn, "cl_nonexistent")
     assert result["valid"] is False
+
+
+# --- Two-tier scoring (ported from RobbyMD official protocol) ---
+
+
+def test_strict_short_answer_exact():
+    from evals.metrics import strict_short_answer_check
+
+    assert strict_short_answer_check("3", "3") is True
+    assert strict_short_answer_check("3", "The answer is 3 items") is True  # boundary match
+    assert strict_short_answer_check("3", "5") is False  # numeric mismatch
+    assert strict_short_answer_check("8 days", "8 days") is True
+
+
+def test_strict_short_answer_fallthrough():
+    from evals.metrics import strict_short_answer_check
+
+    # Long gold answers fall through to judge (return None)
+    assert strict_short_answer_check(
+        "The user prefers dark mode for developer tools", "dark mode"
+    ) is None
+
+
+def test_strict_short_normalization():
+    from evals.metrics import _normalize_short
+
+    assert _normalize_short("$400,000") == "400000"
+    assert _normalize_short("  3  ") == "3"
+    assert _normalize_short("8 Days") == "8 days"
+
+
+def test_score_answer_without_api_key_uses_fuzzy():
+    """Without MEMCONTEXT_READER_API_KEY, score_answer falls back to fuzzy."""
+    import os
+    from evals.metrics import score_answer
+
+    old_key = os.environ.pop("MEMCONTEXT_READER_API_KEY", None)
+    try:
+        # Short answer: strict match works without API
+        assert score_answer("3", "3", "how many?", "multi-session") == 1.0
+        assert score_answer("5", "3", "how many?", "multi-session") == 0.0
+    finally:
+        if old_key:
+            os.environ["MEMCONTEXT_READER_API_KEY"] = old_key
+
+
+def test_judge_prompts_exist():
+    from evals.metrics import _JUDGE_PROMPTS
+
+    assert "default" in _JUDGE_PROMPTS
+    assert "temporal-reasoning" in _JUDGE_PROMPTS
+    assert "single-session-preference" in _JUDGE_PROMPTS
+    assert "knowledge-update" in _JUDGE_PROMPTS
+    assert "abstention" in _JUDGE_PROMPTS
+    for key, prompt in _JUDGE_PROMPTS.items():
+        assert "yes or no" in prompt.lower(), f"Judge prompt {key} missing yes/no instruction"

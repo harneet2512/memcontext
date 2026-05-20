@@ -87,7 +87,12 @@ Before implementing any technique, classify it:
 
 Do not add architecture unless failure analysis proves architecture is the bottleneck.
 
-## Current Performance Gaps (LongMemEval-S, 88.4% with GPT-5-mini reader)
+## Current Performance Gaps (LongMemEval-S, 88.4% = 442/500)
+
+Scoring: two-tier — strict exact match for short answers (<=3 tokens),
+GPT-4o LLM-as-judge with task-specific rubrics for everything else.
+Reader: GPT-5-mini. Judge: GPT-4o-2024-11-20. Ported from official
+LongMemEval protocol (xiaowu0162/LongMemEval).
 
 | Category | Accuracy | Wrong | Total |
 |----------|----------|-------|-------|
@@ -102,7 +107,7 @@ Do not add architecture unless failure analysis proves architecture is the bottl
 
 1. Category-specific answer prompts (PROVEN — OMEGA uses per-category prompts)
 2. Preference prompt fix (PROVEN — current failure is prompt-level)
-3. Scoring methodology audit (required before any comparison)
+3. Scoring methodology: LLM-as-judge (not fuzzy F1 — fuzzy F1 fails on correct paraphrased answers)
 4. Reader model test / reader-mode clarity
 5. Dense observation compression from structured claims (EXPERIMENTAL)
 6. Only then consider retrieval architecture changes
