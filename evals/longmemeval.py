@@ -252,12 +252,20 @@ def run_preflight(
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
+    import os
+
     from evals.runner import ReaderMode, answer_question
     from memcontext.extractors import LLMExtractor, auto_extractor
     from memcontext.on_new_turn import ExtractedClaim, on_new_turn
     from memcontext.extractors import PassthroughExtractor
     from memcontext.retrieval import EmbeddingClient, backfill_embeddings
     from memcontext.schema import Speaker, Turn, open_database
+
+    # Use personal_assistant pack (matching baseline) unless overridden
+    if not os.environ.get("ACTIVE_PACK"):
+        os.environ["ACTIVE_PACK"] = "personal_assistant"
+        from memcontext.predicate_packs import active_pack
+        active_pack.cache_clear()
 
     sessions, questions = load_dataset(dataset_path)
 
@@ -352,7 +360,7 @@ def run_preflight(
         from memcontext.retrieval import retrieve_hybrid
         top_claims = retrieve_hybrid(
             conn, session_id=unified_sid, query=q.question,
-            top_k=20, embedding_client=embedding_client,
+            top_k=50, embedding_client=embedding_client,
             weights=(0.7, 0.0, 0.0, 0.3),  # semantic=0.7, entity=0, temporal=0, BM25=0.3
         )
 

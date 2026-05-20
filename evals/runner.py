@@ -172,22 +172,55 @@ def _format_evidence(
 ) -> str:
     """Format retrieved excerpts for the reader, matching baseline format.
 
-    Each excerpt includes session date and relative offset from question_date.
+    Each excerpt includes session date, relative offset, and temporal gap
+    markers between excerpts with large time differences (Mastra pattern).
     """
+    from datetime import datetime
+
+    def _parse_date(d: str) -> datetime | None:
+        try:
+            return datetime.strptime(d[:10], "%Y/%m/%d")
+        except (ValueError, TypeError):
+            return None
+
+    # Sort excerpts by date for temporal coherence
+    def _sort_key(ex: dict) -> str:
+        return ex.get("session_date", "") or "9999"
+
+    sorted_excerpts = sorted(excerpts, key=_sort_key)
+
     parts = []
     if question_date:
         parts.append(f"Question (asked on {question_date}): {question}\n")
     else:
         parts.append(f"Question: {question}\n")
 
-    for i, ex in enumerate(excerpts, 1):
+    prev_date: datetime | None = None
+    for i, ex in enumerate(sorted_excerpts, 1):
         speaker = ex.get("speaker", "user")
         text = ex.get("text", "")[:1000]
-        date = ex.get("session_date", "")
+        date_str = ex.get("session_date", "")
         offset = ex.get("relative_offset", "")
+
+        # Temporal gap marker between excerpts (Mastra pattern)
+        cur_date = _parse_date(date_str)
+        if prev_date and cur_date:
+            gap_days = (cur_date - prev_date).days
+            if gap_days >= 7:
+                weeks = gap_days // 7
+                if weeks >= 4:
+                    months = gap_days // 30
+                    parts.append(f"  --- {months} month{'s' if months > 1 else ''} later ---\n")
+                else:
+                    parts.append(f"  --- {weeks} week{'s' if weeks > 1 else ''} later ---\n")
+            elif gap_days >= 2:
+                parts.append(f"  --- {gap_days} days later ---\n")
+        if cur_date:
+            prev_date = cur_date
+
         header = f"--- Excerpt {i}"
-        if date:
-            header += f" | {date}"
+        if date_str:
+            header += f" | {date_str}"
         if offset:
             header += f" ({offset})"
         header += " ---"
