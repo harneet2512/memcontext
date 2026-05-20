@@ -28,6 +28,7 @@ class LongMemEvalQuestion:
 class LongMemEvalSession:
     session_id: str
     turns: list[dict] = field(default_factory=list)
+    date: str = ""
 
 
 @dataclass
@@ -178,15 +179,17 @@ def load_dataset(
         # Parse haystack sessions
         haystack_ids = instance.get("haystack_session_ids", [])
         haystack_sessions = instance.get("haystack_sessions", [])
+        haystack_dates = instance.get("haystack_dates", [])
         answer_session_ids = instance.get("answer_session_ids", [])
 
-        for sid, turns in zip(haystack_ids, haystack_sessions):
-            # Keyed per-question to avoid collisions across instances
+        for idx, (sid, turns) in enumerate(zip(haystack_ids, haystack_sessions)):
             full_sid = f"{qid}__{sid}"
+            date = haystack_dates[idx] if idx < len(haystack_dates) else ""
             if full_sid not in all_sessions:
                 all_sessions[full_sid] = LongMemEvalSession(
                     session_id=full_sid,
                     turns=turns if isinstance(turns, list) else [],
+                    date=date,
                 )
 
         session_refs = [f"{qid}__{sid}" for sid in haystack_ids]
@@ -276,8 +279,8 @@ def run_preflight(
 
         unified_sid = f"haystack_{q.question_id}"
 
-        # Collect all turns first
-        all_turns: list[tuple[str, str]] = []
+        # Collect all turns with session dates
+        all_turns: list[tuple[str, str, str]] = []  # (role, content, session_date)
         for sid in q.session_ids:
             sess = session_map.get(sid)
             if sess is None:
@@ -286,7 +289,7 @@ def run_preflight(
                 role = turn_data.get("role", "user")
                 content = turn_data.get("content", "")
                 if content and content.strip():
-                    all_turns.append((role, content))
+                    all_turns.append((role, content, sess.date))
 
         # Parallel extraction: fire all LLM calls concurrently
         from memcontext.claims import new_turn_id, now_ns
@@ -304,7 +307,7 @@ def run_preflight(
             ])
 
         extracted_by_idx: dict[int, list[dict]] = {}
-        work = [(i, role, text) for i, (role, text) in enumerate(all_turns)]
+        work = [(i, role, text) for i, (role, text, _date) in enumerate(all_turns)]
 
         if isinstance(extractor, LLMExtractor):
             with ThreadPoolExecutor(max_workers=20) as pool:
@@ -327,7 +330,9 @@ def run_preflight(
         ))
         claims_created = 0
 
-        for i, (role, text) in enumerate(all_turns):
+        turn_session_date: dict[str, str] = {}  # turn_id → session_date
+
+        for i, (role, text, sess_date) in enumerate(all_turns):
             claims_data = extracted_by_idx.get(i, [])
             if not claims_data:
                 continue
@@ -338,6 +343,8 @@ def run_preflight(
                 text=text, extractor=pt,
             )
             claims_created += len(result.created_claims)
+            if result.turn is not None:
+                turn_session_date[result.turn.turn_id] = sess_date
 
         embedded_count = backfill_embeddings(conn, unified_sid, client=embedding_client)
 
@@ -350,8 +357,32 @@ def run_preflight(
         )
 
         # Look up source turns for retrieved claims — reader needs
-        # original conversation context, not just claim fragments
+        # original conversation context with temporal offsets
         from memcontext.claims import get_turn
+
+        def _relative_offset(session_date: str, question_date: str) -> str:
+            """Compute relative time offset like '2 weeks ago'."""
+            from datetime import datetime
+            try:
+                fmt = "%Y/%m/%d"
+                sd = datetime.strptime(session_date[:10], fmt)
+                qd = datetime.strptime(question_date[:10], fmt)
+                delta = (qd - sd).days
+                if delta == 0:
+                    return "same day"
+                if delta == 1:
+                    return "1 day ago"
+                if delta < 7:
+                    return f"{delta} days ago"
+                weeks = delta // 7
+                if weeks < 5:
+                    return f"~{weeks} week{'s' if weeks > 1 else ''} ago"
+                months = delta // 30
+                if months < 12:
+                    return f"~{months} month{'s' if months > 1 else ''} ago"
+                return f"~{delta // 365} year{'s' if delta > 730 else ''} ago"
+            except (ValueError, TypeError):
+                return ""
 
         seen_turns: set[str] = set()
         excerpts: list[dict] = []
@@ -362,10 +393,13 @@ def run_preflight(
             turn = get_turn(conn, c.source_turn_id)
             if turn is None:
                 continue
+            sess_date = turn_session_date.get(c.source_turn_id, "")
+            offset = _relative_offset(sess_date, q.question_date) if sess_date and q.question_date else ""
             excerpts.append({
                 "text": turn.text,
                 "speaker": turn.speaker.value if hasattr(turn.speaker, "value") else str(turn.speaker),
-                "session_id": turn.session_id,
+                "session_date": sess_date,
+                "relative_offset": offset,
                 "claim_value": c.value,
                 "score": round(s, 4),
             })

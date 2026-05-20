@@ -170,7 +170,10 @@ def _format_evidence(
     question_date: str,
     excerpts: list[dict],
 ) -> str:
-    """Format retrieved excerpts for the reader, matching baseline format."""
+    """Format retrieved excerpts for the reader, matching baseline format.
+
+    Each excerpt includes session date and relative offset from question_date.
+    """
     parts = []
     if question_date:
         parts.append(f"Question (asked on {question_date}): {question}\n")
@@ -180,7 +183,15 @@ def _format_evidence(
     for i, ex in enumerate(excerpts, 1):
         speaker = ex.get("speaker", "user")
         text = ex.get("text", "")[:1000]
-        parts.append(f"--- Excerpt {i} ---\n{speaker}: {text}\n")
+        date = ex.get("session_date", "")
+        offset = ex.get("relative_offset", "")
+        header = f"--- Excerpt {i}"
+        if date:
+            header += f" | {date}"
+        if offset:
+            header += f" ({offset})"
+        header += " ---"
+        parts.append(f"{header}\n{speaker}: {text}\n")
 
     return "\n".join(parts)
 
