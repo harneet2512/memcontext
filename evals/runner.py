@@ -139,6 +139,52 @@ class ReaderMode(StrEnum):
     CONFIGURED = "configured"  # call LLM if configured (not implemented yet)
 
 
+# Baseline reader prompt — one universal prompt for all categories.
+# Ported from RobbyMD eval/longmemeval/final_runner.py READER_SYSTEM_PROMPT.
+_READER_SYSTEM_PROMPT = (
+    "You are answering a question about a user based on their past conversation history.\n\n"
+    "You receive the question, the date it was asked, and retrieved conversation excerpts.\n\n"
+    "Step 1 — NOTES: Read ALL excerpts. Write a short list of ONLY the relevant facts "
+    "(skip irrelevant excerpts entirely). For each relevant fact, note which excerpt it "
+    "came from.\n\n"
+    "Step 2 — ANSWER: Using your notes, answer the question.\n\n"
+    "Guidelines:\n"
+    "- Answer from provided evidence only.\n"
+    "- Return stored preferences/constraints, not generic advice.\n"
+    "- When values change over time, prefer the most recent one.\n"
+    "- Count and list ALL relevant items across ALL excerpts before answering count questions.\n"
+    "- Only say \"I don't know\" if evidence truly has no relevant information.\n"
+    "- Be concise.\n\n"
+    "Format:\n"
+    "NOTES:\n"
+    "- [relevant fact 1, from excerpt N]\n"
+    "- [relevant fact 2, from excerpt M]\n"
+    "...\n\n"
+    "ANSWER:\n"
+    "[your concise answer]"
+)
+
+
+def _format_evidence(
+    question: str,
+    question_date: str,
+    excerpts: list[dict],
+) -> str:
+    """Format retrieved excerpts for the reader, matching baseline format."""
+    parts = []
+    if question_date:
+        parts.append(f"Question (asked on {question_date}): {question}\n")
+    else:
+        parts.append(f"Question: {question}\n")
+
+    for i, ex in enumerate(excerpts, 1):
+        speaker = ex.get("speaker", "user")
+        text = ex.get("text", "")[:1000]
+        parts.append(f"--- Excerpt {i} ---\n{speaker}: {text}\n")
+
+    return "\n".join(parts)
+
+
 def answer_question(
     *,
     question: str,
@@ -146,38 +192,26 @@ def answer_question(
     claims: list[dict],
     reader: ReaderMode = ReaderMode.NONE,
     question_date: str = "",
+    excerpts: list[dict] | None = None,
 ) -> dict:
-    """Select category prompt, add Chain-of-Note, prepare answer context.
+    """Format evidence and call reader. Uses baseline universal prompt.
 
-    reader="none": returns retrieval context + selected prompt. NO fake answer.
-    reader="configured": calls reader LLM with Chain-of-Note prompting.
+    reader="none": returns retrieval context only. NO fake answer.
+    reader="configured": calls reader LLM with CoN prompting.
     """
-    from evals.longmemeval_prompts import format_claims_for_prompt, get_prompt
-
-    claims_text = format_claims_for_prompt(claims)
-    base_prompt = get_prompt(category, claims_text, question)
-
-    # Inject temporal context if available
-    temporal_ctx = ""
-    if question_date:
-        temporal_ctx = f"\n\nThe question was asked on: {question_date}\n"
-
-    # Chain-of-Note: reader writes relevant notes before answering
-    # (Yu et al. 2023, +10pp improvement in the 88.4% baseline)
-    chain_of_note = (
-        "\n\nBefore answering, write brief notes on which claims are relevant "
-        "to the question and which are not. Then give your final answer on a "
-        "new line starting with 'Answer:'. Only the text after 'Answer:' will "
-        "be scored.\n"
-    )
-
-    prompt = base_prompt + temporal_ctx + chain_of_note
+    # Format evidence as excerpts (baseline style) if available,
+    # fall back to claim list if no excerpts provided
+    if excerpts:
+        evidence = _format_evidence(question, question_date, excerpts)
+    else:
+        from evals.longmemeval_prompts import format_claims_for_prompt
+        evidence = f"Question: {question}\n\n{format_claims_for_prompt(claims)}"
 
     result = {
         "category": category,
-        "prompt_template_used": category,
-        "formatted_claims": claims_text,
-        "full_prompt": prompt,
+        "prompt_template_used": "universal_reader",
+        "formatted_claims": evidence[:2000],
+        "full_prompt": evidence,
         "num_claims": len(claims),
     }
 
@@ -185,9 +219,14 @@ def answer_question(
         result["predicted_answer"] = None
         result["reader_mode"] = "none"
     elif reader == ReaderMode.CONFIGURED:
-        raw_answer = _call_reader_llm(prompt)
-        # Extract text after "Answer:" if present (Chain-of-Note format)
-        if "Answer:" in raw_answer:
+        raw_answer = _call_reader_llm_with_system(
+            system=_READER_SYSTEM_PROMPT,
+            user=evidence,
+        )
+        # Extract text after "ANSWER:" if present (CoN format)
+        if "ANSWER:" in raw_answer:
+            result["predicted_answer"] = raw_answer.split("ANSWER:", 1)[1].strip()
+        elif "Answer:" in raw_answer:
             result["predicted_answer"] = raw_answer.split("Answer:", 1)[1].strip()
         else:
             result["predicted_answer"] = raw_answer
@@ -195,6 +234,41 @@ def answer_question(
         result["raw_reader_output"] = raw_answer
 
     return result
+
+
+def _call_reader_llm_with_system(system: str, user: str) -> str:
+    """Call reader with system + user messages (baseline style)."""
+    import os
+
+    import requests
+
+    api_key = os.environ.get("MEMCONTEXT_READER_API_KEY", "")
+    if not api_key:
+        raise ValueError("MEMCONTEXT_READER_API_KEY not set.")
+
+    model = os.environ.get("MEMCONTEXT_READER_MODEL", "openai/gpt-5-mini")
+    endpoint = os.environ.get(
+        "MEMCONTEXT_READER_ENDPOINT", "https://openrouter.ai/api/v1/chat/completions"
+    )
+
+    resp = requests.post(
+        endpoint,
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "max_tokens": 2048,
+            "temperature": 0.0,
+        },
+        timeout=120,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    content = data.get("choices", [{}])[0].get("message", {}).get("content")
+    return (content or "").strip()
 
 
 def _call_reader_llm(prompt: str) -> str:

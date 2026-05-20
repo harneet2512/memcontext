@@ -349,9 +349,26 @@ def run_preflight(
             weights=(0.7, 0.0, 0.0, 0.3),  # semantic=0.7, entity=0, temporal=0, BM25=0.3
         )
 
-        # Inject temporal context from question_date if available
-        question_date = getattr(q, "question_date", None) or ""
-        temporal_note = f"\n\nQuestion asked on: {question_date}" if question_date else ""
+        # Look up source turns for retrieved claims — reader needs
+        # original conversation context, not just claim fragments
+        from memcontext.claims import get_turn
+
+        seen_turns: set[str] = set()
+        excerpts: list[dict] = []
+        for c, s in top_claims:
+            if c.source_turn_id in seen_turns:
+                continue
+            seen_turns.add(c.source_turn_id)
+            turn = get_turn(conn, c.source_turn_id)
+            if turn is None:
+                continue
+            excerpts.append({
+                "text": turn.text,
+                "speaker": turn.speaker.value if hasattr(turn.speaker, "value") else str(turn.speaker),
+                "session_id": turn.session_id,
+                "claim_value": c.value,
+                "score": round(s, 4),
+            })
 
         claims = [
             {
@@ -372,6 +389,7 @@ def run_preflight(
             claims=claims,
             reader=reader_mode,
             question_date=q.question_date,
+            excerpts=excerpts,
         )
 
         qr_entry: dict = {
