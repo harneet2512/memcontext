@@ -21,6 +21,7 @@ class LongMemEvalQuestion:
     category: str
     gold_answer: str
     session_ids: list[str] = field(default_factory=list)
+    question_date: str = ""
 
 
 @dataclass
@@ -196,6 +197,7 @@ def load_dataset(
                 category=category,
                 gold_answer=instance.get("answer", ""),
                 session_ids=session_refs,
+                question_date=instance.get("question_date", ""),
             )
         )
 
@@ -339,12 +341,17 @@ def run_preflight(
 
         embedded_count = backfill_embeddings(conn, unified_sid, client=embedding_client)
 
-        from memcontext.retrieval import retrieve_relevant_claims
-        semantic_results = retrieve_relevant_claims(
-            conn, session_id=unified_sid, question=q.question,
-            k=20, client=embedding_client,
+        # Hybrid retrieval: 0.7 dense + 0.3 BM25, matching 88.4% baseline
+        from memcontext.retrieval import retrieve_hybrid
+        top_claims = retrieve_hybrid(
+            conn, session_id=unified_sid, query=q.question,
+            top_k=20, embedding_client=embedding_client,
+            weights=(0.7, 0.0, 0.0, 0.3),  # semantic=0.7, entity=0, temporal=0, BM25=0.3
         )
-        top_claims = [(rc.claim, rc.similarity_score) for rc in semantic_results]
+
+        # Inject temporal context from question_date if available
+        question_date = getattr(q, "question_date", None) or ""
+        temporal_note = f"\n\nQuestion asked on: {question_date}" if question_date else ""
 
         claims = [
             {
@@ -359,12 +366,12 @@ def run_preflight(
             for c, s in top_claims
         ]
 
-        # Route through category prompt
         answer_result = answer_question(
             question=q.question,
             category=q.category,
             claims=claims,
             reader=reader_mode,
+            question_date=q.question_date,
         )
 
         qr_entry: dict = {

@@ -145,16 +145,33 @@ def answer_question(
     category: str,
     claims: list[dict],
     reader: ReaderMode = ReaderMode.NONE,
+    question_date: str = "",
 ) -> dict:
-    """Select category prompt and prepare answer context.
+    """Select category prompt, add Chain-of-Note, prepare answer context.
 
     reader="none": returns retrieval context + selected prompt. NO fake answer.
-    reader="configured": would call LLM (not yet implemented).
+    reader="configured": calls reader LLM with Chain-of-Note prompting.
     """
     from evals.longmemeval_prompts import format_claims_for_prompt, get_prompt
 
     claims_text = format_claims_for_prompt(claims)
-    prompt = get_prompt(category, claims_text, question)
+    base_prompt = get_prompt(category, claims_text, question)
+
+    # Inject temporal context if available
+    temporal_ctx = ""
+    if question_date:
+        temporal_ctx = f"\n\nThe question was asked on: {question_date}\n"
+
+    # Chain-of-Note: reader writes relevant notes before answering
+    # (Yu et al. 2023, +10pp improvement in the 88.4% baseline)
+    chain_of_note = (
+        "\n\nBefore answering, write brief notes on which claims are relevant "
+        "to the question and which are not. Then give your final answer on a "
+        "new line starting with 'Answer:'. Only the text after 'Answer:' will "
+        "be scored.\n"
+    )
+
+    prompt = base_prompt + temporal_ctx + chain_of_note
 
     result = {
         "category": category,
@@ -165,11 +182,17 @@ def answer_question(
     }
 
     if reader == ReaderMode.NONE:
-        result["predicted_answer"] = None  # NO fake answer
+        result["predicted_answer"] = None
         result["reader_mode"] = "none"
     elif reader == ReaderMode.CONFIGURED:
-        result["predicted_answer"] = _call_reader_llm(prompt)
+        raw_answer = _call_reader_llm(prompt)
+        # Extract text after "Answer:" if present (Chain-of-Note format)
+        if "Answer:" in raw_answer:
+            result["predicted_answer"] = raw_answer.split("Answer:", 1)[1].strip()
+        else:
+            result["predicted_answer"] = raw_answer
         result["reader_mode"] = "configured"
+        result["raw_reader_output"] = raw_answer
 
     return result
 
