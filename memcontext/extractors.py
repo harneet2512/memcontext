@@ -39,10 +39,15 @@ def _build_system_prompt() -> str:
     pack = active_pack()
     families = tuple(sorted(pack.predicate_families))
     examples_text = _render_examples(pack.few_shot_examples)
+    builtin_examples = _render_builtin_examples()
 
     return f"""\
-You extract structured claims from one conversation turn. You emit **only**
+You extract structured claims from conversation turns. You emit **only**
 JSON — a list of claim objects, possibly empty.
+
+You will receive prior turns (for context) and the current turn. Extract
+claims ONLY from the current turn, but use prior turns to resolve
+pronouns and references.
 
 ## Rules
 
@@ -53,24 +58,45 @@ JSON — a list of claim objects, possibly empty.
 2. **One fact per claim**. If a turn contains multiple independent facts,
    emit multiple claims.
 
-3. **Negations / denials**. When the speaker explicitly denies or dislikes
-   something, emit a claim with value `dislikes:<thing>` for preferences
-   or a clear negation in the value.
+3. **Extract from both speakers**. Emit claims about the user or world
+   state regardless of who said it. When the assistant states a fact
+   about the user ("Your appointment is at 3 PM"), emit it. When the
+   assistant provides a recommendation the user accepted, emit it.
+   The subject should be the entity the fact is about (usually "user"),
+   not the speaker.
 
-4. **Honesty over fluency**. If the turn is ambiguous, emit with low
+4. **Resolve coreference**. Replace pronouns and references with the
+   actual entities using prior turns as context. "He moved there" should
+   become "brother moved to Portland" if prior turns establish who "he"
+   is and where "there" is. Each claim must be self-contained.
+
+5. **Questions and requests produce zero claims**. "Can you help me?",
+   "What's the weather?", "Tell me about X" are requests, not facts.
+   Return an empty list. Exception: if a question reveals a fact
+   ("Do you know any good Italian restaurants near my office in Brooklyn?"
+   reveals the user works in Brooklyn).
+
+6. **Negations / denials**. When the speaker denies or dislikes something,
+   emit a claim with value `dislikes:<thing>` for preferences or a clear
+   negation in the value.
+
+7. **Honesty over fluency**. If the turn is ambiguous, emit with low
    confidence (≤ 0.5) or emit an empty list. NEVER fabricate.
 
-5. **No invented predicates**. Use the nearest listed family.
+8. **No invented predicates**. Use the nearest listed family.
 
-6. **Supersession is downstream**. Emit the new claim; the substrate
+9. **Supersession is downstream**. Emit the new claim; the substrate
    decides what older claim it supersedes.
 
-7. **Confidence scale** [0, 1]. Use 0.9+ only for explicit unambiguous
-   statements. Hedge words drop confidence below 0.7.
+10. **Confidence scale** [0, 1]. Use 0.9+ only for explicit unambiguous
+    statements. Hedge words drop confidence below 0.7.
 
-8. **Exact fact preservation**. Preserve names, locations, money, durations,
-   counts, dates, percentages, product names, degree names verbatim.
-   Do not round, paraphrase, or replace these values.
+11. **Exact fact preservation**. Preserve names, locations, money,
+    durations, counts, dates, percentages, product names, and degree
+    names verbatim. Examples: "$400,000" not "400k", "8 days" not
+    "one week", "Dr. Arati Prabhakar" not "Arati Prabhakar",
+    "Business Administration" not "business admin", "Samsung Galaxy S22"
+    not "Samsung phone".
 
 ## Output schema
 
@@ -80,10 +106,87 @@ JSON — a list of claim objects, possibly empty.
 
 Return a JSON array (possibly empty). No commentary. No markdown.
 
-## Few-shot examples
+## Domain examples (from active pack)
 
 {examples_text}
+
+## Core behavior examples
+
+{builtin_examples}
 """
+
+
+_BUILTIN_EXAMPLES = [
+    {
+        "name": "zero_claim_question",
+        "scenario": "User asks a question with no personal facts.",
+        "prior": "    assistant: How can I help you today?",
+        "current": "    user: Can you help me plan a trip to Japan?",
+        "output": "[]",
+    },
+    {
+        "name": "zero_claim_general_knowledge",
+        "scenario": "User discusses general knowledge, no personal info.",
+        "prior": "",
+        "current": "    user: What's the population of France?",
+        "output": "[]",
+    },
+    {
+        "name": "assistant_states_user_fact",
+        "scenario": "Assistant confirms or states a fact about the user.",
+        "prior": "    user: When is my dentist appointment again?\n    assistant: Let me check.",
+        "current": '    assistant: Your dentist appointment is scheduled for Tuesday at 3 PM with Dr. Chen.',
+        "output": '[{"subject": "user", "predicate": "user_event", "value": "dentist appointment Tuesday 3 PM with Dr. Chen", "confidence": 0.92}]',
+    },
+    {
+        "name": "third_party_fact",
+        "scenario": "User states a fact about someone else.",
+        "prior": "    assistant: Tell me about your family.",
+        "current": "    user: My brother is a doctor in Toronto. He just got promoted to chief of surgery.",
+        "output": '[{"subject": "user", "predicate": "user_relationship", "value": "brother is a doctor in Toronto, chief of surgery", "confidence": 0.95}]',
+    },
+    {
+        "name": "coreference_resolution",
+        "scenario": "Current turn uses pronouns that need prior context to resolve.",
+        "prior": "    user: My sister Anna lives in Seattle.\n    assistant: Nice city!",
+        "current": "    user: She moved there for a job at Amazon last month.",
+        "output": '[{"subject": "user", "predicate": "user_relationship", "value": "sister Anna moved to Seattle for job at Amazon last month", "confidence": 0.93}]',
+    },
+    {
+        "name": "question_reveals_fact",
+        "scenario": "A question incidentally reveals a personal fact.",
+        "prior": "",
+        "current": "    user: Do you know any good Italian restaurants near my office in Brooklyn?",
+        "output": '[{"subject": "user", "predicate": "user_fact", "value": "office located in Brooklyn", "confidence": 0.85}]',
+    },
+    {
+        "name": "temporal_sequence",
+        "scenario": "User describes events in time order.",
+        "prior": "",
+        "current": "    user: Last summer I visited Paris for 5 days, then London for 3 days, then flew home to Toronto.",
+        "output": '[{"subject": "user", "predicate": "user_event", "value": "visited Paris for 5 days last summer", "confidence": 0.95}, {"subject": "user", "predicate": "user_event", "value": "visited London for 3 days last summer", "confidence": 0.95}, {"subject": "user", "predicate": "user_fact", "value": "home city: Toronto", "confidence": 0.88}]',
+    },
+    {
+        "name": "implicit_preference_from_action",
+        "scenario": "User reveals a preference through repeated behavior.",
+        "prior": "    user: I ordered a cappuccino again this morning.",
+        "current": "    user: I always get the same thing — cappuccino with oat milk.",
+        "output": '[{"subject": "user", "predicate": "user_preference", "value": "regular coffee order: cappuccino with oat milk", "confidence": 0.92}]',
+    },
+]
+
+
+def _render_builtin_examples() -> str:
+    """Render the built-in core behavior examples."""
+    blocks: list[str] = []
+    for i, ex in enumerate(_BUILTIN_EXAMPLES, 1):
+        block = f"### Example {i}: {ex['name']}\nScenario: {ex['scenario']}\n\n"
+        if ex["prior"]:
+            block += f"Prior turns:\n{ex['prior']}\n"
+        block += f"Current turn:\n{ex['current']}\n\n"
+        block += f"Expected output:\n{ex['output']}\n"
+        blocks.append(block)
+    return "\n\n".join(blocks)
 
 
 def _render_examples(examples: tuple) -> str:
@@ -276,6 +379,7 @@ class LLMExtractor:
         self._timeout = timeout
         self._system_prompt: str | None = None
         self._allowed_predicates: frozenset[str] | None = None
+        self._prior_turns: list[Turn] = []
 
         if self._backend == "ollama":
             self._model = model or os.environ.get("MEMCONTEXT_EXTRACTOR_MODEL", "qwen3:8b")
@@ -305,6 +409,10 @@ class LLMExtractor:
             self._system_prompt = _build_system_prompt()
             self._allowed_predicates = active_pack().predicate_families
 
+    def set_context(self, prior_turns: list[Turn]) -> None:
+        """Set prior turns for coreference resolution. Call before __call__."""
+        self._prior_turns = prior_turns
+
     def __call__(self, turn: Turn) -> list[ExtractedClaim]:
         text = (turn.text or "").strip()
         if not text:
@@ -317,7 +425,18 @@ class LLMExtractor:
         speaker_label = (
             turn.speaker.value if hasattr(turn.speaker, "value") else str(turn.speaker)
         )
-        user_content = f"Current turn:\n    {speaker_label}: {text}"
+
+        # Build context with prior turns if available
+        prior = getattr(self, "_prior_turns", None) or []
+        user_content = ""
+        if prior:
+            prior_lines = []
+            for pt in prior[-4:]:
+                pt_speaker = pt.speaker.value if hasattr(pt.speaker, "value") else str(pt.speaker)
+                pt_text = (pt.text or "")[:300]
+                prior_lines.append(f"    {pt_speaker}: {pt_text}")
+            user_content += "Prior turns:\n" + "\n".join(prior_lines) + "\n\n"
+        user_content += f"Current turn:\n    {speaker_label}: {text}"
 
         messages = [
             {"role": "system", "content": self._system_prompt},
