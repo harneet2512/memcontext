@@ -28,14 +28,14 @@ def test_get_prompt_formats_correctly():
     assert "What does the user prefer?" in prompt
 
 
-def test_preference_prompt_says_no_advice():
+def test_preference_prompt_synthesizes_implicit():
     prompt = PROMPTS["single_session_preference"]
-    assert "NOT give advice" in prompt or "Do NOT give advice" in prompt
+    assert "IMPLICIT" in prompt or "implicit" in prompt
 
 
-def test_abstention_prompt_mentions_not_mentioned():
+def test_abstention_prompt_mentions_not_available():
     prompt = PROMPTS["abstention"]
-    assert "Not mentioned" in prompt or "not mentioned" in prompt
+    assert "not available" in prompt
 
 
 def test_knowledge_update_prompt_mentions_recent():

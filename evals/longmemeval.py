@@ -81,17 +81,12 @@ SCORING_NOTES = (
 
 
 def _resolve_category(question_id: str, question_type: str) -> str:
-    """Map dataset question_type + question_id to our internal category name.
+    """Map dataset question_type to internal category name.
 
-    The dataset uses:
-      - question_type: single-session-user, single-session-assistant,
-        single-session-preference, temporal-reasoning, knowledge-update,
-        multi-session
-      - Abstention questions have question_id ending with '_abs'
+    Abstention questions (question_id ending with '_abs') stay in their
+    parent category per the official LongMemEval protocol. The abstention
+    flag is checked separately at scoring time via question_id.
     """
-    if question_id.endswith("_abs"):
-        return "abstention"
-
     mapping = {
         "single-session-user": "single_session_user_fact",
         "single-session-assistant": "single_session_assistant",
@@ -234,6 +229,7 @@ def run_preflight(
     limit: int = 5,
     reader: str = "none",
     target_categories: list[str] | None = None,
+    question_ids: set[str] | None = None,
 ) -> dict:
     """Run a LongMemEval preflight using the full MemContext pipeline.
 
@@ -272,6 +268,9 @@ def run_preflight(
     if target_categories:
         questions = [q for q in questions if q.category in target_categories]
 
+    if question_ids:
+        questions = [q for q in questions if q.question_id in question_ids]
+
     questions = questions[:limit]
 
     session_map: dict[str, LongMemEvalSession] = {s.session_id: s for s in sessions}
@@ -281,116 +280,124 @@ def run_preflight(
     embedding_client = EmbeddingClient()
     extractor = auto_extractor()
 
-    for qi, q in enumerate(questions):
-        conn = open_database(":memory:")
-        conn.row_factory = sqlite3.Row
+    from memcontext.claims import get_turn, new_turn_id, now_ns
+    from memcontext.retrieval import retrieve_hybrid
 
-        unified_sid = f"haystack_{q.question_id}"
+    # === PHASE 1: Build ONE shared DB, extract + ingest each session ONCE ===
+    conn = open_database(":memory:")
+    conn.row_factory = sqlite3.Row
 
-        # Collect all turns with session dates
-        all_turns: list[tuple[str, str, str]] = []  # (role, content, session_date)
-        for sid in q.session_ids:
-            sess = session_map.get(sid)
-            if sess is None:
-                continue
-            for turn_data in sess.turns:
-                role = turn_data.get("role", "user")
-                content = turn_data.get("content", "")
-                if content and content.strip():
-                    all_turns.append((role, content, sess.date))
+    needed_sessions: set[str] = set()
+    for q in questions:
+        needed_sessions.update(q.session_ids)
 
-        # Parallel extraction: fire all LLM calls concurrently
-        from memcontext.claims import new_turn_id, now_ns
+    # Extract all unique turns (parallel if LLM extractor)
+    work: list[tuple[str, str, str, str]] = []  # (raw_sid, role, text, date)
+    for sid in needed_sessions:
+        sess = session_map.get(sid)
+        if sess is None:
+            continue
+        for turn_data in sess.turns:
+            role = turn_data.get("role", "user")
+            content = turn_data.get("content", "")
+            if content and content.strip():
+                work.append((sid, role, content, sess.date))
 
-        def _extract_one(idx_role_text: tuple[int, str, str]) -> tuple[int, list[dict]]:
-            idx, role, text = idx_role_text
-            sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
-            t = Turn(turn_id=new_turn_id(), session_id=unified_sid,
-                     speaker=sp, text=text, ts=now_ns(), asr_confidence=None)
-            claims = extractor(t)
-            return (idx, [
-                {"subject": c.subject, "predicate": c.predicate,
-                 "value": c.value, "confidence": c.confidence}
-                for c in claims
-            ])
+    def _extract_one(item: tuple[str, str, str, str]) -> tuple[str, str, str, str, list[dict]]:
+        raw_sid, role, text, date = item
+        sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
+        t = Turn(turn_id=new_turn_id(), session_id=raw_sid,
+                 speaker=sp, text=text, ts=now_ns(), asr_confidence=None)
+        claims = extractor(t)
+        return (raw_sid, role, text, date, [
+            {"subject": c.subject, "predicate": c.predicate,
+             "value": c.value, "confidence": c.confidence}
+            for c in claims
+        ])
 
-        extracted_by_idx: dict[int, list[dict]] = {}
-        work = [(i, role, text) for i, (role, text, _date) in enumerate(all_turns)]
+    extracted: list[tuple[str, str, str, str, list[dict]]] = []
+    total_work = len(work)
+    if work and isinstance(extractor, LLMExtractor):
+        done = 0
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            futures = {pool.submit(_extract_one, w): w for w in work}
+            for fut in as_completed(futures):
+                done += 1
+                try:
+                    extracted.append(fut.result())
+                except Exception:
+                    pass
+                if done % 100 == 0 or done == total_work:
+                    print(f"  Extracted {done}/{total_work} turns", flush=True)
+    else:
+        for i, w in enumerate(work, 1):
+            extracted.append(_extract_one(w))
+            if i % 50 == 0 or i == total_work:
+                print(f"  Extracted {i}/{total_work} turns", flush=True)
 
-        if isinstance(extractor, LLMExtractor):
-            with ThreadPoolExecutor(max_workers=20) as pool:
-                futures = {pool.submit(_extract_one, w): w[0] for w in work}
-                for fut in as_completed(futures):
-                    try:
-                        idx, claims = fut.result()
-                        extracted_by_idx[idx] = claims
-                    except Exception:
-                        extracted_by_idx[futures[fut]] = []
-        else:
-            for w in work:
-                idx, claims = _extract_one(w)
-                extracted_by_idx[idx] = claims
+    # Ingest into shared DB in session order (preserves supersession)
+    turn_session_date: dict[str, str] = {}
+    by_session: dict[str, list[tuple[str, str, str, list[dict]]]] = {}
+    for raw_sid, role, text, date, claims_data in extracted:
+        by_session.setdefault(raw_sid, []).append((role, text, date, claims_data))
 
-        # Sequential storage: insert in order for supersession to work
-        ingested_turns = len(all_turns)
-        ingested_sessions = len(set(
-            sid for sid in q.session_ids if session_map.get(sid)
-        ))
-        claims_created = 0
-
-        turn_session_date: dict[str, str] = {}  # turn_id → session_date
-
-        for i, (role, text, sess_date) in enumerate(all_turns):
-            claims_data = extracted_by_idx.get(i, [])
+    for raw_sid in sorted(by_session.keys()):
+        for role, text, date, claims_data in by_session[raw_sid]:
             if not claims_data:
                 continue
             sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
             pt = PassthroughExtractor(claims_data)
             result = on_new_turn(
-                conn, session_id=unified_sid, speaker=sp,
+                conn, session_id=raw_sid, speaker=sp,
                 text=text, extractor=pt,
             )
-            claims_created += len(result.created_claims)
             if result.turn is not None:
-                turn_session_date[result.turn.turn_id] = sess_date
+                turn_session_date[result.turn.turn_id] = date
 
-        embedded_count = backfill_embeddings(conn, unified_sid, client=embedding_client)
+    # Embed all claims once
+    all_sids = list(by_session.keys())
+    total_embedded = 0
+    for sid in all_sids:
+        total_embedded += backfill_embeddings(conn, sid, client=embedding_client)
 
-        # Hybrid retrieval: 0.7 dense + 0.3 BM25, matching 88.4% baseline
-        from memcontext.retrieval import retrieve_hybrid
-        top_claims = retrieve_hybrid(
-            conn, session_id=unified_sid, query=q.question,
-            top_k=50, embedding_client=embedding_client,
-            weights=(0.7, 0.0, 0.0, 0.3),  # semantic=0.7, entity=0, temporal=0, BM25=0.3
-        )
+    # === PHASE 2: Query per question (no extraction, just retrieval) ===
+    def _relative_offset(session_date: str, question_date: str) -> str:
+        from datetime import datetime as _dt
+        try:
+            sd = _dt.strptime(session_date[:10], "%Y/%m/%d")
+            qd = _dt.strptime(question_date[:10], "%Y/%m/%d")
+            delta = (qd - sd).days
+            if delta == 0:
+                return "same day"
+            if delta == 1:
+                return "1 day ago"
+            if delta < 7:
+                return f"{delta} days ago"
+            weeks = delta // 7
+            if weeks < 5:
+                return f"~{weeks} week{'s' if weeks > 1 else ''} ago"
+            months = delta // 30
+            if months < 12:
+                return f"~{months} month{'s' if months > 1 else ''} ago"
+            return f"~{delta // 365} year{'s' if delta > 730 else ''} ago"
+        except (ValueError, TypeError):
+            return ""
 
-        # Look up source turns for retrieved claims — reader needs
-        # original conversation context with temporal offsets
-        from memcontext.claims import get_turn
+    for q in questions:
+        q_session_ids = [
+            sid for sid in q.session_ids if session_map.get(sid)
+        ]
 
-        def _relative_offset(session_date: str, question_date: str) -> str:
-            """Compute relative time offset like '2 weeks ago'."""
-            from datetime import datetime
-            try:
-                fmt = "%Y/%m/%d"
-                sd = datetime.strptime(session_date[:10], fmt)
-                qd = datetime.strptime(question_date[:10], fmt)
-                delta = (qd - sd).days
-                if delta == 0:
-                    return "same day"
-                if delta == 1:
-                    return "1 day ago"
-                if delta < 7:
-                    return f"{delta} days ago"
-                weeks = delta // 7
-                if weeks < 5:
-                    return f"~{weeks} week{'s' if weeks > 1 else ''} ago"
-                months = delta // 30
-                if months < 12:
-                    return f"~{months} month{'s' if months > 1 else ''} ago"
-                return f"~{delta // 365} year{'s' if delta > 730 else ''} ago"
-            except (ValueError, TypeError):
-                return ""
+        # Retrieve across all sessions for this question
+        all_results: list[tuple] = []
+        for sid in q_session_ids:
+            results = retrieve_hybrid(
+                conn, session_id=sid, query=q.question,
+                top_k=50, embedding_client=embedding_client,
+            )
+            all_results.extend(results)
+        all_results.sort(key=lambda x: (-x[1], x[0].claim_id))
+        top_claims = all_results[:50]
 
         seen_turns: set[str] = set()
         excerpts: list[dict] = []
@@ -434,14 +441,19 @@ def run_preflight(
             excerpts=excerpts,
         )
 
+        ingested_turns = sum(len(by_session.get(sid, [])) for sid in q_session_ids)
+        claims_created = sum(
+            1 for c, _ in top_claims if c.session_id in q_session_ids
+        )
+
         qr_entry: dict = {
             "question_id": q.question_id,
             "category": q.category,
             "gold_answer": q.gold_answer,
-            "ingested_sessions": ingested_sessions,
+            "ingested_sessions": len(q_session_ids),
             "ingested_turns": ingested_turns,
             "claims_created": claims_created,
-            "embedded_count": embedded_count,
+            "embedded_count": total_embedded,
             "num_claims_retrieved": len(claims),
             **answer_result,
         }
@@ -460,7 +472,8 @@ def run_preflight(
             qr_entry["correct"] = score >= 1.0
 
         question_results.append(qr_entry)
-        conn.close()
+
+    conn.close()
 
     # Compute summary stats
     categories_seen = list({r["category"] for r in question_results})
@@ -486,9 +499,15 @@ def run_preflight(
                   "accuracy": round(v["correct"] / v["total"], 4) if v["total"] else 0}
             for cat, v in per_cat.items()
         },
-        "overall_accuracy": round(
+        "overall_accuracy_raw": round(
             sum(1 for r in scored if r.get("correct")) / len(scored), 4
         ) if scored else None,
+        "overall_accuracy_task_averaged": round(
+            sum(
+                v["correct"] / v["total"] if v["total"] else 0
+                for v in per_cat.values()
+            ) / len(per_cat), 4
+        ) if per_cat else None,
         "scoring_method": str(CURRENT_SCORING),
         "scoring_notes": SCORING_NOTES,
         "questions": question_results,

@@ -1,0 +1,22 @@
+{
+  "name": "@memcontext/client",
+  "version": "0.1.0",
+  "description": "TypeScript client for the MemContext memory API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "memcontext",
+    "memory",
+    "ai",
+    "context",
+    "claims"
+  ]
+}

@@ -8,54 +8,77 @@ from __future__ import annotations
 
 PROMPTS: dict[str, str] = {
     "single_session_user_fact": (
-        "Based on the following memory claims about the user from a single "
-        "conversation, answer the question directly and concisely.\n\n"
-        "Claims:\n{claims}\n\nQuestion: {question}\nAnswer:"
+        "You are given a question and memory items from a single conversation.\n\n"
+        "Step 1 — Notes: For each item, extract any facts about the user relevant to the question. Skip irrelevant items.\n"
+        "Step 2 — Reasoning: Using only your notes, reason toward the answer.\n"
+        "Step 3 — Answer: State the answer directly and concisely.\n\n"
+        "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — Notes:"
     ),
     "single_session_preference": (
-        "Based on the following memory claims, state the user's preference "
-        "directly. Do NOT give advice or recommendations. Only state what "
-        "the user prefers.\n\n"
-        "Claims:\n{claims}\n\nQuestion: {question}\nAnswer:"
+        "You are given a question and memory items from a conversation. "
+        "The user's preferences may be IMPLICIT — inferred from their behavior, choices, experiences, and context, "
+        "not necessarily stated as 'I prefer X.'\n\n"
+        "Step 1 — Evidence: For each item, extract any clues about user preferences: "
+        "tools they use, brands they own, activities they enjoy, past experiences they liked, "
+        "styles they gravitate toward, constraints they work within. Include specific names and details.\n"
+        "Step 2 — Synthesize: Based on the evidence, describe what the user would prefer. "
+        "Reference their specific tools, experiences, and interests by name. "
+        "Include what they would NOT prefer if there is evidence of dislikes.\n"
+        "Step 3 — Answer: State the user's preference as a complete description. "
+        "Be specific — mention product names, genres, styles, and constraints from the evidence.\n\n"
+        "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — Evidence:"
     ),
     "cross_session_preference": (
-        "The following claims span multiple conversations with the user. "
-        "When preferences conflict, use the most recent one (highest "
-        "timestamp). State the user's current preference directly.\n\n"
-        "Claims:\n{claims}\n\nQuestion: {question}\nAnswer:"
+        "You are given a question and memory items spanning multiple conversations.\n\n"
+        "Step 1 — Notes: For each item, extract any user preferences. Note the date of each.\n"
+        "Step 2 — Reasoning: If preferences conflict, the most recent one is current. Do NOT give advice.\n"
+        "Step 3 — Answer: State the user's current preference.\n\n"
+        "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — Notes:"
     ),
     "cross_session_user_fact": (
-        "The following claims span multiple conversations. Answer the "
-        "question using only information from these claims.\n\n"
-        "Claims:\n{claims}\n\nQuestion: {question}\nAnswer:"
+        "You are given a question and memory items spanning multiple conversations.\n\n"
+        "Step 1 — List: For each item, extract EVERY distinct instance relevant to the question. "
+        "Number each instance separately (e.g., 'Plant 1: succulent from garden center, Plant 2: fern from farmer's market'). "
+        "Include dates and sources. Do not skip any mention.\n"
+        "Step 2 — Aggregate: Count, sum, or compute as the question requires. Show your arithmetic. "
+        "If counting, verify your count matches the numbered list. If summing money, list each amount.\n"
+        "Step 3 — Answer: State the final number or result.\n\n"
+        "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — List:"
     ),
     "temporal_ordering": (
-        "The following claims have temporal information. Answer the "
-        "question about the order or timing of events.\n\n"
-        "Claims (ordered by time):\n{claims}\n\nQuestion: {question}\nAnswer:"
+        "You are given a question about timing or order of events, and memory items with dates.\n\n"
+        "Step 1 — Notes: For each item, extract events and their dates/times. Skip irrelevant items.\n"
+        "Step 2 — Reasoning: Order the events chronologically and reason about the timing question.\n"
+        "Step 3 — Answer: State the answer about timing or order.\n\n"
+        "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — Notes:"
     ),
     "knowledge_update": (
-        "The following claims may include superseded information. Use only "
-        "the most recent active claim for each fact. Answer with the "
-        "current/updated value.\n\n"
-        "Claims:\n{claims}\n\nQuestion: {question}\nAnswer:"
+        "You are given a question and memory items that may include outdated information.\n\n"
+        "Step 1 — Notes: For each item, extract the fact and its date. Note if it updates a previous fact.\n"
+        "Step 2 — Reasoning: Identify the most recent value for each fact. Discard outdated information.\n"
+        "Step 3 — Answer: State the current/updated answer.\n\n"
+        "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — Notes:"
     ),
     "abstention": (
-        "Based on the following memory claims, answer the question. If the "
-        "information is not mentioned in any claim, respond with "
-        "'Not mentioned in memory.'\n\n"
-        "Claims:\n{claims}\n\nQuestion: {question}\nAnswer:"
+        "You are given a question and memory items from past conversations.\n\n"
+        "Step 1 — Notes: For each item, check if it contains information relevant to the question.\n"
+        "Step 2 — Reasoning: Determine if the question can be answered from the available information.\n"
+        "Step 3 — Answer: If answerable, state the answer. If not, say the information is not available.\n\n"
+        "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — Notes:"
     ),
     "single_session_assistant": (
-        "Based on the following memory claims from a single conversation, "
-        "answer the question about what the assistant said, recommended, or "
-        "provided. Focus on the assistant's contributions, not the user's.\n\n"
-        "Claims:\n{claims}\n\nQuestion: {question}\nAnswer:"
+        "You are given a question about what the assistant said or recommended, and memory items from a single conversation.\n\n"
+        "Step 1 — Notes: For each item, extract what the assistant said, recommended, or provided. Skip user-only items.\n"
+        "Step 2 — Reasoning: Identify the specific assistant action or recommendation asked about.\n"
+        "Step 3 — Answer: State what the assistant said or recommended.\n\n"
+        "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — Notes:"
     ),
     "default": (
-        "Based on the following memory claims, answer the question directly "
-        "and concisely. Use only information from these claims.\n\n"
-        "Claims:\n{claims}\n\nQuestion: {question}\nAnswer:"
+        "You are given a question and memory items from past conversations.\n\n"
+        "Step 1 — Notes: For each item, extract only information relevant to the question. Skip irrelevant items.\n"
+        "Step 2 — Reasoning: Using only your notes, reason step by step toward the answer.\n"
+        "Step 3 — Answer: State the answer concisely.\n\n"
+        "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — Notes:"
     ),
 }
 

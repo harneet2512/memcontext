@@ -138,6 +138,21 @@ def on_new_turn(
     insert_turn(conn, turn)
     bus.publish(TURN_ADDED, {"turn_id": turn.turn_id, "session_id": session_id})
 
+    if hasattr(extractor, "set_context"):
+        prior_rows = conn.execute(
+            "SELECT * FROM turns WHERE session_id = ? AND ts < ? ORDER BY ts DESC LIMIT 8",
+            (session_id, turn.ts),
+        ).fetchall()
+        prior_turns = [
+            Turn(
+                turn_id=r["turn_id"], session_id=r["session_id"],
+                speaker=Speaker(r["speaker"]), text=r["text"],
+                ts=r["ts"], asr_confidence=r["asr_confidence"],
+            )
+            for r in reversed(prior_rows)
+        ]
+        extractor.set_context(prior_turns)
+
     extracted = extractor(turn)
 
     created: list[Claim] = []
@@ -213,6 +228,23 @@ def on_new_turn(
         PROJECTION_UPDATED,
         {"session_id": session_id, "active_count": len(proj.claims)},
     )
+
+    try:
+        if edges:
+            from memcontext.importance import compute_importance
+            for edge in edges:
+                compute_importance(conn, edge.old_claim_id)
+                compute_importance(conn, edge.new_claim_id)
+
+        turn_count = conn.execute(
+            "SELECT COUNT(*) FROM turns WHERE session_id = ?", (session_id,)
+        ).fetchone()[0]
+        if turn_count % 10 == 0 and turn_count > 0:
+            from memcontext.profiles import build_smart_profile, store_profile
+            profile = build_smart_profile(conn, "user")
+            store_profile(conn, profile)
+    except Exception:  # noqa: BLE001
+        pass
 
     return TurnResult(
         turn=turn,

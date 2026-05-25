@@ -32,6 +32,7 @@ def handle_memory_store(
     speaker: str = "user",
     session_id: str | None = None,
     claims: list[dict] | None = None,
+    entities: list[dict] | None = None,
 ) -> dict:
     sid = session_id or f"session_{uuid.uuid4().hex[:8]}"
     sp = Speaker.USER if speaker == "user" else Speaker.ASSISTANT
@@ -42,6 +43,18 @@ def handle_memory_store(
         extractor = auto_extractor()
 
     result = on_new_turn(conn, session_id=sid, speaker=sp, text=text, extractor=extractor)
+
+    if entities and result.created_claims:
+        for ent in entities:
+            ent_text = ent.get("text", "")
+            ent_type = ent.get("type", "proper_noun")
+            if ent_text:
+                for claim in result.created_claims:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO claim_entities (claim_id, entity_text, entity_type)"
+                        " VALUES (?, ?, ?)",
+                        (claim.claim_id, ent_text.lower(), ent_type),
+                    )
 
     return {
         "turn_id": result.turn.turn_id if result.turn else None,
@@ -60,29 +73,49 @@ def handle_memory_query(
     session_id: str | None = None,
     top_k: int = 10,
 ) -> dict:
+    from memcontext.retrieval import classify_query_depth, classify_query_predicates, retrieve_hybrid
+
+    _, query_type = classify_query_predicates(query)
+    if top_k == 10:
+        _, top_k = classify_query_depth(query)
+
     if session_id:
         active = list_active_claims(conn, session_id)
+        if not active:
+            return {"claims": [], "total": 0}
+        top = retrieve_hybrid(
+            conn, session_id=session_id, query=query, top_k=top_k,
+        )
+        total = len(active)
     else:
         rows = conn.execute(
-            "SELECT * FROM claims"
-            " WHERE status IN ('active','confirmed','audited')"
-            " ORDER BY created_ts ASC",
+            "SELECT DISTINCT session_id FROM claims"
+            " WHERE status IN ('active','confirmed','audited')",
         ).fetchall()
-        active = [row_to_claim(r) for r in rows]
-    if not active:
-        return {"claims": [], "total": 0}
+        if not rows:
+            return {"claims": [], "total": 0}
+        all_results: list[tuple] = []
+        total = 0
+        for r in rows:
+            sid = r["session_id"] if isinstance(r, sqlite3.Row) else r[0]
+            sid_active = list_active_claims(conn, sid)
+            total += len(sid_active)
+            results = retrieve_hybrid(
+                conn, session_id=sid, query=query, top_k=top_k,
+            )
+            all_results.extend(results)
+        all_results.sort(key=lambda x: (-x[1], x[0].claim_id))
+        top = all_results[:top_k]
 
-    query_tokens = set(query.lower().split())
-    scored = []
-    for claim in active:
-        claim_text = f"{claim.subject} {claim.predicate} {claim.value}".lower()
-        claim_tokens = set(claim_text.split())
-        overlap = len(query_tokens & claim_tokens)
-        score = overlap / max(len(query_tokens), 1)
-        scored.append((claim, score))
+    max_score = top[0][1] if top and top[0][1] > 0 else 1.0
 
-    scored.sort(key=lambda x: (-x[1], x[0].created_ts))
-    top = scored[:top_k]
+    _READER_HINTS = {
+        "assistant_recall": "Answer based on what the assistant previously said, recommended, or did.",
+        "preference": "State the user's preference directly. If preferences changed, use the most recent.",
+        "temporal": "Pay attention to dates and time ordering in the facts.",
+        "knowledge_update": "Facts may have changed over time. Answer based on the most recent active version.",
+        "fact_recall": "Answer directly from the retrieved facts.",
+    }
 
     return {
         "claims": [
@@ -93,11 +126,71 @@ def handle_memory_query(
                 "value": c.value,
                 "confidence": c.confidence,
                 "status": c.status.value,
-                "score": round(s, 4),
+                "score": round(s / max_score, 4) if s > 0 else 0.0,
             }
             for c, s in top
         ],
-        "total": len(active),
+        "total": total,
+        "query_type": query_type,
+        "reader_hint": _READER_HINTS.get(query_type, _READER_HINTS["fact_recall"]),
+    }
+
+
+def handle_memory_profile(
+    conn: sqlite3.Connection,
+    *,
+    subject: str = "user",
+    max_tokens: int = 500,
+) -> dict:
+    try:
+        from memcontext.profiles import build_smart_profile, format_profile, load_profile, store_profile
+
+        cached = load_profile(conn, subject)
+        if cached:
+            return {
+                "subject": subject,
+                "profile_text": format_profile(cached),
+                "total_facts": cached.total_facts,
+                "total_sessions": cached.total_sessions,
+                "total_updates": cached.total_updates,
+                "cached": True,
+            }
+
+        profile = build_smart_profile(conn, subject, max_tokens=max_tokens)
+        store_profile(conn, profile)
+        return {
+            "subject": subject,
+            "profile_text": format_profile(profile),
+            "total_facts": profile.total_facts,
+            "total_sessions": profile.total_sessions,
+            "total_updates": profile.total_updates,
+            "cached": False,
+        }
+    except Exception as exc:
+        return {"subject": subject, "error": str(exc)}
+
+
+def handle_memory_stats(conn: sqlite3.Connection) -> dict:
+    active = conn.execute(
+        "SELECT COUNT(*) FROM claims WHERE status IN ('active','confirmed','audited')"
+    ).fetchone()[0]
+    superseded = conn.execute(
+        "SELECT COUNT(*) FROM claims WHERE status = 'superseded'"
+    ).fetchone()[0]
+    turns = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
+    profiles = conn.execute("SELECT COUNT(*) FROM profiles").fetchone()[0]
+    digests = conn.execute("SELECT COUNT(*) FROM session_digests").fetchone()[0]
+    events = conn.execute("SELECT COUNT(*) FROM life_events").fetchone()[0]
+
+    return {
+        "active_claims": active,
+        "superseded_claims": superseded,
+        "turns": turns,
+        "profiles": profiles,
+        "session_digests": digests,
+        "life_events": events,
+        "retrieval_surface": active,
+        "provenance_depth": active + superseded,
     }
 
 
@@ -250,7 +343,7 @@ def _capture_page(
     """
     import hashlib
 
-    from playwright.sync_api import sync_playwright
+    from patchright.sync_api import sync_playwright
 
     with sync_playwright() as p:
         if connect_browser:

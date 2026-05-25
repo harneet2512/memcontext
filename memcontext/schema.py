@@ -124,6 +124,7 @@ class Claim:
     char_end: int | None = None
     valid_from_ts: int | None = None
     valid_until_ts: int | None = None
+    event_ts: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +189,7 @@ CREATE TABLE IF NOT EXISTS claims (
     char_end          INTEGER,
     valid_from_ts     INTEGER,
     valid_until_ts    INTEGER,
+    event_ts          INTEGER,
     CHECK (
         valid_until_ts IS NULL
         OR valid_from_ts IS NULL
@@ -281,6 +283,43 @@ CREATE TABLE IF NOT EXISTS event_frame_embeddings (
     embedding_model_version TEXT NOT NULL,
     embedded_at_unix        INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS claim_entities (
+    claim_id    TEXT NOT NULL REFERENCES claims(claim_id) ON DELETE CASCADE,
+    entity_text TEXT NOT NULL,
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('person','organization','location','proper_noun')),
+    PRIMARY KEY (claim_id, entity_text)
+);
+CREATE INDEX IF NOT EXISTS idx_claim_entities_text ON claim_entities(entity_text);
+
+CREATE TABLE IF NOT EXISTS profiles (
+    subject         TEXT PRIMARY KEY,
+    profile_text    TEXT NOT NULL,
+    profile_data    TEXT NOT NULL,
+    claim_count     INTEGER NOT NULL,
+    session_count   INTEGER NOT NULL,
+    built_at_ts     INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_digests (
+    session_id      TEXT PRIMARY KEY,
+    digest_text     TEXT NOT NULL,
+    digest_data     TEXT NOT NULL,
+    claim_count     INTEGER NOT NULL,
+    built_at_ts     INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS life_events (
+    event_id            TEXT PRIMARY KEY,
+    subject             TEXT NOT NULL,
+    timestamp_start     INTEGER NOT NULL,
+    timestamp_end       INTEGER NOT NULL,
+    claim_ids           TEXT NOT NULL,
+    predicates_affected TEXT NOT NULL,
+    summary_text        TEXT NOT NULL,
+    significance        REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_life_events_subject ON life_events(subject);
 """
 
 
@@ -302,5 +341,13 @@ def open_database(path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
 
     conn.executescript(_SCHEMA_SQL)
+
+    try:
+        conn.execute(
+            "ALTER TABLE claim_metadata ADD COLUMN importance_score REAL DEFAULT 0.5"
+        )
+    except sqlite3.OperationalError:
+        pass
+
     log.debug("substrate.db_opened", path=str(path))
     return conn

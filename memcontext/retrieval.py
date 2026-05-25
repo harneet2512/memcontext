@@ -24,7 +24,7 @@ import os
 import sqlite3
 import struct
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -53,6 +53,21 @@ CACHE_DIR_ENV = "SUBSTRATE_EMBED_CACHE_DIR"
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "substrate" / "embeddings"
 
 DEFAULT_TOP_K: int = 20
+
+_BUILTIN_WEIGHTS = (0.5, 0.2, 0.1, 0.2)  # semantic, entity, temporal, BM25
+
+
+def _default_weights() -> tuple[float, ...]:
+    """Read retrieval weights from MEMCONTEXT_RETRIEVAL_WEIGHTS or use built-in defaults."""
+    raw = os.environ.get("MEMCONTEXT_RETRIEVAL_WEIGHTS", "").strip()
+    if raw:
+        try:
+            parts = [float(x.strip()) for x in raw.split(",")]
+            if len(parts) >= 3:
+                return tuple(parts)
+        except ValueError:
+            log.warning("substrate.bad_retrieval_weights", raw=raw)
+    return _BUILTIN_WEIGHTS
 
 
 # --- dataclasses -------------------------------------------------------------
@@ -422,12 +437,156 @@ def _filter_by_branch(claims: list[Claim], branch: str) -> list[Claim]:
     return [c for c in claims if c.predicate in allowed]
 
 
+# --- temporal parsing ---------------------------------------------------------
+
+import re as _re
+from datetime import datetime, timedelta, timezone
+
+_TEMPORAL_PATTERNS: list[tuple[str, str]] = [
+    (r"(?:last|past)\s+(\d+)\s+days?", "last_n_days"),
+    (r"(?:last|past)\s+(\d+)\s+weeks?", "last_n_weeks"),
+    (r"(?:last|past)\s+(\d+)\s+months?", "last_n_months"),
+    (r"(?:last|past)\s+week\b", "last_week"),
+    (r"(?:last|past)\s+month\b", "last_month"),
+    (r"(?:last|past)\s+year\b", "last_year"),
+    (r"\byesterday\b", "yesterday"),
+    (r"\bthis\s+week\b", "this_week"),
+    (r"(\d+)\s+weeks?\s+ago", "n_weeks_ago"),
+    (r"(\d+)\s+months?\s+ago", "n_months_ago"),
+    (r"(\d+)\s+days?\s+ago", "n_days_ago"),
+]
+
+
+def parse_temporal_scope(
+    query: str,
+    reference_ts: int | None = None,
+) -> tuple[int | None, int | None]:
+    """Extract a temporal window from a query string.
+
+    Returns (start_ns, end_ns) in nanoseconds, or (None, None) if no
+    temporal expression is found.
+    """
+    if reference_ts is None:
+        reference_ts = int(time.time() * 1e9)
+
+    ref_dt = datetime.fromtimestamp(reference_ts / 1e9, tz=timezone.utc)
+    q_lower = query.lower()
+
+    for pattern, kind in _TEMPORAL_PATTERNS:
+        m = _re.search(pattern, q_lower)
+        if not m:
+            continue
+
+        start_dt: datetime
+        end_dt: datetime = ref_dt
+
+        if kind == "yesterday":
+            start_dt = ref_dt - timedelta(days=1)
+            end_dt = ref_dt
+        elif kind == "last_week":
+            start_dt = ref_dt - timedelta(weeks=1)
+        elif kind == "last_month":
+            start_dt = ref_dt - timedelta(days=30)
+        elif kind == "last_year":
+            start_dt = ref_dt - timedelta(days=365)
+        elif kind == "this_week":
+            start_dt = ref_dt - timedelta(days=ref_dt.weekday())
+        elif kind == "last_n_days":
+            start_dt = ref_dt - timedelta(days=int(m.group(1)))
+        elif kind == "last_n_weeks":
+            start_dt = ref_dt - timedelta(weeks=int(m.group(1)))
+        elif kind == "last_n_months":
+            start_dt = ref_dt - timedelta(days=int(m.group(1)) * 30)
+        elif kind == "n_weeks_ago":
+            n = int(m.group(1))
+            start_dt = ref_dt - timedelta(weeks=n)
+            end_dt = ref_dt - timedelta(weeks=max(n - 1, 0))
+        elif kind == "n_months_ago":
+            n = int(m.group(1))
+            start_dt = ref_dt - timedelta(days=n * 30)
+            end_dt = ref_dt - timedelta(days=max(n - 1, 0) * 30)
+        elif kind == "n_days_ago":
+            n = int(m.group(1))
+            start_dt = ref_dt - timedelta(days=n)
+            end_dt = ref_dt - timedelta(days=max(n - 1, 0))
+        else:
+            continue
+
+        return (int(start_dt.timestamp() * 1e9), int(end_dt.timestamp() * 1e9))
+
+    return (None, None)
+
+
+# --- query depth routing -----------------------------------------------------
+
+_AGGREGATION_KEYWORDS = frozenset({
+    "how many", "list all", "all the", "every", "count",
+    "summarize", "overview", "history", "timeline",
+    "throughout", "across all",
+})
+
+_TEMPORAL_QUERY_KEYWORDS = frozenset({
+    "when", "last time", "first time", "how long ago",
+    "most recent", "latest", "earliest",
+})
+
+
+def classify_query_depth(query: str) -> tuple[str, int]:
+    """Classify query type and return recommended top_k."""
+    q_lower = query.lower().strip()
+    for kw in _AGGREGATION_KEYWORDS:
+        if kw in q_lower:
+            return ("aggregation", 50)
+    for kw in _TEMPORAL_QUERY_KEYWORDS:
+        if kw in q_lower:
+            return ("temporal", 30)
+    return ("factual", 15)
+
+
+# --- predicate-aware query routing -------------------------------------------
+
+_QUERY_PREDICATE_MAP: list[tuple[tuple[str, ...], set[str], str]] = [
+    (("recommend", "suggest", "advise", "told me to", "assistant said",
+      "assistant told", "you said", "you told", "you recommend", "did you",
+      "remind me of", "remind me what"),
+     {"assistant_recommendation", "assistant_action"}, "assistant_recall"),
+    (("prefer", "like", "want", "favorite", "enjoy", "hobby", "interest"),
+     {"user_preference"}, "preference"),
+    (("when", "timeline", "order", "sequence", "date", "how long"),
+     {"user_event"}, "temporal"),
+    (("changed", "updated", "used to", "switched", "current", "latest"),
+     {"user_fact", "user_preference"}, "knowledge_update"),
+    (("goal", "plan", "trying to", "working on", "aim"),
+     {"user_goal"}, "fact_recall"),
+]
+
+
+def classify_query_predicates(query: str) -> tuple[set[str], str]:
+    """Map a query to target predicate families and a query type label.
+
+    Returns (target_predicates, query_type). Both are deterministic —
+    no LLM call.
+    """
+    q_lower = query.lower()
+    matched_preds: set[str] = set()
+    query_type = "fact_recall"
+    for keywords, predicates, qtype in _QUERY_PREDICATE_MAP:
+        for kw in keywords:
+            if kw in q_lower:
+                matched_preds |= predicates
+                query_type = qtype
+                break
+    return matched_preds, query_type
+
+
 # --- multi-signal retrieval (RRF) --------------------------------------------
 
 RRF_K: int = 60
 
 
 def _claim_recency_ts(c: Claim) -> int:
+    if c.event_ts is not None:
+        return c.event_ts
     return c.valid_from_ts if c.valid_from_ts is not None else c.created_ts
 
 
@@ -487,14 +646,22 @@ def retrieve_hybrid(
     query: str,
     entity_hint: str | None = None,
     top_k: int = 20,
-    valid_at_ts: int | None = None,  # noqa: ARG001
-    weights: tuple[float, ...] = (1.0, 1.0, 1.0),
+    valid_at_ts: int | None = None,
+    weights: tuple[float, ...] | None = None,
     embedding_client: EmbeddingClient | None = None,
     include_superseded: bool = False,
+    reranker: Callable[[str, list[str]], list[float]] | None = None,
 ) -> list[tuple[Claim, float]]:
-    """Multi-signal retrieval: semantic + entity + temporal + BM25 via RRF."""
+    """Multi-signal retrieval: semantic + entity + temporal + BM25 via RRF.
+
+    If ``reranker`` is provided, the top results from RRF are re-scored by
+    the reranker and re-sorted.  The callable signature is
+    ``(query, list_of_texts) -> list_of_scores`` (higher = more relevant).
+    """
     if not query or not query.strip():
         return []
+
+    weights = weights or _default_weights()
 
     effective = embedding_client or EmbeddingClient()
     model_version = effective.model_version
@@ -504,6 +671,8 @@ def retrieve_hybrid(
         active = list_claims_with_lifecycle(conn, session_id, "historical_truth")
     else:
         active = list_active_claims(conn, session_id)
+    if valid_at_ts is not None:
+        active = [c for c in active if _claim_valid_at(c, valid_at_ts)]
     if not active:
         return []
 
@@ -521,10 +690,18 @@ def retrieve_hybrid(
             continue
         embedding_by_id[row["claim_id"]] = (vec, row["embedding_model_version"])
 
-    q_vec = effective.embed([query])[0]
+    has_embeddings = bool(embedding_by_id)
+    if has_embeddings:
+        q_vec: list[float] | None = effective.embed([query])[0]
+    else:
+        q_vec = None
+        log.debug("substrate.retrieve_hybrid_no_embeddings", session_id=session_id)
 
     sem_scores: list[float] = []
     for c in active:
+        if q_vec is None:
+            sem_scores.append(0.0)
+            continue
         entry = embedding_by_id.get(c.claim_id)
         if entry is None:
             sem_scores.append(0.0)
@@ -553,18 +730,73 @@ def retrieve_hybrid(
         match = (hint_norm and ek == hint_norm) or _entity_in_query(query_norm, ek)
         ent_scores.append(1.0 if match else 0.0)
 
+    try:
+        from memcontext.entities import extract_entities
+        entity_rows = conn.execute(
+            f"SELECT claim_id, entity_text FROM claim_entities WHERE claim_id IN ({placeholders})",
+            ids,
+        ).fetchall()
+        entities_by_claim: dict[str, set[str]] = {}
+        for r in entity_rows:
+            entities_by_claim.setdefault(r["claim_id"], set()).add(r["entity_text"])
+        query_entities = {e.text.lower() for e in extract_entities(query)}
+        query_words = set(query_norm.split())
+        match_set = query_entities | query_words
+        for i, c in enumerate(active):
+            claim_ents = entities_by_claim.get(c.claim_id, set())
+            if claim_ents & match_set:
+                ent_scores[i] = max(ent_scores[i], 1.0)
+    except Exception:  # noqa: BLE001
+        pass
+
     tmp_scores: list[float] = [float(_claim_recency_ts(c)) for c in active]
     bm25_raw = _bm25_scores(_tokenize_for_bm25(query), active)
+
+    scope_start, scope_end = parse_temporal_scope(query)
+    scope_scores: list[float] = []
+    if scope_start is not None and scope_end is not None:
+        for c in active:
+            ts = _claim_recency_ts(c)
+            scope_scores.append(1.0 if scope_start <= ts <= scope_end else 0.0)
+        w_scope = 0.3
+    else:
+        scope_scores = [0.0] * len(active)
+        w_scope = 0.0
+
+    target_preds, _query_type = classify_query_predicates(query)
+    if target_preds:
+        pred_scores: list[float] = [1.0 if c.predicate in target_preds else 0.0 for c in active]
+        w_pred = 0.2
+    else:
+        pred_scores = [0.0] * len(active)
+        w_pred = 0.0
+
+    conf_scores: list[float] = [c.confidence for c in active]
+
+    freq_counts: dict[tuple[str, str], int] = {}
+    for c in active:
+        key = (c.subject, c.predicate)
+        freq_counts[key] = freq_counts.get(key, 0) + 1
+    freq_scores: list[float] = [float(freq_counts[(c.subject, c.predicate)]) for c in active]
 
     sem_ranks = _rrf_ranks(sem_scores)
     ent_ranks = _rrf_ranks(ent_scores)
     tmp_ranks = _rrf_ranks(tmp_scores)
     bm25_ranks = _rrf_ranks(bm25_raw)
+    scope_ranks = _rrf_ranks(scope_scores)
+    pred_ranks = _rrf_ranks(pred_scores)
+    conf_ranks = _rrf_ranks(conf_scores)
+    freq_ranks = _rrf_ranks(freq_scores)
 
     w_sem = weights[0] if len(weights) > 0 else 1.0
     w_ent = weights[1] if len(weights) > 1 else 1.0
     w_tmp = weights[2] if len(weights) > 2 else 1.0
     w_bm25 = weights[3] if len(weights) > 3 else 0.0
+    w_conf = 0.1
+    w_freq = 0.1
+
+    if not has_embeddings:
+        w_sem = 0.0
 
     fused: list[tuple[Claim, float]] = []
     for i, c in enumerate(active):
@@ -573,11 +805,297 @@ def retrieve_hybrid(
             + w_ent / (RRF_K + ent_ranks[i])
             + w_tmp / (RRF_K + tmp_ranks[i])
             + w_bm25 / (RRF_K + bm25_ranks[i])
+            + w_scope / (RRF_K + scope_ranks[i])
+            + w_pred / (RRF_K + pred_ranks[i])
+            + w_conf / (RRF_K + conf_ranks[i])
+            + w_freq / (RRF_K + freq_ranks[i])
         )
         fused.append((c, fused_score))
 
     fused.sort(key=lambda x: (-x[1], x[0].claim_id))
+
+    if reranker is not None:
+        candidates = fused[:top_k]
+        texts = [claim_retrieval_text(c) for c, _ in candidates]
+        try:
+            rerank_scores = reranker(query, texts)
+            candidates = [
+                (c, float(rs)) for (c, _), rs in zip(candidates, rerank_scores)
+            ]
+            candidates.sort(key=lambda x: (-x[1], x[0].claim_id))
+        except Exception:
+            log.warning("reranker failed, falling back to RRF order")
+        return candidates
+
     return fused[:top_k]
+
+
+# --- deterministic query expansion -------------------------------------------
+
+
+_STOPWORDS = frozenset(
+    "i me my we our you your he she it they them the a an is are was were "
+    "be been have has had do did does will would can could should may might "
+    "in on at to for of with from by about into through during before after "
+    "and or but not no nor so if then than that this these those what which "
+    "who whom how when where why all any each every some many much more most "
+    "very also just only even still already yet again too quite really".split()
+)
+
+
+def _extract_query_entities(query: str) -> list[str]:
+    """Extract likely entity words from a query (deterministic, no LLM)."""
+    tokens = _re.findall(r"[a-z0-9]+", query.lower())
+    return [t for t in tokens if t not in _STOPWORDS and len(t) > 1]
+
+
+def retrieve_expanded(
+    conn: sqlite3.Connection,
+    *,
+    session_id: str,
+    query: str,
+    top_k: int = 50,
+    weights: tuple[float, ...] | None = None,
+    embedding_client: EmbeddingClient | None = None,
+    max_expansions: int = 3,
+) -> list[tuple[Claim, float]]:
+    """Expand query with related claim subjects, merge multiple retrievals.
+
+    1. Run primary retrieval with the original query.
+    2. Extract entity-like words from the query.
+    3. Find claim subjects that contain those words.
+    4. Run sub-queries for each matched subject (up to max_expansions).
+    5. Merge all results, deduplicate, re-sort by best score.
+    """
+    primary = retrieve_hybrid(
+        conn,
+        session_id=session_id,
+        query=query,
+        top_k=top_k,
+        weights=weights,
+        embedding_client=embedding_client,
+    )
+
+    seen: dict[str, float] = {c.claim_id: s for c, s in primary}
+    all_results: list[tuple[Claim, float]] = list(primary)
+
+    entity_words = _extract_query_entities(query)
+    if not entity_words:
+        return primary
+
+    active = list_active_claims(conn, session_id)
+    subjects = {c.subject for c in active}
+
+    expansion_subjects: list[str] = []
+    for subj in subjects:
+        subj_lower = subj.lower().replace("_", " ")
+        if any(w in subj_lower for w in entity_words):
+            expansion_subjects.append(subj)
+
+    for subj in expansion_subjects[:max_expansions]:
+        sub_results = retrieve_hybrid(
+            conn,
+            session_id=session_id,
+            query=f"{subj} {query}",
+            top_k=top_k // 2,
+            weights=weights,
+            embedding_client=embedding_client,
+        )
+        for c, s in sub_results:
+            if c.claim_id not in seen or s > seen[c.claim_id]:
+                seen[c.claim_id] = s
+                all_results.append((c, s))
+
+    deduped: dict[str, tuple[Claim, float]] = {}
+    for c, s in all_results:
+        if c.claim_id not in deduped or s > deduped[c.claim_id][1]:
+            deduped[c.claim_id] = (c, s)
+
+    result = sorted(deduped.values(), key=lambda x: (-x[1], x[0].claim_id))
+    return result[:top_k]
+
+
+# --- context expansion -------------------------------------------------------
+
+
+def expand_claim_context(
+    conn: sqlite3.Connection,
+    claim: Claim,
+    *,
+    window: int = 2,
+) -> list[Any]:
+    """Fetch neighboring turns around a claim's source turn.
+
+    Returns up to *window* turns before and after the source turn
+    (by timestamp within the same session), plus the source turn itself.
+    """
+    from memcontext.claims import get_turn
+    from memcontext.schema import Speaker, Turn
+
+    source_turn = get_turn(conn, claim.source_turn_id)
+    if source_turn is None:
+        return []
+
+    rows = conn.execute(
+        "SELECT * FROM turns WHERE session_id = ? ORDER BY ts ASC",
+        (source_turn.session_id,),
+    ).fetchall()
+
+    turns: list[Turn] = []
+    source_idx: int | None = None
+    for i, row in enumerate(rows):
+        t = Turn(
+            turn_id=row["turn_id"],
+            session_id=row["session_id"],
+            speaker=Speaker(row["speaker"]),
+            text=row["text"],
+            ts=row["ts"],
+            asr_confidence=row["asr_confidence"],
+        )
+        turns.append(t)
+        if row["turn_id"] == source_turn.turn_id:
+            source_idx = i
+
+    if source_idx is None:
+        return [source_turn]
+
+    start = max(0, source_idx - window)
+    end = min(len(turns), source_idx + window + 1)
+    return turns[start:end]
+
+
+# --- multi-resolution retrieval ----------------------------------------------
+
+
+def search_raw_turns(
+    conn: sqlite3.Connection,
+    session_id: str,
+    query: str,
+    *,
+    top_k: int = 15,
+) -> list[tuple[Any, float]]:
+    """BM25 search over raw turn text as retrieval fallback."""
+    from memcontext.schema import Speaker, Turn
+
+    rows = conn.execute(
+        "SELECT * FROM turns WHERE session_id = ? ORDER BY ts ASC",
+        (session_id,),
+    ).fetchall()
+
+    turns: list[Turn] = []
+    for row in rows:
+        t = Turn(
+            turn_id=row["turn_id"],
+            session_id=row["session_id"],
+            speaker=Speaker(row["speaker"]),
+            text=row["text"],
+            ts=row["ts"],
+            asr_confidence=row["asr_confidence"],
+        )
+        turns.append(t)
+
+    if not turns:
+        return []
+
+    query_tokens = _tokenize_for_bm25(query)
+    if not query_tokens:
+        return []
+
+    # BM25 scoring over turn texts (same formula as _bm25_scores)
+    doc_token_lists = [_tokenize_for_bm25(t.text) for t in turns]
+    n = len(doc_token_lists)
+    avgdl = sum(len(d) for d in doc_token_lists) / max(n, 1)
+
+    k1 = 1.2
+    b = 0.75
+
+    # Document frequency for each query token
+    df: dict[str, int] = {}
+    for qt in set(query_tokens):
+        df[qt] = sum(1 for d in doc_token_lists if qt in d)
+
+    scored: list[tuple[Turn, float]] = []
+    for turn, doc_tokens in zip(turns, doc_token_lists, strict=True):
+        score = 0.0
+        dl = len(doc_tokens)
+        tf_map: dict[str, int] = {}
+        for token in doc_tokens:
+            tf_map[token] = tf_map.get(token, 0) + 1
+        for qt in query_tokens:
+            if qt not in df or df[qt] == 0:
+                continue
+            idf = math.log((n - df[qt] + 0.5) / (df[qt] + 0.5) + 1.0)
+            tf = tf_map.get(qt, 0)
+            score += idf * tf * (k1 + 1.0) / (tf + k1 * (1.0 - b + b * dl / max(avgdl, 1e-9)))
+        scored.append((turn, score))
+
+    scored.sort(key=lambda x: -x[1])
+    return scored[:top_k]
+
+
+def retrieve_with_fallback(
+    conn: sqlite3.Connection,
+    session_id: str,
+    query: str,
+    *,
+    top_k: int = 15,
+    embedding_client: "EmbeddingClient | None" = None,
+) -> list[dict[str, Any]]:
+    """Multi-resolution retrieval: claims first, raw turns as fallback."""
+    claim_results = retrieve_hybrid(
+        conn,
+        session_id=session_id,
+        query=query,
+        top_k=top_k,
+        embedding_client=embedding_client,
+    )
+
+    # If claims are sufficient, return claims only
+    if len(claim_results) >= 3 and claim_results[0][1] >= 0.3:
+        return [
+            {
+                "type": "claim",
+                "text": f"[{c.predicate}] {c.subject}: {c.value}",
+                "score": score,
+                "claim_id": c.claim_id,
+                "source_turn_id": c.source_turn_id,
+            }
+            for c, score in claim_results
+        ]
+
+    # Fallback: also search raw turns
+    turn_results = search_raw_turns(conn, session_id, query, top_k=top_k)
+
+    # Build merged result list
+    merged: list[dict[str, Any]] = []
+
+    # Collect source_turn_ids from claims for deduplication
+    claim_source_turn_ids: set[str] = set()
+    for c, score in claim_results:
+        claim_source_turn_ids.add(c.source_turn_id)
+        merged.append({
+            "type": "claim",
+            "text": f"[{c.predicate}] {c.subject}: {c.value}",
+            "score": score,
+            "claim_id": c.claim_id,
+            "source_turn_id": c.source_turn_id,
+        })
+
+    # Add turns, skipping those already represented by a claim
+    for t, score in turn_results:
+        if t.turn_id in claim_source_turn_ids:
+            continue
+        merged.append({
+            "type": "turn",
+            "text": t.text,
+            "score": score,
+            "turn_id": t.turn_id,
+            "speaker": t.speaker.value,
+        })
+
+    # Sort merged by score descending
+    merged.sort(key=lambda x: -x["score"])
+    return merged[:top_k]
 
 
 # --- temporal-window event-tuple retrieval -----------------------------------
@@ -771,4 +1289,6 @@ __all__ = [
     "retrieve_event_tuples",
     "retrieve_hybrid",
     "retrieve_relevant_claims",
+    "retrieve_with_fallback",
+    "search_raw_turns",
 ]

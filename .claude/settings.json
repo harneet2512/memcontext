@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "memcontext": {
+      "command": "python",
+      "args": ["-c", "from memcontext.mcp_server import run_server; run_server(db_path='D:/memcontext/memcontext.db')"],
+      "cwd": "D:/memcontext"
+    }
+  },
+  "hooks": {}
+}

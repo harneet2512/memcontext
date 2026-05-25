@@ -16,6 +16,7 @@ validation, and char span resolution logic.
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 
@@ -58,12 +59,16 @@ pronouns and references.
 2. **One fact per claim**. If a turn contains multiple independent facts,
    emit multiple claims.
 
-3. **Extract from both speakers**. Emit claims about the user or world
-   state regardless of who said it. When the assistant states a fact
-   about the user ("Your appointment is at 3 PM"), emit it. When the
-   assistant provides a recommendation the user accepted, emit it.
-   The subject should be the entity the fact is about (usually "user"),
-   not the speaker.
+3. **Extract from both speakers**. Emit claims regardless of who said it.
+   - When the assistant states a fact about the user ("Your appointment
+     is at 3 PM"), emit with `predicate=user_fact` or `user_event`.
+   - When the assistant recommends, suggests, or advises something,
+     emit with `predicate=assistant_recommendation`, `subject="assistant"`.
+   - When the assistant performs an action (looks up info, calculates,
+     creates something), emit with `predicate=assistant_action`,
+     `subject="assistant"`.
+   - When the user states a fact about themselves, use user_* predicates
+     as normal.
 
 4. **Resolve coreference**. Replace pronouns and references with the
    actual entities using prior turns as context. "He moved there" should
@@ -79,6 +84,15 @@ pronouns and references.
 6. **Negations / denials**. When the speaker denies or dislikes something,
    emit a claim with value `dislikes:<thing>` for preferences or a clear
    negation in the value.
+
+6a. **Implicit preferences**. When a user's behavior, repeated choices, or
+    context implies a preference without explicitly stating "I prefer",
+    extract the preference with moderate confidence (0.6–0.8). Signals:
+    habitual actions ("I always", "I usually", "I tend to"), tool/tech
+    choices ("I use X for everything"), abandoned alternatives ("I gave up
+    on X", "I switched from X to Y"), hedged dislikes ("I don't really
+    like", "not a fan of"). Do NOT extract preferences from one-time
+    actions, hypotheticals, or general-knowledge statements.
 
 7. **Honesty over fluency**. If the turn is ambiguous, emit with low
    confidence (≤ 0.5) or emit an empty list. NEVER fabricate.
@@ -101,10 +115,14 @@ pronouns and references.
 ## Output schema
 
 ```json
-[{{"subject": "str", "predicate": "str", "value": "str", "confidence": float}}]
+{{"claims": [{{"subject": "str", "predicate": "str", "value": "str", "confidence": float}}], "entities": [{{"name": "str", "type": "person|organization|location|product"}}]}}
 ```
 
-Return a JSON array (possibly empty). No commentary. No markdown.
+Return a JSON object with a "claims" array (possibly empty) and an "entities" array.
+The "entities" array lists only proper nouns — people, companies, places, products. Skip pronouns and generic terms. If none, use an empty array.
+
+List only proper nouns — people, companies, places, products. Skip pronouns and
+generic terms. If no named entities, output "ENTITIES:" with nothing after it.
 
 ## Domain examples (from active pack)
 
@@ -137,6 +155,20 @@ _BUILTIN_EXAMPLES = [
         "prior": "    user: When is my dentist appointment again?\n    assistant: Let me check.",
         "current": '    assistant: Your dentist appointment is scheduled for Tuesday at 3 PM with Dr. Chen.',
         "output": '[{"subject": "user", "predicate": "user_event", "value": "dentist appointment Tuesday 3 PM with Dr. Chen", "confidence": 0.92}]',
+    },
+    {
+        "name": "assistant_recommends",
+        "scenario": "Assistant provides a recommendation or suggestion.",
+        "prior": "    user: I'm visiting Bandung next week. Where should I eat?",
+        "current": "    assistant: I'd recommend Miss Bee Providore in Cihampeulas — great brunch spot with Western and Indonesian fusion dishes.",
+        "output": '[{"subject": "assistant", "predicate": "assistant_recommendation", "value": "recommended Miss Bee Providore in Cihampeulas, Bandung for brunch", "confidence": 0.93}]',
+    },
+    {
+        "name": "assistant_provides_info",
+        "scenario": "Assistant looks up or provides specific information the user asked for.",
+        "prior": "    user: What's the phone number for the Speyer tourism board?",
+        "current": "    assistant: The Speyer tourism board can be reached at +49 (0) 62 32 / 14 23 - 0.",
+        "output": '[{"subject": "assistant", "predicate": "assistant_action", "value": "provided Speyer tourism board phone number: +49 (0) 62 32 / 14 23 - 0", "confidence": 0.95}]',
     },
     {
         "name": "third_party_fact",
@@ -173,6 +205,20 @@ _BUILTIN_EXAMPLES = [
         "current": "    user: I always get the same thing — cappuccino with oat milk.",
         "output": '[{"subject": "user", "predicate": "user_preference", "value": "regular coffee order: cappuccino with oat milk", "confidence": 0.92}]',
     },
+    {
+        "name": "implicit_preference_from_choice",
+        "scenario": "User reveals a preference through a specific choice pattern.",
+        "prior": "    assistant: How do you usually commute to work?",
+        "current": "    user: I bike most days. Takes about 20 minutes. I have a parking spot but I just never use it.",
+        "output": '[{"subject": "user", "predicate": "user_preference", "value": "prefers biking to work over driving", "confidence": 0.78}, {"subject": "user", "predicate": "user_fact", "value": "commute time: ~20 minutes by bike", "confidence": 0.93}]',
+    },
+    {
+        "name": "implicit_preference_from_context",
+        "scenario": "User implicitly reveals a preference within a factual statement.",
+        "prior": "",
+        "current": "    user: I switched all my personal projects to Rust about a year ago. The type system just catches so many bugs.",
+        "output": '[{"subject": "user", "predicate": "user_preference", "value": "prefers Rust for personal projects, values strong type system", "confidence": 0.82}, {"subject": "user", "predicate": "user_event", "value": "switched personal projects to Rust ~1 year ago", "confidence": 0.90}]',
+    },
 ]
 
 
@@ -206,6 +252,58 @@ def _render_examples(examples: tuple) -> str:
             f"Expected output:\n{ex.expected_output}\n"
         )
     return "\n\n".join(blocks)
+
+
+# ---------------------------------------------------------------------------
+# Entity parsing from LLM response
+# ---------------------------------------------------------------------------
+
+_ENTITY_LINE_RE = re.compile(r"^-\s+(.+?)\s*\(type:\s*(person|organization|location|product)\)", re.IGNORECASE)
+
+
+def _split_entities(content: str) -> tuple[str, str]:
+    """Split LLM response into claims part and entities part.
+
+    Handles both the legacy text format (ENTITIES: marker) and the newer
+    unified JSON format where claims and entities are sibling keys.
+    """
+    try:
+        parsed = json.loads(content)
+        if isinstance(parsed, dict) and "entities" in parsed:
+            entities_val = parsed["entities"]
+            claims_part = json.dumps(parsed.get("claims", []))
+            if isinstance(entities_val, list):
+                return claims_part, json.dumps(entities_val)
+            return claims_part, ""
+    except (json.JSONDecodeError, TypeError):
+        pass
+    marker = "ENTITIES:"
+    idx = content.find(marker)
+    if idx == -1:
+        return content, ""
+    return content[:idx].strip(), content[idx + len(marker):].strip()
+
+
+def _parse_entity_lines(text: str) -> list[dict[str, str]]:
+    """Parse entities from text lines or JSON array."""
+    entities: list[dict[str, str]] = []
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            for ent in parsed:
+                if isinstance(ent, dict):
+                    name = ent.get("name", ent.get("text", ""))
+                    etype = ent.get("type", "unknown")
+                    if name:
+                        entities.append({"text": str(name), "type": str(etype).lower()})
+            return entities
+    except (json.JSONDecodeError, TypeError):
+        pass
+    for line in text.strip().splitlines():
+        m = _ENTITY_LINE_RE.match(line.strip())
+        if m:
+            entities.append({"text": m.group(1).strip(), "type": m.group(2).lower()})
+    return entities
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +469,7 @@ class LLMExtractor:
         model: str | None = None,
         base_url: str | None = None,
         api_key: str | None = None,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ) -> None:
         import os
 
@@ -380,6 +478,8 @@ class LLMExtractor:
         self._system_prompt: str | None = None
         self._allowed_predicates: frozenset[str] | None = None
         self._prior_turns: list[Turn] = []
+        self._last_entities: list[dict[str, str]] = []
+        self._response_cache: dict[str, str] = {}
 
         if self._backend == "ollama":
             self._model = model or os.environ.get("MEMCONTEXT_EXTRACTOR_MODEL", "qwen3:8b")
@@ -431,9 +531,11 @@ class LLMExtractor:
         user_content = ""
         if prior:
             prior_lines = []
-            for pt in prior[-4:]:
+            _ctx_window = int(os.environ.get("MEMCONTEXT_CONTEXT_WINDOW", "8"))
+            _ctx_chars = int(os.environ.get("MEMCONTEXT_CONTEXT_CHARS", "500"))
+            for pt in prior[-_ctx_window:]:
                 pt_speaker = pt.speaker.value if hasattr(pt.speaker, "value") else str(pt.speaker)
-                pt_text = (pt.text or "")[:300]
+                pt_text = (pt.text or "")[:_ctx_chars]
                 prior_lines.append(f"    {pt_speaker}: {pt_text}")
             user_content += "Prior turns:\n" + "\n".join(prior_lines) + "\n\n"
         user_content += f"Current turn:\n    {speaker_label}: {text}"
@@ -442,6 +544,14 @@ class LLMExtractor:
             {"role": "system", "content": self._system_prompt},
             {"role": "user", "content": user_content},
         ]
+
+        cache_key = user_content
+        if cache_key in self._response_cache:
+            content = self._response_cache[cache_key]
+            claims_text, entities_text = _split_entities(content)
+            raw_claims = _parse_claims(claims_text)
+            self._last_entities = _parse_entity_lines(entities_text)
+            return _to_extracted_claims(raw_claims, turn, self._allowed_predicates)
 
         try:
             if self._backend == "ollama":
@@ -457,7 +567,10 @@ class LLMExtractor:
             )
             return []
 
-        raw_claims = _parse_claims(content)
+        self._response_cache[cache_key] = content
+        claims_text, entities_text = _split_entities(content)
+        raw_claims = _parse_claims(claims_text)
+        self._last_entities = _parse_entity_lines(entities_text)
         return _to_extracted_claims(raw_claims, turn, self._allowed_predicates)
 
     def _call_ollama(self, messages: list[dict]) -> str:
@@ -478,24 +591,43 @@ class LLMExtractor:
         return resp.json().get("message", {}).get("content", "{}")
 
     def _call_openrouter(self, messages: list[dict]) -> str:
+        import time
+
         import requests
 
         if not self._api_key:
             raise ValueError(
                 "MEMCONTEXT_EXTRACTOR_API_KEY required for openrouter backend."
             )
-        resp = requests.post(
-            self._base_url,
-            headers={"Authorization": f"Bearer {self._api_key}"},
-            json={
-                "model": self._model,
-                "messages": messages,
-                "max_tokens": 500,
-                "temperature": 0.0,
-                "response_format": {"type": "json_object"},
-            },
-            timeout=self._timeout,
-        )
+        cached_messages = []
+        for msg in messages:
+            if msg.get("role") == "system":
+                cached_messages.append({
+                    **msg,
+                    "cache_control": {"type": "ephemeral"},
+                })
+            else:
+                cached_messages.append(msg)
+        payload = {
+            "model": self._model,
+            "messages": cached_messages,
+            "max_tokens": 1024,
+            "temperature": 0.0,
+            "response_format": {"type": "json_object"},
+        }
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "X-Title": "memcontext",
+        }
+        for attempt in range(6):
+            resp = requests.post(
+                self._base_url, headers=headers, json=payload,
+                timeout=self._timeout,
+            )
+            if resp.status_code != 429:
+                break
+            wait = min(2 ** attempt, 32)
+            time.sleep(wait)
         resp.raise_for_status()
         return resp.json().get("choices", [{}])[0].get("message", {}).get("content") or "{}"
 
@@ -593,12 +725,20 @@ class SimpleExtractor:
                     ))
 
         if not claims:
-            predicate = "user_fact" if "user_fact" in families else next(iter(families))
+            # Extract a topic keyword instead of dumping raw text as subject="user"
+            words = re.findall(r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|[A-Z]{2,}", text)
+            topic = words[0].lower().replace(" ", "_") if words else "general"
+            # Truncate to first sentence or 200 chars
+            first_sentence = re.split(r"[.!?\n]", text)[0].strip()
+            value = first_sentence[:200] if first_sentence else text[:200]
+            predicate = "observation" if "observation" in families else (
+                "user_fact" if "user_fact" in families else next(iter(families))
+            )
             claims.append(ExtractedClaim(
-                subject="user",
+                subject=topic,
                 predicate=predicate,
-                value=text,
-                confidence=0.5,
+                value=value,
+                confidence=0.4,
             ))
 
         return claims

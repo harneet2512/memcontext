@@ -78,6 +78,7 @@ def row_to_claim(row: sqlite3.Row) -> Claim:
         char_end=row["char_end"],
         valid_from_ts=row["valid_from_ts"] if "valid_from_ts" in keys else None,
         valid_until_ts=row["valid_until_ts"] if "valid_until_ts" in keys else None,
+        event_ts=row["event_ts"] if "event_ts" in keys else None,
     )
 
 
@@ -217,6 +218,7 @@ def insert_claim(
     status: ClaimStatus = ClaimStatus.ACTIVE,
     valid_from: int | None = None,
     valid_until: int | None = None,
+    event_ts: int | None = None,
     allowed_predicates: frozenset[str] | None = None,
 ) -> Claim:
     """Insert a new claim after validation.
@@ -253,8 +255,8 @@ def insert_claim(
     conn.execute(
         "INSERT INTO claims (claim_id, session_id, subject, predicate, value,"
         " value_normalised, confidence, source_turn_id, status, created_ts,"
-        " char_start, char_end, valid_from_ts, valid_until_ts)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " char_start, char_end, valid_from_ts, valid_until_ts, event_ts)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             cid,
             session_id,
@@ -270,6 +272,7 @@ def insert_claim(
             char_end,
             valid_from_ts,
             valid_until_ts,
+            event_ts,
         ),
     )
     conn.execute(
@@ -277,6 +280,16 @@ def insert_claim(
         " temporal_bin) VALUES (?, ?, ?, ?)",
         (cid, norm_subject, predicate, _temporal_bin(valid_from_ts)),
     )
+    try:
+        from memcontext.entities import extract_entities
+        for ent in extract_entities(f"{subject} {predicate} {value}"):
+            conn.execute(
+                "INSERT OR IGNORE INTO claim_entities (claim_id, entity_text, entity_type)"
+                " VALUES (?, ?, ?)",
+                (cid, ent.text.lower(), ent.entity_type),
+            )
+    except Exception:  # noqa: BLE001
+        pass
     log.info(
         "substrate.claim_inserted",
         session_id=session_id,
@@ -300,6 +313,7 @@ def insert_claim(
         char_end=char_end,
         valid_from_ts=valid_from_ts,
         valid_until_ts=valid_until_ts,
+        event_ts=event_ts,
     )
 
 
@@ -318,6 +332,8 @@ def set_claim_status(
     )
     if cur.rowcount == 0:
         raise ClaimValidationError(f"claim {claim_id!r} not found")
+    if status == ClaimStatus.SUPERSEDED:
+        conn.execute("DELETE FROM claim_embeddings WHERE claim_id = ?", (claim_id,))
     log.info(
         "substrate.claim_status_set",
         claim_id=claim_id,
@@ -397,6 +413,36 @@ def get_superseded_by(
         (claim_id,),
     ).fetchone()
     return row["new_claim_id"] if row is not None else None
+
+
+def get_supersession_chain(
+    conn: sqlite3.Connection, claim_id: str
+) -> list[tuple["Claim", str]]:
+    """Walk backwards from a claim through supersession edges.
+
+    Returns [(predecessor_claim, edge_type), ...] in chronological order
+    (oldest first). The input claim itself is NOT included.
+    """
+    chain: list[tuple[Claim, str]] = []
+    current = claim_id
+    visited: set[str] = set()
+    while current and current not in visited:
+        visited.add(current)
+        row = conn.execute(
+            "SELECT old_claim_id, edge_type FROM supersession_edges"
+            " WHERE new_claim_id = ?"
+            " ORDER BY created_ts DESC LIMIT 1",
+            (current,),
+        ).fetchone()
+        if row is None:
+            break
+        old_id = row["old_claim_id"]
+        old_claim = get_claim(conn, old_id)
+        if old_claim is not None:
+            chain.append((old_claim, row["edge_type"]))
+        current = old_id
+    chain.reverse()
+    return chain
 
 
 def find_same_identity_claim(

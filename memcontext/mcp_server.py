@@ -33,7 +33,9 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
         handle_memory_correct,
         handle_memory_observe,
         handle_memory_observe_url,
+        handle_memory_profile,
         handle_memory_query,
+        handle_memory_stats,
         handle_memory_store,
         handle_memory_trace,
     )
@@ -73,7 +75,7 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
             ),
             Tool(
                 name="memory_query",
-                description="Query active memory claims matching a question.",
+                description="Query the user's personal memory -- decisions, observations, bug tracking, project status, and context from their coding sessions, browser observations, and cross-tool workflows. Use this for anything about the user's own projects, preferences, or work history.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -164,6 +166,22 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
                     "required": ["url"],
                 },
             ),
+            Tool(
+                name="memory_profile",
+                description="Get the smart profile for a subject (default: 'user'). Returns a structured summary of key facts, preferences, and changes.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "subject": {"type": "string", "default": "user"},
+                        "max_tokens": {"type": "integer", "default": 500},
+                    },
+                },
+            ),
+            Tool(
+                name="memory_stats",
+                description="Get storage statistics: active claims, superseded claims, turns, profiles, digests, life events.",
+                inputSchema={"type": "object", "properties": {}},
+            ),
         ]
 
     @server.call_tool()
@@ -182,6 +200,10 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
             result = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: handle_memory_observe_url(conn, **arguments)
             )
+        elif name == "memory_profile":
+            result = handle_memory_profile(conn, **arguments)
+        elif name == "memory_stats":
+            result = handle_memory_stats(conn)
         else:
             result = {"error": f"Unknown tool: {name}"}
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
@@ -191,3 +213,117 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
             await server.run(read, write, server.create_initialization_options())
 
     asyncio.run(_run())
+
+
+def create_http_app(db_path: str = "memcontext.db"):
+    """Create a Starlette ASGI app that serves MCP over Streamable HTTP.
+
+    Mount this at /mcp on your FastAPI app:
+        app.mount("/mcp", create_http_app("memcontext.db"))
+
+    ChatGPT connects via: https://your-ngrok-url/mcp
+    """
+    from contextlib import asynccontextmanager
+
+    import anyio
+    from mcp.server import Server
+    from mcp.server.streamable_http import StreamableHTTPServerTransport
+    from mcp.types import TextContent, Tool
+    from starlette.applications import Starlette
+    from starlette.requests import Request
+    from starlette.responses import Response
+    from starlette.routing import Route
+
+    from memcontext.mcp_tools import (
+        handle_memory_correct,
+        handle_memory_observe,
+        handle_memory_observe_url,
+        handle_memory_profile,
+        handle_memory_query,
+        handle_memory_stats,
+        handle_memory_store,
+        handle_memory_trace,
+    )
+    from memcontext.schema import open_database
+
+    conn = open_database(db_path)
+    transports: dict[str, StreamableHTTPServerTransport] = {}
+
+    def _build_server():
+        """Create a fresh MCP Server instance with all tools registered."""
+        server = Server("memcontext")
+
+        @server.list_tools()
+        async def list_tools():
+            return [
+                Tool(name="memory_store", description="Store a conversation turn and extract claims into memory.",
+                     inputSchema={"type":"object","properties":{"text":{"type":"string"},"speaker":{"type":"string","enum":["user","assistant"],"default":"user"},"session_id":{"type":"string"},"claims":{"type":"array","items":{"type":"object","properties":{"subject":{"type":"string"},"predicate":{"type":"string"},"value":{"type":"string"},"confidence":{"type":"number"}},"required":["value"]}}},"required":["text"]}),
+                Tool(name="memory_query", description="Query the user's personal memory -- decisions, observations, bug tracking, project status, and context from their coding sessions, browser observations, and cross-tool workflows. Use this for anything about the user's own projects, preferences, or work history.",
+                     inputSchema={"type":"object","properties":{"query":{"type":"string"},"session_id":{"type":"string"},"top_k":{"type":"integer","default":10}},"required":["query"]}),
+                Tool(name="memory_trace", description="Trace a claim back to its source turn and history.",
+                     inputSchema={"type":"object","properties":{"claim_id":{"type":"string"}},"required":["claim_id"]}),
+                Tool(name="memory_correct", description="Correct or dismiss an existing claim.",
+                     inputSchema={"type":"object","properties":{"claim_id":{"type":"string"},"action":{"type":"string","enum":["dismiss","correct"]},"new_value":{"type":"string"}},"required":["claim_id","action"]}),
+                Tool(name="memory_profile", description="Get the smart profile for a subject.",
+                     inputSchema={"type":"object","properties":{"subject":{"type":"string","default":"user"},"max_tokens":{"type":"integer","default":500}}}),
+                Tool(name="memory_stats", description="Get storage statistics.",
+                     inputSchema={"type":"object","properties":{}}),
+            ]
+
+        @server.call_tool()
+        async def call_tool(name: str, arguments: dict):
+            import asyncio
+            if name == "memory_store":
+                result = handle_memory_store(conn, **arguments)
+            elif name == "memory_query":
+                result = handle_memory_query(conn, **arguments)
+            elif name == "memory_trace":
+                result = handle_memory_trace(conn, **arguments)
+            elif name == "memory_correct":
+                result = handle_memory_correct(conn, **arguments)
+            elif name == "memory_profile":
+                result = handle_memory_profile(conn, **arguments)
+            elif name == "memory_stats":
+                result = handle_memory_stats(conn)
+            else:
+                result = {"error": f"Unknown tool: {name}"}
+            return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        return server
+
+    state = {"transport": None, "task": None}
+
+    async def ensure_transport():
+        """Lazy-init: create transport + server on first request."""
+        if state["transport"] is not None:
+            return state["transport"]
+
+        transport = StreamableHTTPServerTransport(
+            mcp_session_id=None,
+            is_json_response_enabled=True,
+        )
+        server = _build_server()
+
+        async def run_session():
+            async with transport.connect() as (rs, ws):
+                await server.run(rs, ws, server.create_initialization_options())
+
+        import asyncio
+        state["task"] = asyncio.get_event_loop().create_task(run_session())
+        await anyio.sleep(0.05)
+        state["transport"] = transport
+        return transport
+
+    async def _app(scope, receive, send):
+        if scope["type"] == "lifespan":
+            await receive()
+            await send({"type": "lifespan.startup.complete"})
+            await receive()
+            await send({"type": "lifespan.shutdown.complete"})
+            return
+        if scope["type"] != "http":
+            return
+        transport = await ensure_transport()
+        await transport.handle_request(scope, receive, send)
+
+    return _app

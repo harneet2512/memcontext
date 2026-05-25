@@ -11,7 +11,9 @@
     "context",
     "action",
     "observation",
-    "metadata"
+    "metadata",
+    "assistant_recommendation",
+    "assistant_action"
   ],
   "sub_slots": {}
 }

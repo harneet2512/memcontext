@@ -140,48 +140,54 @@ def strict_short_answer_check(gold: str, hypothesis: str) -> bool | None:
     return None
 
 
-# Official LongMemEval judge prompts, ported from official_evaluate_qa.py
+# Exact official LongMemEval judge prompts from evaluate_qa.py — do NOT paraphrase.
 _JUDGE_PROMPTS: dict[str, str] = {
     "default": (
-        "Given the question, correct answer, and the model's response, determine "
-        "if the model's response is correct. The response is considered correct if "
-        "it contains the correct answer or an equivalent. If the correct answer "
-        "contains multiple pieces of information, the response must contain ALL of "
-        "them or all intermediate steps to be considered correct. Having only a "
-        "subset is not enough.\n\n"
-        "Question: {question}\nCorrect answer: {gold}\nModel response: {prediction}\n\n"
-        "Answer yes or no only."
+        "I will give you a question, a correct answer, and a response from a model. "
+        "Please answer yes if the response contains the correct answer. Otherwise, answer no. "
+        "If the response is equivalent to the correct answer or contains all the intermediate "
+        "steps to get the correct answer, you should also answer yes. If the response only "
+        "contains a subset of the information required by the answer, answer no. "
+        "\n\nQuestion: {question}\n\nCorrect Answer: {gold}\n\nModel Response: {prediction}"
+        "\n\nIs the model response correct? Answer yes or no only."
     ),
     "temporal-reasoning": (
-        "Given the question, correct answer, and the model's response, determine "
-        "if the model's response is correct. The response is considered correct if "
-        "it contains the correct answer or an equivalent. Off-by-one answers for "
-        "day/week/month counts are acceptable. If the correct answer contains "
-        "multiple pieces of information, the response must contain ALL of them.\n\n"
-        "Question: {question}\nCorrect answer: {gold}\nModel response: {prediction}\n\n"
-        "Answer yes or no only."
+        "I will give you a question, a correct answer, and a response from a model. "
+        "Please answer yes if the response contains the correct answer. Otherwise, answer no. "
+        "If the response is equivalent to the correct answer or contains all the intermediate "
+        "steps to get the correct answer, you should also answer yes. If the response only "
+        "contains a subset of the information required by the answer, answer no. In addition, "
+        "do not penalize off-by-one errors for the number of days. If the question asks for "
+        "the number of days/weeks/months, etc., and the model makes off-by-one errors "
+        "(e.g., predicting 19 days when the answer is 18), the model's response is still correct. "
+        "\n\nQuestion: {question}\n\nCorrect Answer: {gold}\n\nModel Response: {prediction}"
+        "\n\nIs the model response correct? Answer yes or no only."
     ),
     "knowledge-update": (
-        "Given the question, correct answer, and the model's response, determine "
-        "if the model's response is correct. The response is correct if it contains "
-        "the updated answer. Including prior information alongside the update is OK.\n\n"
-        "Question: {question}\nCorrect answer: {gold}\nModel response: {prediction}\n\n"
-        "Answer yes or no only."
+        "I will give you a question, a correct answer, and a response from a model. "
+        "Please answer yes if the response contains the correct answer. Otherwise, answer no. "
+        "If the response contains some previous information along with an updated answer, "
+        "the response should be considered as correct as long as the updated answer is the "
+        "required answer."
+        "\n\nQuestion: {question}\n\nCorrect Answer: {gold}\n\nModel Response: {prediction}"
+        "\n\nIs the model response correct? Answer yes or no only."
     ),
     "single-session-preference": (
-        "Given the question, the rubric, and the model's response, determine "
-        "if the model's response satisfies the rubric. The model does not need to "
-        "cover all rubric points, but must recall and utilize personal information "
-        "correctly.\n\n"
-        "Question: {question}\nRubric: {gold}\nModel response: {prediction}\n\n"
-        "Answer yes or no only."
+        "I will give you a question, a rubric for desired personalized response, and a response "
+        "from a model. Please answer yes if the response satisfies the desired response. "
+        "Otherwise, answer no. The model does not need to reflect all the points in the rubric. "
+        "The response is correct as long as it recalls and utilizes the user's personal "
+        "information correctly."
+        "\n\nQuestion: {question}\n\nRubric: {gold}\n\nModel Response: {prediction}"
+        "\n\nIs the model response correct? Answer yes or no only."
     ),
     "abstention": (
-        "Given the question and the model's response, determine if the model "
-        "correctly identified that the question is unanswerable based on the "
-        "available information.\n\n"
-        "Question: {question}\nModel response: {prediction}\n\n"
-        "Answer yes or no only."
+        "I will give you an unanswerable question, an explanation, and a response from a model. "
+        "Please answer yes if the model correctly identifies the question as unanswerable. "
+        "The model could say that the information is incomplete, or some other information is "
+        "given but the asked information is not."
+        "\n\nQuestion: {question}\n\nExplanation: {gold}\n\nModel Response: {prediction}"
+        "\n\nDoes the model correctly identify the question as unanswerable? Answer yes or no only."
     ),
 }
 
@@ -195,6 +201,12 @@ _JUDGE_CATEGORY_MAP: dict[str, str] = {
     "temporal_ordering": "temporal-reasoning",
     "knowledge_update": "knowledge-update",
     "abstention": "abstention",
+    "single-session-user": "default",
+    "single-session-assistant": "default",
+    "single-session-preference": "single-session-preference",
+    "multi-session": "default",
+    "temporal-reasoning": "temporal-reasoning",
+    "knowledge-update": "knowledge-update",
 }
 
 
@@ -241,20 +253,14 @@ def score_answer(
     question_type: str = "",
     question_id: str = "",
 ) -> float:
-    """Two-tier scoring matching the official LongMemEval protocol.
+    """Score using LLM-as-judge with task-specific rubrics.
 
-    Tier 1: Short answers (<=3 tokens) use normalized exact boundary match.
-    Tier 2: Everything else uses LLM-as-judge with task-specific rubrics.
+    Matches the official LongMemEval protocol: every answer goes through
+    the LLM judge. No short-answer bypass.
 
     Returns 1.0 (correct) or 0.0 (wrong).
     """
     if not predicted or not predicted.strip():
-        return 0.0
-
-    strict = strict_short_answer_check(str(gold), predicted)
-    if strict is True:
-        return 1.0
-    if strict is False:
         return 0.0
 
     return _call_judge(
@@ -283,7 +289,7 @@ def _call_judge(
     if not api_key:
         return answer_accuracy_fuzzy(prediction, gold)
 
-    model = os.environ.get("MEMCONTEXT_JUDGE_MODEL", "openai/gpt-4o-mini")
+    model = os.environ.get("MEMCONTEXT_JUDGE_MODEL", "openai/gpt-4o-2024-08-06")
     endpoint = os.environ.get(
         "MEMCONTEXT_READER_ENDPOINT", "https://openrouter.ai/api/v1/chat/completions"
     )
@@ -293,7 +299,10 @@ def _call_judge(
     try:
         resp = requests.post(
             endpoint,
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "X-Title": "memcontext",
+            },
             json={
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],

@@ -70,7 +70,7 @@ def test_answer_question_none_mode():
     assert result["predicted_answer"] is None  # NO fake answer
     assert result["reader_mode"] == "none"
     assert result["category"] == "single_session_preference"
-    assert "dark mode" in result["formatted_claims"]
+    assert "dark mode" in result["full_prompt"]
 
 
 def test_answer_question_configured_requires_key():

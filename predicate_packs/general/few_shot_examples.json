@@ -78,6 +78,45 @@
       },
       "active_claims_summary": "(no active claims)",
       "expected_output": "[\n  {\"subject\":\"user\",\"predicate\":\"user_constraint\",\"value\":\"weekday lunch must be after 1 PM due to back-to-back meetings\",\"confidence\":0.96}\n]"
+    },
+    {
+      "name": "implicit_preference_habit",
+      "scenario": "User reveals a preference through a habitual action.",
+      "prior_turns": [
+        {"speaker": "assistant", "text": "How do you typically start your mornings?"}
+      ],
+      "current_turn": {
+        "speaker": "user",
+        "text": "I always do 30 minutes of yoga before anything else. I tried running but it wasn't for me."
+      },
+      "active_claims_summary": "(no active claims)",
+      "expected_output": "[\n  {\"subject\":\"user\",\"predicate\":\"user_preference\",\"value\":\"prefers yoga over running for morning exercise\",\"confidence\":0.80},\n  {\"subject\":\"user\",\"predicate\":\"user_fact\",\"value\":\"morning routine: 30 minutes of yoga\",\"confidence\":0.94}\n]"
+    },
+    {
+      "name": "implicit_preference_tool_choice",
+      "scenario": "User's tool choice implies a preference.",
+      "prior_turns": [
+        {"speaker": "assistant", "text": "What's your development setup like?"}
+      ],
+      "current_turn": {
+        "speaker": "user",
+        "text": "I use Neovim for everything — even writing documentation. Set it up with LSP and Copilot last year."
+      },
+      "active_claims_summary": "(no active claims)",
+      "expected_output": "[\n  {\"subject\":\"user\",\"predicate\":\"user_preference\",\"value\":\"uses Neovim as primary editor for all tasks\",\"confidence\":0.85},\n  {\"subject\":\"user\",\"predicate\":\"user_fact\",\"value\":\"Neovim setup includes LSP and Copilot, configured ~1 year ago\",\"confidence\":0.90}\n]"
+    },
+    {
+      "name": "implicit_preference_abandonment",
+      "scenario": "User reveals a negative preference by describing something they stopped doing.",
+      "prior_turns": [
+        {"speaker": "assistant", "text": "Do you use any task management tools?"}
+      ],
+      "current_turn": {
+        "speaker": "user",
+        "text": "I gave up on Jira ages ago — too bloated. I just use a plain Markdown file now."
+      },
+      "active_claims_summary": "(no active claims)",
+      "expected_output": "[\n  {\"subject\":\"user\",\"predicate\":\"user_preference\",\"value\":\"dislikes: Jira (considers it bloated)\",\"confidence\":0.88},\n  {\"subject\":\"user\",\"predicate\":\"user_preference\",\"value\":\"uses plain Markdown for task management\",\"confidence\":0.85}\n]"
     }
   ]
 }

@@ -12,7 +12,8 @@ from enum import StrEnum
 from pathlib import Path
 
 from memcontext.extractors import PassthroughExtractor, SimpleExtractor
-from memcontext.mcp_tools import handle_memory_query, handle_memory_store
+from memcontext.mcp_tools import handle_memory_store
+from memcontext.retrieval import retrieve_hybrid
 from memcontext.schema import open_database
 
 from evals.metrics import extraction_precision_recall, provenance_integrity
@@ -92,8 +93,8 @@ def run_case(case: EvalCase, conn: sqlite3.Connection, session_id: str) -> EvalR
 
         for q in case.queries:
             question = q.get("question", "")
-            qr = handle_memory_query(conn, query=question, session_id=session_id, top_k=10)
-            retrieved_ids = [c["claim_id"] for c in qr.get("claims", [])]
+            hybrid_results = retrieve_hybrid(conn, session_id=session_id, query=question, top_k=10)
+            retrieved_ids = [c.claim_id for c, _ in hybrid_results]
             expected_ids = set(q.get("expected_claim_ids", []))
             if expected_ids:
                 recall = retrieval_recall_at_k(retrieved_ids, expected_ids, 10)
@@ -139,29 +140,8 @@ class ReaderMode(StrEnum):
     CONFIGURED = "configured"  # call LLM if configured (not implemented yet)
 
 
-# Baseline reader prompt — one universal prompt for all categories.
-# Ported from RobbyMD eval/longmemeval/final_runner.py READER_SYSTEM_PROMPT.
 _READER_SYSTEM_PROMPT = (
-    "You are answering a question about a user based on their past conversation history.\n\n"
-    "You receive the question, the date it was asked, and retrieved conversation excerpts.\n\n"
-    "Step 1 — NOTES: Read ALL excerpts. Write a short list of ONLY the relevant facts "
-    "(skip irrelevant excerpts entirely). For each relevant fact, note which excerpt it "
-    "came from.\n\n"
-    "Step 2 — ANSWER: Using your notes, answer the question.\n\n"
-    "Guidelines:\n"
-    "- Answer from provided evidence only.\n"
-    "- Return stored preferences/constraints, not generic advice.\n"
-    "- When values change over time, prefer the most recent one.\n"
-    "- Count and list ALL relevant items across ALL excerpts before answering count questions.\n"
-    "- Only say \"I don't know\" if evidence truly has no relevant information.\n"
-    "- Be concise.\n\n"
-    "Format:\n"
-    "NOTES:\n"
-    "- [relevant fact 1, from excerpt N]\n"
-    "- [relevant fact 2, from excerpt M]\n"
-    "...\n\n"
-    "ANSWER:\n"
-    "[your concise answer]"
+    "You are a personal assistant with access to past conversation history."
 )
 
 
@@ -229,6 +209,28 @@ def _format_evidence(
     return "\n".join(parts)
 
 
+def _format_context_text(
+    claims: list[dict],
+    excerpts: list[dict] | None,
+) -> str:
+    """Format context as numbered text for category-specific prompts."""
+    if excerpts:
+        lines = []
+        for i, ex in enumerate(excerpts, 1):
+            date = ex.get("session_date", "")
+            speaker = ex.get("speaker", "user")
+            text = ex.get("text", "")
+            header = f"{i}."
+            if date:
+                header += f" [{date}]"
+            lines.append(f"{header} {speaker}: {text}")
+        return "\n".join(lines)
+
+    from evals.longmemeval_prompts import format_claims_for_prompt
+
+    return format_claims_for_prompt(claims)
+
+
 def answer_question(
     *,
     question: str,
@@ -238,24 +240,40 @@ def answer_question(
     question_date: str = "",
     excerpts: list[dict] | None = None,
 ) -> dict:
-    """Format evidence and call reader. Uses baseline universal prompt.
+    """Format evidence and call reader. Routes to category-specific prompts
+    when available, falls back to universal Chain-of-Note prompt.
 
     reader="none": returns retrieval context only. NO fake answer.
-    reader="configured": calls reader LLM with CoN prompting.
+    reader="configured": calls reader LLM with category or CoN prompting.
     """
-    # Format evidence as excerpts (baseline style) if available,
-    # fall back to claim list if no excerpts provided
-    if excerpts:
-        evidence = _format_evidence(question, question_date, excerpts)
-    else:
-        from evals.longmemeval_prompts import format_claims_for_prompt
-        evidence = f"Question: {question}\n\n{format_claims_for_prompt(claims)}"
+    from evals.longmemeval_prompts import CATEGORY_MAP, PROMPTS, get_prompt
+    from memcontext.formatting import format_context_json, format_reader_prompt
 
-    result = {
+    prompt_key = CATEGORY_MAP.get(category, category)
+    use_category = prompt_key in PROMPTS
+
+    if use_category:
+        claims_text = _format_context_text(claims, excerpts)
+        full_prompt = get_prompt(category, claims_text, question)
+        if question_date:
+            full_prompt = f"Current date: {question_date}\n\n{full_prompt}"
+        template_name = f"category_{prompt_key}"
+    else:
+        context_json = format_context_json(
+            claims=claims if not excerpts else None,
+            turns=excerpts,
+        )
+        full_prompt = format_reader_prompt(
+            context_json=context_json,
+            question=question,
+            question_date=question_date,
+        )
+        template_name = "universal_con"
+
+    result: dict[str, object] = {
         "category": category,
-        "prompt_template_used": "universal_reader",
-        "formatted_claims": evidence[:2000],
-        "full_prompt": evidence,
+        "prompt_template_used": template_name,
+        "full_prompt": full_prompt,
         "num_claims": len(claims),
     }
 
@@ -263,15 +281,9 @@ def answer_question(
         result["predicted_answer"] = None
         result["reader_mode"] = "none"
     elif reader == ReaderMode.CONFIGURED:
-        raw_answer = _call_reader_llm_with_system(
-            system=_READER_SYSTEM_PROMPT,
-            user=evidence,
-        )
-        # Extract text after "ANSWER:" if present (CoN format)
-        if "ANSWER:" in raw_answer:
-            result["predicted_answer"] = raw_answer.split("ANSWER:", 1)[1].strip()
-        elif "Answer:" in raw_answer:
-            result["predicted_answer"] = raw_answer.split("Answer:", 1)[1].strip()
+        raw_answer = _call_reader_llm(full_prompt)
+        if "Answer:" in raw_answer:
+            result["predicted_answer"] = raw_answer.rsplit("Answer:", 1)[1].strip()
         else:
             result["predicted_answer"] = raw_answer
         result["reader_mode"] = "configured"
@@ -297,11 +309,14 @@ def _call_reader_llm_with_system(system: str, user: str) -> str:
 
     resp = requests.post(
         endpoint,
-        headers={"Authorization": f"Bearer {api_key}"},
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "X-Title": "memcontext",
+        },
         json={
             "model": model,
             "messages": [
-                {"role": "system", "content": system},
+                {"role": "system", "content": system, "cache_control": {"type": "ephemeral"}},
                 {"role": "user", "content": user},
             ],
             "max_tokens": 2048,

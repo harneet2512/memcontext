@@ -104,6 +104,7 @@ def ingest(text: str, db: str, session: str, speaker: str) -> None:
 def query_cmd(query_text: str, db: str, session: str, top_k: int) -> None:
     """Query memory for relevant claims."""
     from memcontext.claims import list_active_claims
+    from memcontext.retrieval import retrieve_hybrid
     from memcontext.schema import open_database
 
     conn = open_database(db)
@@ -114,17 +115,9 @@ def query_cmd(query_text: str, db: str, session: str, top_k: int) -> None:
         conn.close()
         return
 
-    query_tokens = set(query_text.lower().split())
-    scored = []
-    for claim in active:
-        claim_text = f"{claim.subject} {claim.predicate} {claim.value}".lower()
-        claim_tokens = set(claim_text.split())
-        overlap = len(query_tokens & claim_tokens)
-        if overlap > 0:
-            scored.append((claim, overlap / max(len(query_tokens), 1)))
-
-    scored.sort(key=lambda x: -x[1])
-    results = scored[:top_k]
+    results = retrieve_hybrid(
+        conn, session_id=session, query=query_text, top_k=top_k,
+    )
 
     if not results:
         results = [(c, 0.0) for c in active[:top_k]]
@@ -210,7 +203,7 @@ def observe(url: str, db: str, session: str, login_email: str | None, login_pass
     "--transport", type=click.Choice(["stdio"]), default="stdio", help="MCP transport."
 )
 def serve(db: str, transport: str) -> None:
-    """Start the MCP server."""
+    """Start the MCP server (for Claude Code, Cursor)."""
     try:
         from memcontext.mcp_server import run_server
 
@@ -220,6 +213,150 @@ def serve(db: str, transport: str) -> None:
             "MCP server not available. Install with: pip install memcontext[mcp]", err=True
         )
         raise SystemExit(1)
+
+
+@main.command("serve-http")
+@click.option("--db", default="memcontext.db", help="Database file path.")
+@click.option("--port", default=8100, help="HTTP port.")
+@click.option("--host", default="0.0.0.0", help="Bind address.")
+@click.option("--share", is_flag=True, default=False,
+              help="Expose via Cloudflare tunnel for remote MCP (ChatGPT, Gemini).")
+def serve_http(db: str, port: int, host: str, share: bool) -> None:
+    """Start the HTTP API server (for ChatGPT, Gemini, browser extensions, any AI)."""
+    from memcontext.http_server import run_server
+
+    click.echo(f"[memcontext] Local MCP ready (stdio)")
+    click.echo(f"[memcontext] HTTP API ready: http://localhost:{port}")
+    click.echo(f"[memcontext] Database: {db}")
+
+    if share:
+        import threading
+        try:
+            from pycloudflared import try_cloudflare
+        except ImportError:
+            click.echo(
+                "[memcontext] --share requires pycloudflared: python -m pip install pycloudflared",
+                err=True,
+            )
+            raise SystemExit(1)
+
+        def start_tunnel():
+            try:
+                info = try_cloudflare(port=port)
+                url = info.tunnel
+                click.echo(f"[memcontext] Remote MCP ready: {url}/mcp/")
+                click.echo(f"             Paste this URL into ChatGPT/Gemini ->")
+                click.echo(f"             Settings -> Connectors -> Create -> URL: {url}/mcp/")
+            except Exception as e:
+                click.echo(f"[memcontext] Tunnel failed: {e}", err=True)
+
+        tunnel_thread = threading.Thread(target=start_tunnel, daemon=True)
+        tunnel_thread.start()
+
+    run_server(db_path=db, port=port, host=host)
+
+
+@main.group()
+def hooks() -> None:
+    """Manage Claude Code ambient hooks."""
+
+
+@hooks.command()
+@click.option("--port", default=8100, help="MemContext HTTP server port.")
+@click.option("--project-dir", default=".", help="Project directory containing .claude/")
+def install(port: int, project_dir: str) -> None:
+    """Install ambient hooks into .claude/settings.json."""
+    settings_dir = os.path.join(project_dir, ".claude")
+    settings_path = os.path.join(settings_dir, "settings.json")
+
+    os.makedirs(settings_dir, exist_ok=True)
+
+    settings: dict = {}
+    if os.path.exists(settings_path):
+        with open(settings_path) as f:
+            settings = json.load(f)
+
+    base = f"http://localhost:{port}"
+    settings["hooks"] = {
+        "PostToolUse": [{"matcher": "", "hooks": [
+            {"type": "http", "url": f"{base}/api/hooks/post_tool_use", "timeout": 10}
+        ]}],
+        "UserPromptSubmit": [{"matcher": "", "hooks": [
+            {"type": "http", "url": f"{base}/api/hooks/user_prompt_submit", "timeout": 10}
+        ]}],
+        "PreToolUse": [{"matcher": "", "hooks": [
+            {"type": "http", "url": f"{base}/api/hooks/pre_tool_use", "timeout": 5}
+        ]}],
+        "Stop": [{"matcher": "", "hooks": [
+            {"type": "http", "url": f"{base}/api/hooks/stop", "timeout": 5}
+        ]}],
+    }
+
+    with open(settings_path, "w") as f:
+        json.dump(settings, f, indent=2)
+
+    click.echo(f"Hooks installed in {os.path.abspath(settings_path)}")
+    click.echo(f"HTTP server: {base}")
+    click.echo("Restart Claude Code to activate. Run 'memcontext serve-http' first.")
+
+
+@hooks.command()
+@click.option("--project-dir", default=".", help="Project directory containing .claude/")
+def uninstall(project_dir: str) -> None:
+    """Remove ambient hooks from .claude/settings.json."""
+    settings_path = os.path.join(project_dir, ".claude", "settings.json")
+    if not os.path.exists(settings_path):
+        click.echo("No .claude/settings.json found.")
+        return
+
+    with open(settings_path) as f:
+        settings = json.load(f)
+
+    if "hooks" in settings:
+        del settings["hooks"]
+        with open(settings_path, "w") as f:
+            json.dump(settings, f, indent=2)
+        click.echo("Hooks removed.")
+    else:
+        click.echo("No hooks configured.")
+
+
+main.add_command(hooks)
+
+
+@main.command("storage-stats")
+@click.option("--db", default="memcontext.db", help="Database file path.")
+def storage_stats(db: str) -> None:
+    """Show storage statistics."""
+    from memcontext.schema import open_database
+
+    conn = open_database(db)
+
+    active = conn.execute(
+        "SELECT COUNT(*) FROM claims WHERE status IN ('active','confirmed','audited')"
+    ).fetchone()[0]
+    with_embeddings = conn.execute(
+        "SELECT COUNT(*) FROM claim_embeddings ce"
+        " JOIN claims c ON ce.claim_id = c.claim_id"
+        " WHERE c.status IN ('active','confirmed','audited')"
+    ).fetchone()[0]
+    superseded = conn.execute(
+        "SELECT COUNT(*) FROM claims WHERE status = 'superseded'"
+    ).fetchone()[0]
+    turns = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
+    profiles = conn.execute("SELECT COUNT(*) FROM profiles").fetchone()[0]
+    digests = conn.execute("SELECT COUNT(*) FROM session_digests").fetchone()[0]
+    events = conn.execute("SELECT COUNT(*) FROM life_events").fetchone()[0]
+
+    click.echo(f"Active claims:     {active} ({with_embeddings} with embeddings)")
+    click.echo(f"Superseded claims: {superseded} (no embeddings, provenance preserved)")
+    click.echo(f"Turns stored:      {turns}")
+    click.echo(f"Profiles cached:   {profiles}")
+    click.echo(f"Session digests:   {digests}")
+    click.echo(f"Life events:       {events}")
+    click.echo(f"Retrieval surface: {active} claims")
+    click.echo(f"Provenance depth:  {active + superseded} claims reachable via chain walking")
+    conn.close()
 
 
 @main.command("eval")

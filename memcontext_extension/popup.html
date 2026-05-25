@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box }
+  body {
+    width: 300px; padding: 20px;
+    background: #09090b; color: #f4f4f5;
+    font: 400 13px system-ui;
+  }
+  .header {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 16px;
+  }
+  .logo {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: linear-gradient(135deg, #0078D4, #00BCF2);
+    display: flex; align-items: center; justify-content: center;
+    font: 800 14px system-ui; color: #fff;
+    box-shadow: 0 0 12px rgba(0,120,212,0.4);
+  }
+  .title { font: 700 15px system-ui; letter-spacing: 1px }
+  .subtitle { color: #71717a; font: 400 11px system-ui; margin-bottom: 16px }
+  #btn {
+    width: 100%; padding: 10px; border: none; border-radius: 6px;
+    background: linear-gradient(135deg, #0078D4, #00BCF2);
+    color: #fff; font: 600 12px system-ui; letter-spacing: 1px;
+    cursor: pointer; text-transform: uppercase;
+    transition: opacity 0.2s;
+  }
+  #btn:hover { opacity: 0.9 }
+  #btn:disabled { opacity: 0.5; cursor: not-allowed }
+  #status {
+    margin-top: 12px; padding: 10px; border-radius: 6px;
+    background: rgba(255,255,255,0.04);
+    font: 400 11px system-ui; color: #a1a1aa;
+    display: none;
+  }
+  #status.ok { color: #00d26a; border: 1px solid rgba(0,210,106,0.2) }
+  #status.err { color: #f87171; border: 1px solid rgba(248,113,113,0.2) }
+  .footer {
+    margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    color: #52525b; font: 400 10px system-ui;
+    text-align: center; letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">M</div>
+    <span class="title">MEMCONTEXT</span>
+  </div>
+  <div class="subtitle">Propagate your browser sessions to the Agent Window</div>
+  <button id="btn">Export Sessions to Agent</button>
+  <div id="status"></div>
+  <div class="footer">Zero-AI Memory Substrate · SSO Propagation</div>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -79,6 +79,71 @@
       },
       "active_claims_summary": "(no active claims)",
       "expected_output": "[\n  {\"subject\":\"user\",\"predicate\":\"user_constraint\",\"value\":\"weekday lunch must be after 1 PM due to back-to-back meetings\",\"confidence\":0.96}\n]"
+    },
+    {
+      "name": "implicit_preference_habit",
+      "scenario": "User reveals a preference through a habitual action, not an explicit statement of preference.",
+      "prior_turns": [
+        {"speaker": "assistant", "text": "How do you typically start your mornings?"}
+      ],
+      "current_turn": {
+        "speaker": "user",
+        "text": "I always do 30 minutes of yoga before anything else. I tried running but it wasn't for me."
+      },
+      "active_claims_summary": "(no active claims)",
+      "expected_output": "[\n  {\"subject\":\"user\",\"predicate\":\"user_preference\",\"value\":\"prefers yoga over running for morning exercise\",\"confidence\":0.80},\n  {\"subject\":\"user\",\"predicate\":\"user_fact\",\"value\":\"morning routine: 30 minutes of yoga\",\"confidence\":0.94}\n]"
+    },
+    {
+      "name": "implicit_preference_tool_choice",
+      "scenario": "User's tool choice implies a preference without saying 'I prefer'.",
+      "prior_turns": [
+        {"speaker": "assistant", "text": "What's your development setup like?"}
+      ],
+      "current_turn": {
+        "speaker": "user",
+        "text": "I use Neovim for everything — even writing documentation. Set it up with LSP and Copilot last year."
+      },
+      "active_claims_summary": "(no active claims)",
+      "expected_output": "[\n  {\"subject\":\"user\",\"predicate\":\"user_preference\",\"value\":\"uses Neovim as primary editor for all tasks\",\"confidence\":0.85},\n  {\"subject\":\"user\",\"predicate\":\"user_fact\",\"value\":\"Neovim setup includes LSP and Copilot, configured ~1 year ago\",\"confidence\":0.90}\n]"
+    },
+    {
+      "name": "implicit_preference_abandonment",
+      "scenario": "User reveals a negative preference by describing something they stopped doing.",
+      "prior_turns": [
+        {"speaker": "assistant", "text": "Do you use any task management tools?"}
+      ],
+      "current_turn": {
+        "speaker": "user",
+        "text": "I gave up on Jira ages ago — too bloated. I just use a plain Markdown file now."
+      },
+      "active_claims_summary": "(no active claims)",
+      "expected_output": "[\n  {\"subject\":\"user\",\"predicate\":\"user_preference\",\"value\":\"dislikes: Jira (considers it bloated)\",\"confidence\":0.88},\n  {\"subject\":\"user\",\"predicate\":\"user_preference\",\"value\":\"uses plain Markdown for task management\",\"confidence\":0.85}\n]"
+    },
+    {
+      "name": "assistant_recommends_restaurant",
+      "scenario": "Assistant recommends a specific place. Extract as assistant_recommendation so the user can later ask 'what did you recommend?'.",
+      "prior_turns": [
+        {"speaker": "user", "text": "I'm visiting Bandung next week. Where should I eat?"}
+      ],
+      "current_turn": {
+        "speaker": "assistant",
+        "text": "I'd highly recommend Miss Bee Providore in Cihampeulas — it's a great brunch spot with Western and Indonesian fusion dishes. Their eggs benedict is particularly good."
+      },
+      "active_claims_summary": "(no active claims)",
+      "expected_output": "[\n  {\"subject\":\"assistant\",\"predicate\":\"assistant_recommendation\",\"value\":\"recommended Miss Bee Providore in Cihampeulas, Bandung for brunch — Western and Indonesian fusion, known for eggs benedict\",\"confidence\":0.93}\n]"
+    },
+    {
+      "name": "assistant_provides_technical_info",
+      "scenario": "Assistant looks up and provides specific technical information the user asked about.",
+      "prior_turns": [
+        {"speaker": "user", "text": "Can you tell me about the refining processes at CITGO's refineries?"}
+      ],
+      "current_turn": {
+        "speaker": "assistant",
+        "text": "CITGO's three refineries use several key processes: atmospheric distillation, fluid catalytic cracking (FCC), alkylation, and hydrotreating."
+      },
+      "active_claims_summary": "(no active claims)",
+      "expected_output": "[\n  {\"subject\":\"assistant\",\"predicate\":\"assistant_action\",\"value\":\"provided info on CITGO refinery processes: atmospheric distillation, fluid catalytic cracking (FCC), alkylation, and hydrotreating\",\"confidence\":0.95}\n]"
     }
   ]
 }

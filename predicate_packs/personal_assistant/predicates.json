@@ -7,7 +7,9 @@
     "user_event",
     "user_relationship",
     "user_goal",
-    "user_constraint"
+    "user_constraint",
+    "assistant_recommendation",
+    "assistant_action"
   ],
   "sub_slots": {}
 }
