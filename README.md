@@ -1,10 +1,10 @@
 # MemContext
 
-**Memory and context layer for your AI — via [MCP](https://modelcontextprotocol.io/).**
+**Memory and context layer for your AI, via [MCP](https://modelcontextprotocol.io/).**
 
-MemContext gives any AI agent — Claude, ChatGPT, Cursor, or your own — persistent memory that actually works. It watches conversations, browser pages, and tool use; remembers what matters; knows when facts change; and serves the right context back through MCP or REST when your AI needs it.
+MemContext gives any AI agent (Claude, ChatGPT, Cursor, or your own) persistent memory that actually works. It watches conversations, browser pages, and tool use; remembers what matters; knows when facts change; and serves the right context back through MCP or REST when your AI needs it.
 
-No vector-DB-and-pray. Every fact is a structured claim with provenance, confidence, and a supersession chain that tracks *why* things changed — not just *that* they changed.
+No vector-DB-and-pray. Every fact is a structured claim with provenance, confidence, and a supersession chain that tracks *why* things changed, not just *that* they changed.
 
 > Built inside [RobbyMD](https://github.com/harneet2512/RobbyMD), a clinical diagnostic agent where memory had to be auditable and correct. Now extracted as a standalone layer for any AI.
 
