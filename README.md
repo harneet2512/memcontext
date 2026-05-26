@@ -1,10 +1,12 @@
 # MemContext
 
-**Domain-agnostic memory and context substrate for AI agents.**
+**Memory and context layer for your AI — via [MCP](https://modelcontextprotocol.io/).**
 
-MemContext gives AI agents persistent, auditable memory. It observes information from conversations, browser pages, tools, and documents; converts it into provenance-backed structured claims; tracks changes and supersession over time; and serves clean, queryable context through the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) and a REST API.
+MemContext gives any AI agent — Claude, ChatGPT, Cursor, or your own — persistent memory that actually works. It watches conversations, browser pages, and tool use; remembers what matters; knows when facts change; and serves the right context back through MCP or REST when your AI needs it.
 
-> Extracted from [RobbyMD](https://github.com/harneet2512/RobbyMD), a clinical diagnostic agent where the memory layer was first built to give physician-steering agents persistent, auditable recall across sessions.
+No vector-DB-and-pray. Every fact is a structured claim with provenance, confidence, and a supersession chain that tracks *why* things changed — not just *that* they changed.
+
+> Built inside [RobbyMD](https://github.com/harneet2512/RobbyMD), a clinical diagnostic agent where memory had to be auditable and correct. Now extracted as a standalone layer for any AI.
 
 ---
 
