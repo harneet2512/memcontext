@@ -12,7 +12,7 @@ MemContext gives AI agents persistent, auditable memory. It observes information
 
 <div align="center">
 
-https://github.com/harneet2512/memcontext/raw/master/assets/demo.mp4
+https://github.com/user-attachments/assets/cbd05bcb-d272-4051-b2a7-210f4bcc5777
 
 </div>
 
