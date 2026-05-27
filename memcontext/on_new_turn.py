@@ -94,6 +94,7 @@ def on_new_turn(
     semantic: SemanticSupersession | None = None,
     asr_confidence: float | None = None,
     turn_id: str | None = None,
+    multi_valued_predicates: frozenset[str] | None = None,
 ) -> TurnResult:
     """Ingest one turn end-to-end.
 
@@ -196,7 +197,7 @@ def on_new_turn(
             },
         )
 
-        edge1 = detect_pass1(conn, claim)
+        edge1 = detect_pass1(conn, claim, multi_valued_predicates=multi_valued_predicates)
         if edge1 is not None:
             edges.append(edge1)
             bus.publish(

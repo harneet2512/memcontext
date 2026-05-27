@@ -71,6 +71,7 @@ def status(db: str) -> None:
 def ingest(text: str, db: str, session: str, speaker: str) -> None:
     """Ingest a text turn and extract claims."""
     from memcontext.on_new_turn import on_new_turn
+    from memcontext.predicate_packs import active_pack
     from memcontext.schema import Speaker, open_database
 
     conn = open_database(db)
@@ -78,9 +79,13 @@ def ingest(text: str, db: str, session: str, speaker: str) -> None:
     from memcontext.extractors import auto_extractor
 
     extractor = auto_extractor()
+    pack = active_pack()
 
     sp = Speaker.USER if speaker == "user" else Speaker.ASSISTANT
-    result = on_new_turn(conn, session_id=session, speaker=sp, text=text, extractor=extractor)
+    result = on_new_turn(
+        conn, session_id=session, speaker=sp, text=text, extractor=extractor,
+        multi_valued_predicates=pack.multi_valued_predicates,
+    )
 
     if not result.admitted:
         click.echo(f"Turn rejected: {result.admission_reason}")

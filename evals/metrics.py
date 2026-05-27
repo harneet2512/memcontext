@@ -91,6 +91,29 @@ def provenance_integrity(conn: sqlite3.Connection, claim_id: str) -> dict:
 
 import re
 import unicodedata
+import warnings
+
+# Module-level judge fallback tracking
+_judge_fallback_count: int = 0
+_judge_fallback_log: list[tuple[str, str]] = []
+_last_score_details: dict = {}
+
+
+def get_judge_fallback_stats() -> dict:
+    """Return count and log of judge calls that fell back to fuzzy F1."""
+    return {"count": _judge_fallback_count, "log": list(_judge_fallback_log)}
+
+
+def get_last_score_details() -> dict:
+    """Return details from the most recent score_answer call."""
+    return dict(_last_score_details)
+
+
+def reset_judge_fallback_stats() -> None:
+    """Reset fallback tracking. Call before each benchmark run."""
+    global _judge_fallback_count, _judge_fallback_log
+    _judge_fallback_count = 0
+    _judge_fallback_log = []
 
 
 def _normalize_short(text: str) -> str:
@@ -253,23 +276,58 @@ def score_answer(
     question_type: str = "",
     question_id: str = "",
 ) -> float:
-    """Score using LLM-as-judge with task-specific rubrics.
+    """Two-tier scoring matching the official LongMemEval protocol.
 
-    Matches the official LongMemEval protocol: every answer goes through
-    the LLM judge. No short-answer bypass.
+    Tier 1: Normalized exact/boundary match for short gold answers (<=3 tokens).
+    Tier 2: LLM-as-judge with task-specific rubrics for everything else.
 
     Returns 1.0 (correct) or 0.0 (wrong).
+    Populates _last_score_details with scoring metadata (call get_last_score_details()).
     """
+    global _last_score_details
+    _last_score_details = {"question_id": question_id, "scoring_tier": "unknown"}
+
     if not predicted or not predicted.strip():
+        _last_score_details.update({"scoring_tier": "empty_prediction", "score": 0.0})
         return 0.0
 
-    return _call_judge(
-        question=question,
-        gold=str(gold),
-        prediction=predicted,
-        question_type=question_type,
-        question_id=question_id,
-    )
+    short_result = strict_short_answer_check(gold, predicted)
+    if short_result is True:
+        _last_score_details.update({
+            "scoring_tier": "short_exact_match",
+            "gold_normalized": _normalize_short(gold),
+            "predicted_normalized": _normalize_short(predicted),
+            "score": 1.0,
+        })
+        return 1.0
+    if short_result is False:
+        _last_score_details.update({
+            "scoring_tier": "short_exact_mismatch",
+            "gold_normalized": _normalize_short(gold),
+            "predicted_normalized": _normalize_short(predicted),
+            "score": 0.0,
+        })
+        return 0.0
+
+    _last_score_details["scoring_tier"] = "judge"
+    try:
+        return _call_judge(
+            question=question,
+            gold=str(gold),
+            prediction=predicted,
+            question_type=question_type,
+            question_id=question_id,
+        )
+    except ValueError as e:
+        global _judge_fallback_count, _judge_fallback_log
+        _judge_fallback_count += 1
+        _judge_fallback_log.append((question_id, repr(e)))
+        _last_score_details.update({"scoring_tier": "judge_unavailable", "error": repr(e), "score": 0.0})
+        warnings.warn(
+            f"Judge unavailable for {question_id}: {e!r}, scoring as 0.0",
+            stacklevel=2,
+        )
+        return 0.0
 
 
 def _call_judge(
@@ -280,14 +338,18 @@ def _call_judge(
     question_type: str,
     question_id: str,
 ) -> float:
-    """Call LLM judge via OpenRouter. Falls back to fuzzy F1 if no API key."""
+    """Call LLM judge via OpenRouter. Raises on missing key, tracks fallbacks."""
+    global _judge_fallback_count, _judge_fallback_log
     import os
 
     import requests
 
     api_key = os.environ.get("MEMCONTEXT_READER_API_KEY", "")
     if not api_key:
-        return answer_accuracy_fuzzy(prediction, gold)
+        raise ValueError(
+            "MEMCONTEXT_READER_API_KEY not set. Cannot call LLM judge. "
+            "Set the key or run with reader='none' (no scoring)."
+        )
 
     model = os.environ.get("MEMCONTEXT_JUDGE_MODEL", "openai/gpt-4o-2024-08-06")
     endpoint = os.environ.get(
@@ -297,24 +359,45 @@ def _call_judge(
     prompt = _get_judge_prompt(question_type, question, gold, prediction, question_id)
 
     try:
+        payload: dict = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 10,
+            "temperature": 0.0,
+        }
+        if "deepseek" in endpoint.lower():
+            payload["thinking"] = {"type": "disabled"}
+
         resp = requests.post(
             endpoint,
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "X-Title": "memcontext",
             },
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 10,
-                "temperature": 0.0,
-            },
+            json=payload,
             timeout=30,
         )
         resp.raise_for_status()
+        data = resp.json()
         content = (
-            resp.json().get("choices", [{}])[0].get("message", {}).get("content") or ""
+            data.get("choices", [{}])[0].get("message", {}).get("content") or ""
         )
-        return 1.0 if "yes" in content.strip().lower() else 0.0
-    except Exception:
+        verdict = "yes" in content.strip().lower()
+        usage = data.get("usage", {})
+        _last_score_details.update({
+            "judge_model": model,
+            "judge_raw_response": content.strip(),
+            "judge_verdict": "yes" if verdict else "no",
+            "judge_prompt_tokens": usage.get("prompt_tokens"),
+            "judge_completion_tokens": usage.get("completion_tokens"),
+            "score": 1.0 if verdict else 0.0,
+        })
+        return 1.0 if verdict else 0.0
+    except Exception as e:
+        _judge_fallback_count += 1
+        _judge_fallback_log.append((question_id, repr(e)))
+        warnings.warn(
+            f"Judge call failed for {question_id}: {e!r}, falling back to fuzzy F1",
+            stacklevel=2,
+        )
         return answer_accuracy_fuzzy(prediction, gold)

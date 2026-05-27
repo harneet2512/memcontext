@@ -11,5 +11,15 @@
     "assistant_recommendation",
     "assistant_action"
   ],
+  "predicate_cardinality": {
+    "user_fact": "single",
+    "user_preference": "multi",
+    "user_event": "multi",
+    "user_relationship": "multi",
+    "user_goal": "multi",
+    "user_constraint": "multi",
+    "assistant_recommendation": "multi",
+    "assistant_action": "multi"
+  },
   "sub_slots": {}
 }

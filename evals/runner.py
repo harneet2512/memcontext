@@ -140,6 +140,39 @@ class ReaderMode(StrEnum):
     CONFIGURED = "configured"  # call LLM if configured (not implemented yet)
 
 
+import re as _re
+
+
+def _extract_answer(raw: str) -> str:
+    """Extract the final answer from a CoT reader response.
+
+    Tries multiple patterns in order:
+    1. "Answer:" followed by text (standard CoT format)
+    2. "Step 3" section header followed by text
+    3. Last non-empty paragraph (fallback)
+    """
+    if not raw or not raw.strip():
+        return ""
+
+    for marker in ["Answer:", "answer:", "ANSWER:"]:
+        if marker in raw:
+            answer = raw.rsplit(marker, 1)[1].strip()
+            if answer:
+                return answer
+
+    step3 = _re.search(r"Step\s*3[^:]*:\s*(.+)", raw, _re.DOTALL)
+    if step3:
+        answer = step3.group(1).strip()
+        if answer:
+            return answer
+
+    paragraphs = [p.strip() for p in raw.split("\n\n") if p.strip()]
+    if paragraphs:
+        return paragraphs[-1]
+
+    return raw.strip()
+
+
 _READER_SYSTEM_PROMPT = (
     "You are a personal assistant with access to past conversation history."
 )
@@ -282,10 +315,8 @@ def answer_question(
         result["reader_mode"] = "none"
     elif reader == ReaderMode.CONFIGURED:
         raw_answer = _call_reader_llm(full_prompt)
-        if "Answer:" in raw_answer:
-            result["predicted_answer"] = raw_answer.rsplit("Answer:", 1)[1].strip()
-        else:
-            result["predicted_answer"] = raw_answer
+        predicted = _extract_answer(raw_answer)
+        result["predicted_answer"] = predicted
         result["reader_mode"] = "configured"
         result["raw_reader_output"] = raw_answer
 
@@ -307,21 +338,25 @@ def _call_reader_llm_with_system(system: str, user: str) -> str:
         "MEMCONTEXT_READER_ENDPOINT", "https://openrouter.ai/api/v1/chat/completions"
     )
 
+    payload: dict = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system, "cache_control": {"type": "ephemeral"}},
+            {"role": "user", "content": user},
+        ],
+        "max_tokens": 2048,
+        "temperature": 0.0,
+    }
+    if "deepseek" in endpoint.lower():
+        payload["thinking"] = {"type": "disabled"}
+
     resp = requests.post(
         endpoint,
         headers={
             "Authorization": f"Bearer {api_key}",
             "X-Title": "memcontext",
         },
-        json={
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system, "cache_control": {"type": "ephemeral"}},
-                {"role": "user", "content": user},
-            ],
-            "max_tokens": 2048,
-            "temperature": 0.0,
-        },
+        json=payload,
         timeout=120,
     )
     resp.raise_for_status()
@@ -348,15 +383,19 @@ def _call_reader_llm(prompt: str) -> str:
         "MEMCONTEXT_READER_ENDPOINT", "https://openrouter.ai/api/v1/chat/completions"
     )
 
+    payload: dict = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 2048,
+        "temperature": 0.0,
+    }
+    if "deepseek" in endpoint.lower():
+        payload["thinking"] = {"type": "disabled"}
+
     resp = requests.post(
         endpoint,
         headers={"Authorization": f"Bearer {api_key}"},
-        json={
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 2048,
-            "temperature": 0.0,
-        },
+        json=payload,
         timeout=120,
     )
     resp.raise_for_status()

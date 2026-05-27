@@ -28,7 +28,7 @@ SAMPLE_CATEGORIES = [
     "knowledge-update",
 ]
 
-QUESTIONS_PER_CATEGORY = 5
+QUESTIONS_PER_CATEGORY = 3
 
 _INTERNAL_TO_DATASET: dict[str, str | None] = {
     "single_session_user_fact": "single-session-user",
@@ -74,7 +74,8 @@ def run_quickcheck(
     *,
     dataset_path: str,
     seed: int | None = None,
-    reader: str = "none",
+    reader: str = "configured",
+    no_extract: bool = False,
 ) -> dict[str, object]:
     """Run stratified quickcheck and return results."""
     if seed is None:
@@ -88,6 +89,7 @@ def run_quickcheck(
         limit=len(sampled_ids),
         reader=reader,
         question_ids=sampled_set,
+        no_extract=no_extract,
     )
 
     question_results: list[dict[str, object]] = result.get("questions", [])
@@ -134,27 +136,42 @@ def run_quickcheck(
             }
             for cat, v in sorted(per_cat.items())
         },
+        "extraction_stats": result.get("extraction_stats"),
+        "questions": question_results,
         "reader": reader,
         "dataset_path": dataset_path,
     }
 
 
 def main() -> None:
+    import os
+    from datetime import datetime
+
     parser = argparse.ArgumentParser(description="LongMemEval-S stratified quickcheck")
     parser.add_argument("--dataset", required=True, help="Path to LongMemEval-S dataset")
-    parser.add_argument("--reader", default="none", help="Reader model (default: none)")
+    parser.add_argument("--reader", default="configured", help="Reader model (default: configured)")
     parser.add_argument("--seed", type=int, default=None,
                         help="RNG seed (default: today's date as YYYYMMDD)")
+    parser.add_argument("--no-extract", action="store_true",
+                        help="Skip LLM extraction, store raw turns as claims")
     args = parser.parse_args()
 
     result = run_quickcheck(
         dataset_path=args.dataset,
         seed=args.seed,
         reader=args.reader,
+        no_extract=args.no_extract,
     )
 
-    print(json.dumps(result, indent=2, default=str))
+    # Auto-save full results to file
+    results_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "results")
+    os.makedirs(results_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = os.path.join(results_dir, f"quickcheck_{result['seed']}_{timestamp}.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2, default=str)
 
+    # Print summary to stdout
     raw = result.get("overall_accuracy_raw")
     task_avg = result.get("overall_accuracy_task_averaged")
     if raw is not None:
@@ -171,6 +188,55 @@ def main() -> None:
                     correct = v.get("correct", 0)
                     total_cat = v.get("total", 0)
                     print(f"  {cat}: {acc:.0%} ({correct}/{total_cat})")
+
+    # Print extraction stats
+    ext_stats = result.get("extraction_stats")
+    if ext_stats:
+        print(f"\n--- Extraction Coverage ---")
+        print(f"  Total turns: {ext_stats['total_turns']}")
+        print(f"  With claims: {ext_stats['turns_with_claims']}")
+        print(f"  Empty (fallback): {ext_stats['turns_empty_fallback']}")
+        print(f"  Failed: {ext_stats['turns_failed']}")
+
+    # Print all answers with full detail
+    questions = result.get("questions", [])
+    if questions:
+        print(f"\n--- Per-Question Results ({len(questions)}) ---")
+        for q in questions:
+            if not isinstance(q, dict):
+                continue
+            correct = q.get("correct")
+            status = "CORRECT" if correct else ("WRONG" if correct is False else "UNSCORED")
+            tier = q.get("scoring_tier", "?")
+            cat = q.get("category", "?")
+            qid = q.get("question_id", "?")
+            print(f"\n  [{status}] {qid}")
+            print(f"    Category: {cat} | Tier: {tier}")
+            print(f"    Question: {str(q.get('question', ''))[:150]}")
+
+            gold = q.get("gold_answer", "?")
+            if gold and len(str(gold)) > 150:
+                gold = str(gold)[:150] + "..."
+            print(f"    Gold: {gold}")
+
+            predicted = q.get("predicted_answer", "(none)")
+            if predicted and len(str(predicted)) > 200:
+                predicted = str(predicted)[:200] + "..."
+            print(f"    Predicted: {predicted}")
+
+            judge_verdict = q.get("judge_verdict")
+            judge_raw = q.get("judge_raw_response")
+            if judge_verdict:
+                print(f"    Judge: {judge_verdict} (raw: {judge_raw})")
+
+            claims = q.get("num_claims_retrieved", "?")
+            excerpts = q.get("num_excerpts", "?")
+            superseded = q.get("claims_superseded", "?")
+            total_claims = q.get("total_claims_in_db", "?")
+            print(f"    Retrieval: {claims} claims retrieved, {excerpts} excerpts, "
+                  f"{superseded} superseded, {total_claims} total in DB")
+
+    print(f"\nFull results saved to: {out_path}")
 
 
 if __name__ == "__main__":

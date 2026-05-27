@@ -29,21 +29,24 @@ PROMPTS: dict[str, str] = {
         "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — Evidence:"
     ),
     "cross_session_preference": (
-        "You are given a question and memory items spanning multiple conversations.\n\n"
-        "Step 1 — Notes: For each item, extract any user preferences. Note the date of each.\n"
-        "Step 2 — Reasoning: If preferences conflict, the most recent one is current. Do NOT give advice.\n"
-        "Step 3 — Answer: State the user's current preference.\n\n"
-        "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — Notes:"
+        "You are given a question and memory items spanning multiple conversations. "
+        "The user's preferences may have evolved over time.\n\n"
+        "Step 1 — Evidence: For each item, extract any preference signals: "
+        "what the user likes, dislikes, chooses, avoids, or gravitates toward. Note the date.\n"
+        "Step 2 — Reasoning: If preferences conflict across sessions, the most recent one is current. "
+        "Do NOT give advice or recommendations — only state what the user prefers.\n"
+        "Step 3 — Answer: State the user's current preference concisely.\n\n"
+        "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — Evidence:"
     ),
     "cross_session_user_fact": (
         "You are given a question and memory items spanning multiple conversations.\n\n"
-        "Step 1 — List: For each item, extract EVERY distinct instance relevant to the question. "
-        "Number each instance separately (e.g., 'Plant 1: succulent from garden center, Plant 2: fern from farmer's market'). "
-        "Include dates and sources. Do not skip any mention.\n"
-        "Step 2 — Aggregate: Count, sum, or compute as the question requires. Show your arithmetic. "
-        "If counting, verify your count matches the numbered list. If summing money, list each amount.\n"
-        "Step 3 — Answer: State the final number or result.\n\n"
-        "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — List:"
+        "Step 1 — Extract: For each item, extract EVERY distinct instance relevant to the question. "
+        "Number each instance separately and include dates.\n"
+        "Step 2 — Reason: Determine what the question is asking for.\n"
+        "  - If items are distinct instances to count or aggregate, list each one and compute the total.\n"
+        "  - If items update a previous fact, use the latest value.\n"
+        "Step 3 — Answer: State the answer concisely.\n\n"
+        "Memory items:\n{claims}\n\nQuestion: {question}\n\nStep 1 — Extract:"
     ),
     "temporal_ordering": (
         "You are given a question about timing or order of events, and memory items with dates.\n\n"

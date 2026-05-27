@@ -111,6 +111,10 @@ def run_benchmark(
 
         active_pack.cache_clear()
 
+    from memcontext.predicate_packs import active_pack as _get_pack
+    pack = _get_pack()
+    multi_valued = pack.multi_valued_predicates
+
     sessions, questions = load_dataset(dataset_path)
     session_map: dict[str, LongMemEvalSession] = {s.session_id: s for s in sessions}
 
@@ -188,6 +192,7 @@ def run_benchmark(
                     speaker=sp,
                     text=text,
                     extractor=pt,
+                    multi_valued_predicates=multi_valued,
                 )
                 if result.turn is not None:
                     turn_session_date[result.turn.turn_id] = sess_date

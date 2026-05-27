@@ -154,6 +154,38 @@ class EmbeddingClient:
         return out
 
 
+# --- cross-encoder reranker --------------------------------------------------
+
+
+_DEFAULT_CROSS_ENCODER = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+
+class CrossEncoderReranker:
+    """Reranker using sentence-transformers CrossEncoder.
+
+    Model: cross-encoder/ms-marco-MiniLM-L-6-v2 (22MB, runs locally).
+    Lazy-loads on first call. Matches the ``reranker`` callable signature
+    expected by ``retrieve_hybrid``.
+    """
+
+    def __init__(self, model_id: str = _DEFAULT_CROSS_ENCODER, use_onnx: bool = True):
+        self._model_id = model_id
+        self._use_onnx = use_onnx
+        self._model: object | None = None
+
+    def __call__(self, query: str, texts: list[str]) -> list[float]:
+        if self._model is None:
+            from sentence_transformers import CrossEncoder
+            backend = "onnx" if self._use_onnx else "torch"
+            try:
+                self._model = CrossEncoder(self._model_id, backend=backend)
+            except Exception:
+                self._model = CrossEncoder(self._model_id)
+        pairs = [[query, t] for t in texts]
+        scores = self._model.predict(pairs)  # type: ignore[union-attr]
+        return [float(s) for s in scores]
+
+
 # --- blob encoding -----------------------------------------------------------
 
 
@@ -517,6 +549,87 @@ def parse_temporal_scope(
     return (None, None)
 
 
+# --- date extraction for content-level temporal matching ----------------------
+
+_MONTH_NAMES = {
+    "january": 1, "february": 2, "march": 3, "april": 4,
+    "may": 5, "june": 6, "july": 7, "august": 8,
+    "september": 9, "october": 10, "november": 11, "december": 12,
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4,
+    "jun": 6, "jul": 7, "aug": 8, "sep": 9, "sept": 9,
+    "oct": 10, "nov": 11, "dec": 12,
+}
+
+_MONTH_RE = "|".join(_MONTH_NAMES.keys())
+_MONTH_RE_NO_MAY = "|".join(k for k in _MONTH_NAMES if k != "may")
+
+_DATE_EXTRACTORS: list[tuple[str, str]] = [
+    (r"\b(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})\b", "ymd"),
+    (r"\b(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})\b", "mdy"),
+    # "may" excluded from standalone month patterns to avoid verb false positives;
+    # May dates still matched via YYYY/MM/DD and MM/DD/YYYY patterns above, and
+    # via the "may" pattern below that requires a year to disambiguate.
+    (rf"\b({_MONTH_RE_NO_MAY})\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:[,\s]+(\d{{4}}))?\b", "month_day_year"),
+    (rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({_MONTH_RE_NO_MAY})(?:[,\s]+(\d{{4}}))?\b", "day_month_year"),
+    (rf"\b(may)\s+(\d{{1,2}})(?:st|nd|rd|th)?[,\s]+(\d{{4}})\b", "month_day_year"),
+]
+
+
+def extract_dates_from_text(text: str) -> list[datetime]:
+    """Extract date objects from free text using regex patterns."""
+    results: list[datetime] = []
+    t = text.lower()
+
+    for pattern, kind in _DATE_EXTRACTORS:
+        for m in _re.finditer(pattern, t):
+            try:
+                if kind == "ymd":
+                    y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                elif kind == "mdy":
+                    mo, d, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                elif kind == "month_day_year":
+                    mo = _MONTH_NAMES.get(m.group(1), 0)
+                    d = int(m.group(2))
+                    y = int(m.group(3)) if m.group(3) else datetime.now().year
+                elif kind == "day_month_year":
+                    d = int(m.group(1))
+                    mo = _MONTH_NAMES.get(m.group(2), 0)
+                    y = int(m.group(3)) if m.group(3) else datetime.now().year
+                else:
+                    continue
+                if 1 <= mo <= 12 and 1 <= d <= 31 and 1900 <= y <= 2100:
+                    results.append(datetime(y, mo, d, tzinfo=timezone.utc))
+            except (ValueError, OverflowError):
+                continue
+
+    return results
+
+
+def _date_match_scores(query: str, claims: list[Claim]) -> list[float]:
+    """Score claims by date proximity between query dates and claim value dates.
+
+    Returns 1.0 for exact date match, decaying with distance (1/(1+days)).
+    Returns 0.0 for all claims if no dates found in query.
+    """
+    query_dates = extract_dates_from_text(query)
+    if not query_dates:
+        return [0.0] * len(claims)
+
+    scores: list[float] = []
+    for c in claims:
+        claim_dates = extract_dates_from_text(c.value)
+        if not claim_dates:
+            scores.append(0.0)
+            continue
+        min_dist = min(
+            abs((qd - cd).days)
+            for qd in query_dates
+            for cd in claim_dates
+        )
+        scores.append(1.0 / (1.0 + min_dist))
+    return scores
+
+
 # --- query depth routing -----------------------------------------------------
 
 _AGGREGATION_KEYWORDS = frozenset({
@@ -763,6 +876,9 @@ def retrieve_hybrid(
         scope_scores = [0.0] * len(active)
         w_scope = 0.0
 
+    date_scores = _date_match_scores(query, active)
+    w_date = 0.3 if any(s > 0 for s in date_scores) else 0.0
+
     target_preds, _query_type = classify_query_predicates(query)
     if target_preds:
         pred_scores: list[float] = [1.0 if c.predicate in target_preds else 0.0 for c in active]
@@ -784,6 +900,7 @@ def retrieve_hybrid(
     tmp_ranks = _rrf_ranks(tmp_scores)
     bm25_ranks = _rrf_ranks(bm25_raw)
     scope_ranks = _rrf_ranks(scope_scores)
+    date_ranks = _rrf_ranks(date_scores)
     pred_ranks = _rrf_ranks(pred_scores)
     conf_ranks = _rrf_ranks(conf_scores)
     freq_ranks = _rrf_ranks(freq_scores)
@@ -806,6 +923,7 @@ def retrieve_hybrid(
             + w_tmp / (RRF_K + tmp_ranks[i])
             + w_bm25 / (RRF_K + bm25_ranks[i])
             + w_scope / (RRF_K + scope_ranks[i])
+            + w_date / (RRF_K + date_ranks[i])
             + w_pred / (RRF_K + pred_ranks[i])
             + w_conf / (RRF_K + conf_ranks[i])
             + w_freq / (RRF_K + freq_ranks[i])

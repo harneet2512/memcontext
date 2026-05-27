@@ -195,6 +195,10 @@ def run_amb_preflight(
 
         active_pack.cache_clear()
 
+    from memcontext.predicate_packs import active_pack as _get_pack
+    pack = _get_pack()
+    multi_valued = pack.multi_valued_predicates
+
     conversations, questions = load_amb_dataset(dataset_path)
     conv_map: dict[str, AMBConversation] = {
         c.conversation_id: c for c in conversations
@@ -302,6 +306,7 @@ def run_amb_preflight(
                 speaker=sp,
                 text=text,
                 extractor=pt,
+                multi_valued_predicates=multi_valued,
             )
             claims_created += len(result.created_claims)
 

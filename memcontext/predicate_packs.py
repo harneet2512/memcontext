@@ -50,9 +50,18 @@ class PredicatePack:
     pack_id: str
     predicate_families: frozenset[str]
     sub_slots: dict[str, frozenset[str]] = field(default_factory=dict)
+    predicate_cardinality: dict[str, str] = field(default_factory=dict)
     aux_data_path: Path | None = None
     few_shot_examples: tuple[FewShotExample, ...] = ()
     description: str = ""
+
+    @property
+    def multi_valued_predicates(self) -> frozenset[str]:
+        """Predicates where supersession should NOT fire (default: all)."""
+        return frozenset(
+            p for p in self.predicate_families
+            if self.predicate_cardinality.get(p, "multi") == "multi"
+        )
 
 
 def _parse_few_shot(raw: dict) -> FewShotExample:
@@ -91,6 +100,7 @@ def load_pack(pack_dir: str | Path) -> PredicatePack:
     families = frozenset(predicates_raw["predicate_families"])
     sub_slots_raw = predicates_raw.get("sub_slots", {})
     sub_slots = {str(k): frozenset(v) for k, v in sub_slots_raw.items()}
+    cardinality = {str(k): str(v) for k, v in predicates_raw.get("predicate_cardinality", {}).items()}
 
     # Check for auxiliary data directories
     aux_data_path: Path | None = None
@@ -106,6 +116,7 @@ def load_pack(pack_dir: str | Path) -> PredicatePack:
         pack_id=pack_id,
         predicate_families=families,
         sub_slots=sub_slots,
+        predicate_cardinality=cardinality,
         aux_data_path=aux_data_path,
         few_shot_examples=examples,
         description=str(predicates_raw.get("description", "")),
@@ -126,8 +137,10 @@ def load_packs(pack_ids: list[str]) -> PredicatePack:
     packs = [load_pack(pid) for pid in pack_ids]
     merged_families = frozenset().union(*(p.predicate_families for p in packs))
     merged_sub_slots: dict[str, frozenset[str]] = {}
+    merged_cardinality: dict[str, str] = {}
     for p in packs:
         merged_sub_slots.update(p.sub_slots)
+        merged_cardinality.update(p.predicate_cardinality)
     merged_examples: tuple[FewShotExample, ...] = ()
     for p in packs:
         merged_examples = merged_examples + p.few_shot_examples
@@ -138,6 +151,7 @@ def load_packs(pack_ids: list[str]) -> PredicatePack:
         pack_id=merged_id,
         predicate_families=merged_families,
         sub_slots=merged_sub_slots,
+        predicate_cardinality=merged_cardinality,
         few_shot_examples=merged_examples,
         description=merged_desc,
     )

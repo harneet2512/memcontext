@@ -13,5 +13,17 @@
     "user_preference",
     "project_status"
   ],
+  "predicate_cardinality": {
+    "convention_established": "single",
+    "file_purpose": "single",
+    "api_contract": "single",
+    "project_status": "single",
+    "decision_made": "multi",
+    "bug_fixed": "multi",
+    "dependency_reason": "multi",
+    "todo": "multi",
+    "blocker": "multi",
+    "user_preference": "multi"
+  },
   "sub_slots": {}
 }

@@ -97,7 +97,10 @@ def apply_changes(
     """
     from memcontext.extractors import PassthroughExtractor
     from memcontext.on_new_turn import on_new_turn
+    from memcontext.predicate_packs import active_pack
     from memcontext.schema import Speaker
+
+    pack = active_pack()
 
     stats: dict = {"added": 0, "changed": 0, "supersessions": 0, "errors": []}
 
@@ -111,6 +114,7 @@ def apply_changes(
             speaker=Speaker.ASSISTANT,
             text=text,
             extractor=pt,
+            multi_valued_predicates=pack.multi_valued_predicates,
         )
         stats["added"] = len(result.created_claims)
 
@@ -125,6 +129,7 @@ def apply_changes(
             speaker=Speaker.ASSISTANT,
             text=text,
             extractor=pt,
+            multi_valued_predicates=pack.multi_valued_predicates,
         )
         stats["changed"] = len(result.created_claims)
         stats["supersessions"] = len(result.supersession_edges)

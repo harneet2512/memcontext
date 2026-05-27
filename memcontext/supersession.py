@@ -68,12 +68,19 @@ def _get_speaker(conn: sqlite3.Connection, turn_id: str) -> Speaker:
 def detect_pass1(
     conn: sqlite3.Connection,
     new_claim: Claim,
+    multi_valued_predicates: frozenset[str] | None = None,
 ) -> SupersessionEdge | None:
     """Deterministic Pass-1 supersession for a freshly-inserted claim.
 
     Returns the created edge (and marks the old claim superseded) or None if
     no prior matching active/confirmed claim exists.
+
+    If multi_valued_predicates is provided and the claim's predicate is in it,
+    supersession is skipped — multi-valued predicates can have multiple active
+    claims with the same (session, subject, predicate).
     """
+    if multi_valued_predicates and new_claim.predicate in multi_valued_predicates:
+        return None
     rows = conn.execute(
         "SELECT * FROM claims WHERE session_id = ? AND subject = ? AND predicate = ?"
         " AND status IN ('active','confirmed') AND claim_id != ?"

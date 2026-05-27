@@ -230,6 +230,7 @@ def run_preflight(
     reader: str = "none",
     target_categories: list[str] | None = None,
     question_ids: set[str] | None = None,
+    no_extract: bool = False,
 ) -> dict:
     """Run a LongMemEval preflight using the full MemContext pipeline.
 
@@ -248,13 +249,18 @@ def run_preflight(
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
+    import logging
     import os
+
+    import structlog
+    logging.getLogger("memcontext").setLevel(logging.WARNING)
+    structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.WARNING))
 
     from evals.runner import ReaderMode, answer_question
     from memcontext.extractors import LLMExtractor, auto_extractor
     from memcontext.on_new_turn import ExtractedClaim, on_new_turn
     from memcontext.extractors import PassthroughExtractor
-    from memcontext.retrieval import EmbeddingClient, backfill_embeddings
+    from memcontext.retrieval import CrossEncoderReranker, EmbeddingClient, backfill_embeddings
     from memcontext.schema import Speaker, Turn, open_database
 
     # Use personal_assistant pack (matching baseline) unless overridden
@@ -262,6 +268,10 @@ def run_preflight(
         os.environ["ACTIVE_PACK"] = "personal_assistant"
         from memcontext.predicate_packs import active_pack
         active_pack.cache_clear()
+
+    from memcontext.predicate_packs import active_pack as _get_pack
+    pack = _get_pack()
+    multi_valued = pack.multi_valued_predicates
 
     sessions, questions = load_dataset(dataset_path)
 
@@ -279,6 +289,15 @@ def run_preflight(
     question_results = []
     embedding_client = EmbeddingClient()
     extractor = auto_extractor()
+
+    reranker = None
+    if os.environ.get("MEMCONTEXT_RERANKER", "auto") in ("auto", "cross-encoder"):
+        try:
+            from sentence_transformers import CrossEncoder as _CE  # noqa: F401
+            reranker = CrossEncoderReranker()
+            print("  Cross-encoder reranker: enabled", flush=True)
+        except ImportError:
+            print("  Cross-encoder reranker: unavailable (sentence-transformers not installed)", flush=True)
 
     from memcontext.claims import get_turn, new_turn_id, now_ns
     from memcontext.retrieval import retrieve_hybrid
@@ -303,37 +322,65 @@ def run_preflight(
             if content and content.strip():
                 work.append((sid, role, content, sess.date))
 
-    def _extract_one(item: tuple[str, str, str, str]) -> tuple[str, str, str, str, list[dict]]:
-        raw_sid, role, text, date = item
-        sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
-        t = Turn(turn_id=new_turn_id(), session_id=raw_sid,
-                 speaker=sp, text=text, ts=now_ns(), asr_confidence=None)
-        claims = extractor(t)
-        return (raw_sid, role, text, date, [
-            {"subject": c.subject, "predicate": c.predicate,
-             "value": c.value, "confidence": c.confidence}
-            for c in claims
-        ])
-
     extracted: list[tuple[str, str, str, str, list[dict]]] = []
+    extraction_failures = 0
+    extraction_failure_log: list[tuple[str, str]] = []
+    extraction_empty = 0
     total_work = len(work)
-    if work and isinstance(extractor, LLMExtractor):
-        done = 0
-        with ThreadPoolExecutor(max_workers=10) as pool:
-            futures = {pool.submit(_extract_one, w): w for w in work}
-            for fut in as_completed(futures):
-                done += 1
-                try:
-                    extracted.append(fut.result())
-                except Exception:
-                    pass
-                if done % 100 == 0 or done == total_work:
-                    print(f"  Extracted {done}/{total_work} turns", flush=True)
+
+    if no_extract:
+        print(f"  No-extract mode: storing {total_work} raw turns as claims", flush=True)
+        for raw_sid, role, text, date in work:
+            subject = "user" if role == "user" else "assistant"
+            extracted.append((raw_sid, role, text, date, [{
+                "subject": subject,
+                "predicate": "user_fact",
+                "value": text[:1000],
+                "confidence": 1.0,
+            }]))
     else:
-        for i, w in enumerate(work, 1):
-            extracted.append(_extract_one(w))
-            if i % 50 == 0 or i == total_work:
-                print(f"  Extracted {i}/{total_work} turns", flush=True)
+        def _extract_one(item: tuple[str, str, str, str]) -> tuple[str, str, str, str, list[dict]]:
+            raw_sid, role, text, date = item
+            sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
+            t = Turn(turn_id=new_turn_id(), session_id=raw_sid,
+                     speaker=sp, text=text, ts=now_ns(), asr_confidence=None)
+            claims = extractor(t)
+            return (raw_sid, role, text, date, [
+                {"subject": c.subject, "predicate": c.predicate,
+                 "value": c.value, "confidence": c.confidence}
+                for c in claims
+            ])
+
+        if work and isinstance(extractor, LLMExtractor):
+            done = 0
+            with ThreadPoolExecutor(max_workers=20) as pool:
+                futures = {pool.submit(_extract_one, w): w for w in work}
+                for fut in as_completed(futures):
+                    done += 1
+                    try:
+                        extracted.append(fut.result())
+                    except Exception as e:
+                        extraction_failures += 1
+                        w_item = futures[fut]
+                        extraction_failure_log.append((w_item[0], repr(e)))
+                    if done % 100 == 0 or done == total_work:
+                        print(f"  Extracted {done}/{total_work} turns", flush=True)
+        else:
+            for i, w in enumerate(work, 1):
+                try:
+                    extracted.append(_extract_one(w))
+                except Exception as e:
+                    extraction_failures += 1
+                    extraction_failure_log.append((w[0], repr(e)))
+                if i % 50 == 0 or i == total_work:
+                    print(f"  Extracted {i}/{total_work} turns", flush=True)
+
+        if extraction_failures > 0:
+            print(f"  WARNING: {extraction_failures}/{total_work} extraction(s) failed:", flush=True)
+            for sid, err in extraction_failure_log[:5]:
+                print(f"    {sid}: {err!s:.200}".encode("utf-8", errors="replace").decode("utf-8"), flush=True)
+            if extraction_failures > 5:
+                print(f"    ... and {extraction_failures - 5} more", flush=True)
 
     # Ingest into shared DB in session order (preserves supersession)
     turn_session_date: dict[str, str] = {}
@@ -344,12 +391,19 @@ def run_preflight(
     for raw_sid in sorted(by_session.keys()):
         for role, text, date, claims_data in by_session[raw_sid]:
             if not claims_data:
-                continue
+                extraction_empty += 1
+                claims_data = [{
+                    "subject": "conversation",
+                    "predicate": "user_fact",
+                    "value": text[:500],
+                    "confidence": 0.3,
+                }]
             sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
             pt = PassthroughExtractor(claims_data)
             result = on_new_turn(
                 conn, session_id=raw_sid, speaker=sp,
                 text=text, extractor=pt,
+                multi_valued_predicates=multi_valued,
             )
             if result.turn is not None:
                 turn_session_date[result.turn.turn_id] = date
@@ -394,6 +448,7 @@ def run_preflight(
             results = retrieve_hybrid(
                 conn, session_id=sid, query=q.question,
                 top_k=50, embedding_client=embedding_client,
+                reranker=reranker,
             )
             all_results.extend(results)
         all_results.sort(key=lambda x: (-x[1], x[0].claim_id))
@@ -446,21 +501,45 @@ def run_preflight(
             1 for c, _ in top_claims if c.session_id in q_session_ids
         )
 
+        # Track supersession for diagnostics
+        sid_placeholders = ",".join("?" * len(q_session_ids))
+        superseded_rows = conn.execute(
+            f"SELECT claim_id, subject, predicate, value FROM claims"
+            f" WHERE session_id IN ({sid_placeholders}) AND status = 'superseded'",
+            q_session_ids,
+        ).fetchall()
+        superseded_claims = [
+            {"claim_id": r["claim_id"], "subject": r["subject"],
+             "predicate": r["predicate"], "value": r["value"]}
+            for r in superseded_rows
+        ]
+        total_claims_in_db = conn.execute(
+            f"SELECT COUNT(*) FROM claims WHERE session_id IN ({sid_placeholders})",
+            q_session_ids,
+        ).fetchone()[0]
+
         qr_entry: dict = {
             "question_id": q.question_id,
             "category": q.category,
             "gold_answer": q.gold_answer,
             "ingested_sessions": len(q_session_ids),
             "ingested_turns": ingested_turns,
-            "claims_created": claims_created,
+            "total_claims_in_db": total_claims_in_db,
+            "claims_retrieved": claims_created,
+            "claims_superseded": len(superseded_claims),
+            "superseded_details": superseded_claims,
             "embedded_count": total_embedded,
             "num_claims_retrieved": len(claims),
+            "num_excerpts": len(excerpts),
+            "excerpts": excerpts,
             **answer_result,
         }
 
         predicted = answer_result.get("predicted_answer")
         if predicted is not None:
-            from evals.metrics import score_answer
+            import time as _time
+            from evals.metrics import get_last_score_details, score_answer
+            t0 = _time.monotonic()
             score = score_answer(
                 predicted=predicted,
                 gold=str(q.gold_answer),
@@ -468,8 +547,18 @@ def run_preflight(
                 question_type=q.category,
                 question_id=q.question_id,
             )
+            scoring_time = round(_time.monotonic() - t0, 2)
+            score_details = get_last_score_details()
             qr_entry["score"] = score
             qr_entry["correct"] = score >= 1.0
+            qr_entry["scoring_tier"] = score_details.get("scoring_tier", "unknown")
+            qr_entry["judge_verdict"] = score_details.get("judge_verdict")
+            qr_entry["judge_raw_response"] = score_details.get("judge_raw_response")
+            qr_entry["scoring_time_s"] = scoring_time
+
+            status = "CORRECT" if score >= 1.0 else "WRONG"
+            tier = score_details.get("scoring_tier", "?")
+            print(f"  [{status}] {q.question_id} ({tier})", flush=True)
 
         question_results.append(qr_entry)
 
@@ -508,6 +597,12 @@ def run_preflight(
                 for v in per_cat.values()
             ) / len(per_cat), 4
         ) if per_cat else None,
+        "extraction_stats": {
+            "total_turns": total_work,
+            "turns_with_claims": total_work - extraction_failures - extraction_empty,
+            "turns_empty_fallback": extraction_empty,
+            "turns_failed": extraction_failures,
+        },
         "scoring_method": str(CURRENT_SCORING),
         "scoring_notes": SCORING_NOTES,
         "questions": question_results,

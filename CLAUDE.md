@@ -43,6 +43,7 @@ predicate_packs/     # Domain predicate vocabularies
 ```bash
 pip install -e .                    # Install core
 pip install -e ".[mcp]"             # With MCP server
+pip install -e ".[embeddings]"      # With embeddings + cross-encoder reranking
 pip install -e ".[dev]"             # With test deps
 memcontext init --db memcontext.db  # Create database
 memcontext ingest "text" --db ...   # Ingest a turn
@@ -50,6 +51,16 @@ memcontext query "question" --db .. # Query memory
 memcontext serve --transport stdio  # Start MCP server
 python -m pytest tests/ -v          # Run tests
 ```
+
+## Environment Variables
+
+- `ACTIVE_PACK` — predicate pack to use (default: "general", eval uses "personal_assistant")
+- `MEMCONTEXT_RERANKER` — reranker mode: "auto" (default, uses cross-encoder if available), "cross-encoder", or empty (disabled)
+- `MEMCONTEXT_READER_API_KEY` — OpenRouter API key for reader LLM + judge
+- `MEMCONTEXT_READER_MODEL` — reader model (default: "openai/gpt-5-mini")
+- `MEMCONTEXT_JUDGE_MODEL` — judge model (default: "openai/gpt-4o-2024-08-06")
+- `MEMCONTEXT_EMBED_MODEL` — embedding model (default: "sentence-transformers/all-MiniLM-L6-v2")
+- `MEMCONTEXT_EXTRACTOR_BACKEND` — extractor backend: "ollama", "openrouter", etc.
 
 ## Development Rules
 
@@ -103,19 +114,35 @@ LongMemEval protocol (xiaowu0162/LongMemEval).
 | single-session-assistant | ~solved | — | — |
 | single-session-user | ~solved | — | — |
 
+## Retrieval Architecture (9-channel RRF + optional cross-encoder rerank)
+
+Channels fused via Reciprocal Rank Fusion (k=60):
+1. **Semantic** (w=0.5) — cosine similarity on claim embeddings
+2. **Entity** (w=0.2) — NER + entity_key match
+3. **Temporal recency** (w=0.1) — event_ts > valid_from_ts > created_ts
+4. **BM25** (w=0.2) — lexical term frequency
+5. **Temporal scope** (w=0.3 if active) — "last N days" window matching
+6. **Date-value matching** (w=0.3 if active) — regex date extraction from claim values vs query dates, proximity scored as 1/(1+days)
+7. **Predicate targeting** (w=0.2 if active) — query intent classification
+8. **Confidence** (w=0.1) — extraction confidence
+9. **Frequency** (w=0.1) — (subject, predicate) occurrence count
+
+Post-RRF: optional `CrossEncoderReranker` (ms-marco-MiniLM-L-6-v2, 22MB local) reranks top-k results. Enabled by default when sentence-transformers is installed (`MEMCONTEXT_RERANKER=auto`).
+
 ## Evidence-Based Improvement Order
 
 1. Category-specific answer prompts (PROVEN — OMEGA uses per-category prompts)
 2. Preference prompt fix (PROVEN — current failure is prompt-level)
 3. Scoring methodology: LLM-as-judge (not fuzzy F1 — fuzzy F1 fails on correct paraphrased answers)
 4. Reader model test / reader-mode clarity
-5. Dense observation compression from structured claims (EXPERIMENTAL)
-6. Only then consider retrieval architecture changes
+5. Cross-encoder reranking (PROVEN — Hindsight uses ms-marco-MiniLM-L-6-v2, 91.4%) — **IMPLEMENTED**
+6. Temporal date-value matching channel (PROVEN — Hindsight's dedicated temporal retrieval) — **IMPLEMENTED**
+7. Predicate cardinality for supersession (PROVEN — prevents false claim loss) — **IMPLEMENTED**
+8. Dense observation compression from structured claims (EXPERIMENTAL)
 
 ## Rejected/Unproven for Now
 
 - Spreading activation
 - Causal edges
-- Cross-encoder reranking
 - Broad narrative chunking
 - Graph traversal as a new retrieval channel

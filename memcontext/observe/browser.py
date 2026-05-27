@@ -88,6 +88,7 @@ def observe_page(
     from memcontext.extractors import PassthroughExtractor
     from memcontext.observe.extractors import AccessibilityTreeExtractor
     from memcontext.on_new_turn import on_new_turn
+    from memcontext.predicate_packs import active_pack
     from memcontext.schema import Speaker
 
     ext = extractor or AccessibilityTreeExtractor()
@@ -106,6 +107,7 @@ def observe_page(
         observation_text += f"\n- {c.get('subject', 'unknown')}: {c.get('value', '')}"
 
     # Store via on_new_turn with PassthroughExtractor
+    pack = active_pack()
     pt = PassthroughExtractor(claims)
     result = on_new_turn(
         conn,
@@ -113,6 +115,7 @@ def observe_page(
         speaker=Speaker.ASSISTANT,
         text=observation_text,
         extractor=pt,
+        multi_valued_predicates=pack.multi_valued_predicates,
     )
 
     return ObservationResult(

@@ -20,6 +20,7 @@ from memcontext.claims import (
 )
 from memcontext.extractors import PassthroughExtractor, auto_extractor
 from memcontext.on_new_turn import on_new_turn
+from memcontext.predicate_packs import active_pack
 from memcontext.provenance import span_for_claim
 from memcontext.schema import ClaimStatus, EdgeType, Speaker
 from memcontext.supersession import write_supersession_edge
@@ -42,7 +43,11 @@ def handle_memory_store(
     else:
         extractor = auto_extractor()
 
-    result = on_new_turn(conn, session_id=sid, speaker=sp, text=text, extractor=extractor)
+    pack = active_pack()
+    result = on_new_turn(
+        conn, session_id=sid, speaker=sp, text=text, extractor=extractor,
+        multi_valued_predicates=pack.multi_valued_predicates,
+    )
 
     if entities and result.created_claims:
         for ent in entities:
