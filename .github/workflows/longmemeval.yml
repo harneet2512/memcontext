@@ -1,0 +1,116 @@
+name: LongMemEval Full Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      workers:
+        description: 'Parallel extraction workers per job'
+        default: '30'
+        type: string
+      chunks:
+        description: 'Number of parallel jobs (splits 500q)'
+        default: '5'
+        type: string
+
+env:
+  MEMCONTEXT_READER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+  MEMCONTEXT_EXTRACTOR_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+  MEMCONTEXT_EXTRACTOR_BACKEND: openrouter
+  MEMCONTEXT_EXTRACTOR_MODEL: inclusionai/ling-2.6-flash
+  MEMCONTEXT_READER_MODEL: openai/gpt-5-mini
+  MEMCONTEXT_JUDGE_MODEL: openai/gpt-4o-2024-08-06
+  ACTIVE_PACK: personal_assistant
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      matrix:
+        chunk: [0, 1, 2, 3, 4]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -e ".[embeddings]"
+
+      - name: Download LongMemEval dataset
+        run: |
+          if [ ! -f data/longmemeval-s/data/longmemeval_s_cleaned.json ]; then
+            git clone --depth 1 https://github.com/xiaowu0162/LongMemEval data/longmemeval-s
+          fi
+
+      - name: Run benchmark chunk ${{ matrix.chunk }}
+        run: |
+          python -u evals/run_chunk.py \
+            --dataset data/longmemeval-s/data/longmemeval_s_cleaned.json \
+            --chunk ${{ matrix.chunk }} \
+            --total-chunks ${{ inputs.chunks || '5' }} \
+            --workers ${{ inputs.workers || '30' }} \
+            --output results/chunk_${{ matrix.chunk }}.json
+
+      - name: Upload chunk results
+        uses: actions/upload-artifact@v4
+        with:
+          name: chunk-${{ matrix.chunk }}
+          path: results/chunk_${{ matrix.chunk }}.json
+
+  merge:
+    needs: benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download all chunks
+        uses: actions/download-artifact@v4
+        with:
+          path: results/chunks/
+
+      - name: Merge results
+        run: |
+          python -u evals/merge_chunks.py \
+            --input-dir results/chunks/ \
+            --output results/full500_gha.json
+
+      - name: Upload final results
+        uses: actions/upload-artifact@v4
+        with:
+          name: longmemeval-full-500q
+          path: results/full500_gha.json
+
+      - name: Print summary
+        run: |
+          python -c "
+          import json
+          with open('results/full500_gha.json') as f:
+              d = json.load(f)
+          scored = [q for q in d.get('questions', []) if 'score' in q]
+          correct = sum(1 for q in scored if q.get('correct'))
+          total = len(scored)
+          print(f'## LongMemEval-S Results')
+          print(f'')
+          print(f'**Accuracy: {correct}/{total} = {correct/total*100:.1f}%**')
+          print(f'')
+          cats = {}
+          for q in scored:
+              c = q.get('category', '?')
+              cats.setdefault(c, [0, 0])
+              cats[c][1] += 1
+              if q.get('correct'): cats[c][0] += 1
+          print('| Category | Score |')
+          print('|----------|-------|')
+          for cat, (cor, tot) in sorted(cats.items()):
+              print(f'| {cat} | {cor}/{tot} ({cor/tot*100:.0f}%) |')
+          " >> $GITHUB_STEP_SUMMARY

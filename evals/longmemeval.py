@@ -353,7 +353,7 @@ def run_preflight(
 
         if work and isinstance(extractor, LLMExtractor):
             done = 0
-            with ThreadPoolExecutor(max_workers=20) as pool:
+            with ThreadPoolExecutor(max_workers=30) as pool:
                 futures = {pool.submit(_extract_one, w): w for w in work}
                 for fut in as_completed(futures):
                     done += 1
@@ -378,7 +378,7 @@ def run_preflight(
         if extraction_failures > 0:
             print(f"  WARNING: {extraction_failures}/{total_work} extraction(s) failed:", flush=True)
             for sid, err in extraction_failure_log[:5]:
-                print(f"    {sid}: {err!s:.200}".encode("utf-8", errors="replace").decode("utf-8"), flush=True)
+                print(f"    {sid}: {err!s:.200}".encode("ascii", errors="replace").decode("ascii"), flush=True)
             if extraction_failures > 5:
                 print(f"    ... and {extraction_failures - 5} more", flush=True)
 

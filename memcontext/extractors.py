@@ -469,7 +469,7 @@ class LLMExtractor:
         model: str | None = None,
         base_url: str | None = None,
         api_key: str | None = None,
-        timeout: float = 300.0,
+        timeout: float = 60.0,
     ) -> None:
         import os
 
