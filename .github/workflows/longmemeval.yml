@@ -13,8 +13,8 @@ on:
         type: string
 
 env:
-  MEMCONTEXT_READER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-  MEMCONTEXT_EXTRACTOR_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+  MEMCONTEXT_READER_API_KEY: ${{ secrets.open_router }}
+  MEMCONTEXT_EXTRACTOR_API_KEY: ${{ secrets.open_router }}
   MEMCONTEXT_EXTRACTOR_BACKEND: openrouter
   MEMCONTEXT_EXTRACTOR_MODEL: inclusionai/ling-2.6-flash
   MEMCONTEXT_READER_MODEL: openai/gpt-5-mini
