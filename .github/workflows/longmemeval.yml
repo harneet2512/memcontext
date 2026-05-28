@@ -3,69 +3,94 @@ name: LongMemEval Full Benchmark
 on:
   workflow_dispatch:
     inputs:
-      workers:
-        description: 'Parallel extraction workers per job'
-        default: '8'
+      mode:
+        description: 'smoke (30q test) or full (500q)'
+        default: 'smoke'
+        type: choice
+        options:
+          - smoke
+          - full
+      extractor_model:
+        description: 'Extractor model on OpenRouter'
+        default: 'mistralai/mistral-nemo'
         type: string
       chunks:
-        description: 'Number of parallel jobs (splits 500q)'
-        default: '5'
+        description: 'Parallel jobs for full mode'
+        default: '20'
         type: string
 
 env:
   MEMCONTEXT_READER_API_KEY: ${{ secrets.open_router }}
-  MEMCONTEXT_EXTRACTOR_BACKEND: ollama
-  MEMCONTEXT_EXTRACTOR_MODEL: qwen3:8b
+  MEMCONTEXT_EXTRACTOR_API_KEY: ${{ secrets.open_router }}
+  MEMCONTEXT_EXTRACTOR_BACKEND: openrouter
+  MEMCONTEXT_EXTRACTOR_MODEL: ${{ inputs.extractor_model || 'mistralai/mistral-nemo' }}
   MEMCONTEXT_READER_MODEL: openai/gpt-5-mini
   MEMCONTEXT_JUDGE_MODEL: openai/gpt-4o-2024-08-06
   ACTIVE_PACK: personal_assistant
   PYTHONIOENCODING: utf-8
 
 jobs:
-  benchmark:
+  smoke:
+    if: ${{ inputs.mode == 'smoke' || inputs.mode == '' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 360
-    strategy:
-      matrix:
-        chunk: [0, 1, 2, 3, 4]
-      fail-fast: false
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
-
-      - name: Install dependencies
-        run: |
-          python -m pip install -e ".[embeddings]"
-
-      - name: Install Ollama and pull model
-        run: |
-          curl -fsSL https://ollama.com/install.sh | sh
-          ollama serve &
-          sleep 5
-          ollama pull qwen3:8b
-          echo "Ollama ready with qwen3:8b"
-
-      - name: Download LongMemEval dataset
+      - name: Install
+        run: python -m pip install -e ".[embeddings]"
+      - name: Download dataset
         run: |
           mkdir -p data/longmemeval-s/data
           wget -q -O data/longmemeval-s/data/longmemeval_s_cleaned.json \
             "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json"
           python -c "import json; d=json.load(open('data/longmemeval-s/data/longmemeval_s_cleaned.json')); print(f'Downloaded {len(d)} questions')"
+      - name: Run 30q smoke test
+        run: |
+          python -u evals/run_smoke30.py \
+            --extractor-backend openrouter \
+            --extractor-model "$MEMCONTEXT_EXTRACTOR_MODEL" \
+            --yes --seed 42
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-results
+          path: results/smoke30_*.json
 
-      - name: Run benchmark chunk ${{ matrix.chunk }}
+  benchmark:
+    if: ${{ inputs.mode == 'full' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      matrix:
+        chunk: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[embeddings]"
+      - name: Download dataset
+        run: |
+          mkdir -p data/longmemeval-s/data
+          wget -q -O data/longmemeval-s/data/longmemeval_s_cleaned.json \
+            "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json"
+      - name: Run chunk ${{ matrix.chunk }}
         run: |
           python -u evals/run_chunk.py \
             --dataset data/longmemeval-s/data/longmemeval_s_cleaned.json \
             --chunk ${{ matrix.chunk }} \
-            --total-chunks ${{ inputs.chunks || '5' }} \
-            --workers ${{ inputs.workers || '8' }} \
+            --total-chunks ${{ inputs.chunks || '20' }} \
+            --workers 30 \
             --output results/chunk_${{ matrix.chunk }}.json
-
-      - name: Upload chunk results
+      - name: Upload chunk
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -73,33 +98,26 @@ jobs:
           path: results/chunk_${{ matrix.chunk }}.json
 
   merge:
+    if: ${{ inputs.mode == 'full' }}
     needs: benchmark
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: Download all chunks
         uses: actions/download-artifact@v4
         with:
           path: results/chunks/
-
-      - name: Merge results
-        run: |
-          python -u evals/merge_chunks.py \
-            --input-dir results/chunks/ \
-            --output results/full500_gha.json
-
-      - name: Upload final results
+      - name: Merge
+        run: python -u evals/merge_chunks.py --input-dir results/chunks/ --output results/full500_gha.json
+      - name: Upload final
         uses: actions/upload-artifact@v4
         with:
           name: longmemeval-full-500q
           path: results/full500_gha.json
-
-      - name: Print summary
+      - name: Summary
         run: |
           python -c "
           import json
