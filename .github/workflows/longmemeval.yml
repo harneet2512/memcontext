@@ -41,21 +41,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install -e ".[embeddings]"
-          python -m pip install datasets
 
       - name: Download LongMemEval dataset
         run: |
           mkdir -p data/longmemeval-s/data
-          python -u -c "
-          from datasets import load_dataset
-          import json
-          print('Downloading longmemeval_s_cleaned from HuggingFace...')
-          ds = load_dataset('xiaowu0162/longmemeval-cleaned', split='longmemeval_s_cleaned')
-          data = [row for row in ds]
-          with open('data/longmemeval-s/data/longmemeval_s_cleaned.json', 'w') as f:
-              json.dump(data, f)
-          print(f'Downloaded {len(data)} questions')
-          "
+          wget -q -O data/longmemeval-s/data/longmemeval_s_cleaned.json \
+            "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json"
+          python -c "import json; d=json.load(open('data/longmemeval-s/data/longmemeval_s_cleaned.json')); print(f'Downloaded {len(d)} questions')"
 
       - name: Run benchmark chunk ${{ matrix.chunk }}
         run: |
