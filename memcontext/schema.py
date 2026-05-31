@@ -323,6 +323,43 @@ CREATE INDEX IF NOT EXISTS idx_life_events_subject ON life_events(subject);
 """
 
 
+# Bump when adding a migration step below. Existing databases upgrade forward
+# on open; fresh databases get every step applied once.
+SCHEMA_VERSION = 2
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply ordered, additive forward migrations keyed on ``PRAGMA user_version``.
+
+    Each step only ADDS columns/indexes — table shapes created by ``_SCHEMA_SQL``
+    are never altered destructively. To add a migration: append an
+    ``if current < N`` block and bump ``SCHEMA_VERSION``.
+    """
+    current = conn.execute("PRAGMA user_version").fetchone()[0]
+    if current >= SCHEMA_VERSION:
+        return
+
+    if current < 1:
+        # v1: importance_score on claim_metadata (previously an ad-hoc ALTER).
+        try:
+            conn.execute(
+                "ALTER TABLE claim_metadata ADD COLUMN importance_score REAL DEFAULT 0.5"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already present on pre-versioning databases
+
+    if current < 2:
+        # v2: covering index for list_active_claims (session_id + status filter,
+        # created_ts order) — the hottest read, run by every retrieve_hybrid.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_claims_active_recency"
+            " ON claims(session_id, status, created_ts)"
+        )
+
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+    log.debug("substrate.db_migrated", from_version=current, to_version=SCHEMA_VERSION)
+
+
 def open_database(path: str | Path) -> sqlite3.Connection:
     """Open (or create) a SQLite DB with PRAGMAs and schema.
 
@@ -341,13 +378,7 @@ def open_database(path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
 
     conn.executescript(_SCHEMA_SQL)
-
-    try:
-        conn.execute(
-            "ALTER TABLE claim_metadata ADD COLUMN importance_score REAL DEFAULT 0.5"
-        )
-    except sqlite3.OperationalError:
-        pass
+    _migrate(conn)
 
     log.debug("substrate.db_opened", path=str(path))
     return conn

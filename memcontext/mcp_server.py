@@ -30,9 +30,11 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
 
     from memcontext.schema import open_database
     from memcontext.mcp_tools import (
+        handle_brain,
         handle_memory_correct,
         handle_memory_observe,
         handle_memory_observe_url,
+        handle_memory_payload,
         handle_memory_profile,
         handle_memory_query,
         handle_memory_stats,
@@ -88,13 +90,57 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
             ),
             Tool(
                 name="memory_trace",
-                description="Trace a claim back to its source turn and supersession history.",
+                description=(
+                    "Trace a fact's source turn and typed supersession lineage. "
+                    "Pass a claim_id, or a (subject, predicate) pair to trace the "
+                    "current value of that slot. Returns the active claim on top "
+                    "and the superseded chain beneath, each with its source span "
+                    "and edge type (e.g. user_correction)."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "claim_id": {"type": "string", "description": "The claim ID to trace"},
+                        "claim_id": {"type": "string", "description": "Claim ID to trace (optional if subject+predicate given)."},
+                        "subject": {"type": "string", "description": "Subject to trace (with predicate)."},
+                        "predicate": {"type": "string", "description": "Predicate to trace (with subject)."},
+                        "session_id": {"type": "string", "default": "default"},
                     },
-                    "required": ["claim_id"],
+                },
+            ),
+            Tool(
+                name="brain",
+                description=(
+                    "Return the deterministic world-state projection grouped by "
+                    "subject. Every fact carries its value, status (ACTIVE/"
+                    "SUPERSEDED), confidence, and a provenance handle (source turn "
+                    "id + character span). Also reports per-subject gaps: "
+                    "vocabulary predicates with no active claim. No LLM in this path."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string", "default": "default"},
+                    },
+                },
+            ),
+            Tool(
+                name="memory_payload",
+                description=(
+                    "Return the memory payload for a question in one of three "
+                    "modes, to compare what different memories hand the same "
+                    "reader: 'summary' (raw transcript blob), 'vector' (top-k "
+                    "statements by similarity), or 'memcontext' (structured "
+                    "projection with current value, provenance, and typed "
+                    "supersession). Used by the differentiator demo."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string", "description": "The question to answer."},
+                        "mode": {"type": "string", "enum": ["summary", "vector", "memcontext"]},
+                        "session_id": {"type": "string", "default": "default"},
+                    },
+                    "required": ["question", "mode"],
                 },
             ),
             Tool(
@@ -128,11 +174,12 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
                 name="memory_observe_url",
                 description=(
                     "Observe a live URL — capture its accessibility tree, extract "
-                    "structured claims, store with provenance. Set connect_browser=true "
-                    "to read from the user's running Chrome (inherits all auth — SSO, "
-                    "2FA, OAuth). Or provide login_email/password for form-based auth. "
-                    "Works on any page the user can see: internal tools, ChatGPT, "
-                    "GitHub, SAP, ServiceNow, etc. Re-observing detects changes."
+                    "structured claims, store with provenance. PREFERRED auth: set "
+                    "connect_browser=true to read from the user's running Chrome "
+                    "(inherits all auth — SSO, 2FA, OAuth — and never handles raw "
+                    "passwords). Raw login_email/password is a security hazard and is "
+                    "DISABLED unless allow_password_login=true; prefer connect_browser. "
+                    "Works on any page the user can see. Re-observing detects changes."
                 ),
                 inputSchema={
                     "type": "object",
@@ -144,11 +191,14 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
                         },
                         "login_email": {
                             "type": "string",
-                            "description": "Email/username for authentication. Agent fills the login form automatically.",
+                            "description": "Email/username for form login. Prefer connect_browser instead.",
                         },
                         "login_password": {
                             "type": "string",
-                            "description": "Password for authentication.",
+                            "description": (
+                                "Raw password for form login — SECURITY HAZARD. Ignored "
+                                "unless allow_password_login=true. Prefer connect_browser."
+                            ),
                         },
                         "login_url": {
                             "type": "string",
@@ -157,8 +207,16 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
                         "connect_browser": {
                             "type": "boolean",
                             "description": (
-                                "Attach to the user's running Chrome (port 9222) instead of "
+                                "PREFERRED. Attach to the user's running Chrome (port 9222) instead of "
                                 "launching headless. Inherits all auth sessions — no credentials needed."
+                            ),
+                            "default": False,
+                        },
+                        "allow_password_login": {
+                            "type": "boolean",
+                            "description": (
+                                "Explicit opt-in required to use login_email/login_password. "
+                                "Leave false and use connect_browser unless you truly must."
                             ),
                             "default": False,
                         },
@@ -186,26 +244,33 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict):
-        if name == "memory_store":
-            result = handle_memory_store(conn, **arguments)
-        elif name == "memory_query":
-            result = handle_memory_query(conn, **arguments)
-        elif name == "memory_trace":
-            result = handle_memory_trace(conn, **arguments)
-        elif name == "memory_correct":
-            result = handle_memory_correct(conn, **arguments)
-        elif name == "memory_observe":
-            result = handle_memory_observe(conn, **arguments)
-        elif name == "memory_observe_url":
-            result = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: handle_memory_observe_url(conn, **arguments)
-            )
-        elif name == "memory_profile":
-            result = handle_memory_profile(conn, **arguments)
-        elif name == "memory_stats":
-            result = handle_memory_stats(conn)
-        else:
-            result = {"error": f"Unknown tool: {name}"}
+        try:
+            if name == "memory_store":
+                result = handle_memory_store(conn, **arguments)
+            elif name == "memory_query":
+                result = handle_memory_query(conn, **arguments)
+            elif name == "brain":
+                result = handle_brain(conn, **arguments)
+            elif name == "memory_payload":
+                result = handle_memory_payload(conn, **arguments)
+            elif name == "memory_trace":
+                result = handle_memory_trace(conn, **arguments)
+            elif name == "memory_correct":
+                result = handle_memory_correct(conn, **arguments)
+            elif name == "memory_observe":
+                result = handle_memory_observe(conn, **arguments)
+            elif name == "memory_observe_url":
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: handle_memory_observe_url(conn, **arguments)
+                )
+            elif name == "memory_profile":
+                result = handle_memory_profile(conn, **arguments)
+            elif name == "memory_stats":
+                result = handle_memory_stats(conn)
+            else:
+                result = {"error": f"Unknown tool: {name}"}
+        except Exception as exc:  # malformed input or handler error → structured result
+            result = {"error": str(exc), "tool": name}
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     async def _run():
@@ -235,9 +300,11 @@ def create_http_app(db_path: str = "memcontext.db"):
     from starlette.routing import Route
 
     from memcontext.mcp_tools import (
+        handle_brain,
         handle_memory_correct,
         handle_memory_observe,
         handle_memory_observe_url,
+        handle_memory_payload,
         handle_memory_profile,
         handle_memory_query,
         handle_memory_stats,
@@ -260,8 +327,12 @@ def create_http_app(db_path: str = "memcontext.db"):
                      inputSchema={"type":"object","properties":{"text":{"type":"string"},"speaker":{"type":"string","enum":["user","assistant"],"default":"user"},"session_id":{"type":"string"},"claims":{"type":"array","items":{"type":"object","properties":{"subject":{"type":"string"},"predicate":{"type":"string"},"value":{"type":"string"},"confidence":{"type":"number"}},"required":["value"]}}},"required":["text"]}),
                 Tool(name="memory_query", description="Query the user's personal memory -- decisions, observations, bug tracking, project status, and context from their coding sessions, browser observations, and cross-tool workflows. Use this for anything about the user's own projects, preferences, or work history.",
                      inputSchema={"type":"object","properties":{"query":{"type":"string"},"session_id":{"type":"string"},"top_k":{"type":"integer","default":10}},"required":["query"]}),
-                Tool(name="memory_trace", description="Trace a claim back to its source turn and history.",
-                     inputSchema={"type":"object","properties":{"claim_id":{"type":"string"}},"required":["claim_id"]}),
+                Tool(name="memory_trace", description="Trace a fact's source turn and typed supersession lineage. Pass a claim_id, or a (subject, predicate) pair to trace the current value of that slot.",
+                     inputSchema={"type":"object","properties":{"claim_id":{"type":"string"},"subject":{"type":"string"},"predicate":{"type":"string"},"session_id":{"type":"string"}}}),
+                Tool(name="brain", description="Deterministic world-state grouped by subject -- value, status, confidence, provenance span, and per-subject gaps (no LLM).",
+                     inputSchema={"type":"object","properties":{"session_id":{"type":"string","default":"default"}}}),
+                Tool(name="memory_payload", description="Return the memory payload for a question in mode 'summary', 'vector', or 'memcontext' (the differentiator demo).",
+                     inputSchema={"type":"object","properties":{"question":{"type":"string"},"mode":{"type":"string","enum":["summary","vector","memcontext"]},"session_id":{"type":"string"}},"required":["question","mode"]}),
                 Tool(name="memory_correct", description="Correct or dismiss an existing claim.",
                      inputSchema={"type":"object","properties":{"claim_id":{"type":"string"},"action":{"type":"string","enum":["dismiss","correct"]},"new_value":{"type":"string"}},"required":["claim_id","action"]}),
                 Tool(name="memory_profile", description="Get the smart profile for a subject.",
@@ -272,21 +343,28 @@ def create_http_app(db_path: str = "memcontext.db"):
 
         @server.call_tool()
         async def call_tool(name: str, arguments: dict):
-            import asyncio
-            if name == "memory_store":
-                result = handle_memory_store(conn, **arguments)
-            elif name == "memory_query":
-                result = handle_memory_query(conn, **arguments)
-            elif name == "memory_trace":
-                result = handle_memory_trace(conn, **arguments)
-            elif name == "memory_correct":
-                result = handle_memory_correct(conn, **arguments)
-            elif name == "memory_profile":
-                result = handle_memory_profile(conn, **arguments)
-            elif name == "memory_stats":
-                result = handle_memory_stats(conn)
-            else:
-                result = {"error": f"Unknown tool: {name}"}
+            import asyncio  # noqa: F401  (kept for parity with stdio dispatcher)
+            try:
+                if name == "memory_store":
+                    result = handle_memory_store(conn, **arguments)
+                elif name == "memory_query":
+                    result = handle_memory_query(conn, **arguments)
+                elif name == "brain":
+                    result = handle_brain(conn, **arguments)
+                elif name == "memory_payload":
+                    result = handle_memory_payload(conn, **arguments)
+                elif name == "memory_trace":
+                    result = handle_memory_trace(conn, **arguments)
+                elif name == "memory_correct":
+                    result = handle_memory_correct(conn, **arguments)
+                elif name == "memory_profile":
+                    result = handle_memory_profile(conn, **arguments)
+                elif name == "memory_stats":
+                    result = handle_memory_stats(conn)
+                else:
+                    result = {"error": f"Unknown tool: {name}"}
+            except Exception as exc:  # malformed input or handler error → structured result
+                result = {"error": str(exc), "tool": name}
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
         return server
@@ -327,3 +405,34 @@ def create_http_app(db_path: str = "memcontext.db"):
         await transport.handle_request(scope, receive, send)
 
     return _app
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Entry point for `python -m memcontext.mcp_server` — starts the stdio server.
+
+    PATH-independent: an MCP client launches the server as
+    `<python> -m memcontext.mcp_server --db <path>`, so it does not depend on
+    the `memcontext` console script being installed on PATH.
+    """
+    import argparse
+    import os
+
+    parser = argparse.ArgumentParser(
+        prog="memcontext.mcp_server",
+        description="MemContext MCP server (stdio JSON-RPC transport).",
+    )
+    parser.add_argument("--db", default="memcontext.db", help="SQLite database path.")
+    parser.add_argument(
+        "--transport", default="stdio", choices=["stdio"], help="Transport (stdio only)."
+    )
+    parser.add_argument(
+        "--pack", default=None, help="Predicate pack(s) to activate (sets ACTIVE_PACK)."
+    )
+    args = parser.parse_args(argv)
+    if args.pack:
+        os.environ["ACTIVE_PACK"] = args.pack
+    run_server(db_path=args.db, transport=args.transport)
+
+
+if __name__ == "__main__":
+    main()

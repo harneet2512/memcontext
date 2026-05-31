@@ -21,6 +21,9 @@ embeddings = [
 mcp = [
     "mcp>=1.0",
 ]
+reader-openrouter = [
+    "requests>=2.28",
+]
 dev = [
     "pytest>=7.0",
     "ruff>=0.4",

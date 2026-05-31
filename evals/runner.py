@@ -16,7 +16,12 @@ from memcontext.mcp_tools import handle_memory_store
 from memcontext.retrieval import retrieve_hybrid
 from memcontext.schema import open_database
 
+from typing import TYPE_CHECKING
+
 from evals.metrics import extraction_precision_recall, provenance_integrity
+
+if TYPE_CHECKING:
+    from evals.reader import Reader
 
 
 @dataclass
@@ -239,12 +244,16 @@ def answer_question(
     reader: ReaderMode = ReaderMode.NONE,
     question_date: str = "",
     excerpts: list[dict] | None = None,
+    reader_fn: "Reader | None" = None,
 ) -> dict:
-    """Format evidence and call reader. Routes to category-specific prompts
+    """Format evidence and call the reader. Routes to category-specific prompts
     when available, falls back to universal Chain-of-Note prompt.
 
-    reader="none": returns retrieval context only. NO fake answer.
-    reader="configured": calls reader LLM with category or CoN prompting.
+    The reader is pluggable. Default (``reader="none"``, no ``reader_fn``) runs
+    NO in-process LLM — the host model answers from the served context, so
+    ``predicted_answer`` is None. ``reader="configured"`` (or an injected
+    ``reader_fn``) calls that reader; the OpenRouter adapter is the only built-in
+    configured reader and requires the ``reader-openrouter`` extra + API key.
     """
     from evals.longmemeval_prompts import CATEGORY_MAP, PROMPTS, get_prompt
     from memcontext.formatting import format_context_json, format_reader_prompt
@@ -277,11 +286,18 @@ def answer_question(
         "num_claims": len(claims),
     }
 
-    if reader == ReaderMode.NONE:
+    # Resolve the reader: explicit reader_fn wins; else map the mode.
+    if reader_fn is None and reader == ReaderMode.CONFIGURED:
+        from evals.reader import openrouter_reader
+
+        reader_fn = openrouter_reader
+
+    raw_answer = reader_fn(full_prompt) if reader_fn is not None else None
+
+    if raw_answer is None:
         result["predicted_answer"] = None
         result["reader_mode"] = "none"
-    elif reader == ReaderMode.CONFIGURED:
-        raw_answer = _call_reader_llm(full_prompt)
+    else:
         if "Answer:" in raw_answer:
             result["predicted_answer"] = raw_answer.rsplit("Answer:", 1)[1].strip()
         else:
@@ -292,74 +308,5 @@ def answer_question(
     return result
 
 
-def _call_reader_llm_with_system(system: str, user: str) -> str:
-    """Call reader with system + user messages (baseline style)."""
-    import os
-
-    import requests
-
-    api_key = os.environ.get("MEMCONTEXT_READER_API_KEY", "")
-    if not api_key:
-        raise ValueError("MEMCONTEXT_READER_API_KEY not set.")
-
-    model = os.environ.get("MEMCONTEXT_READER_MODEL", "openai/gpt-5-mini")
-    endpoint = os.environ.get(
-        "MEMCONTEXT_READER_ENDPOINT", "https://openrouter.ai/api/v1/chat/completions"
-    )
-
-    resp = requests.post(
-        endpoint,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "X-Title": "memcontext",
-        },
-        json={
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system, "cache_control": {"type": "ephemeral"}},
-                {"role": "user", "content": user},
-            ],
-            "max_tokens": 2048,
-            "temperature": 0.0,
-        },
-        timeout=120,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    content = data.get("choices", [{}])[0].get("message", {}).get("content")
-    return (content or "").strip()
-
-
-def _call_reader_llm(prompt: str) -> str:
-    """Call the configured reader LLM via OpenRouter-compatible API."""
-    import os
-
-    import requests
-
-    api_key = os.environ.get("MEMCONTEXT_READER_API_KEY", "")
-    if not api_key:
-        raise ValueError(
-            "MEMCONTEXT_READER_API_KEY not set. "
-            "Export it before running with --reader configured."
-        )
-
-    model = os.environ.get("MEMCONTEXT_READER_MODEL", "openai/gpt-5-mini")
-    endpoint = os.environ.get(
-        "MEMCONTEXT_READER_ENDPOINT", "https://openrouter.ai/api/v1/chat/completions"
-    )
-
-    resp = requests.post(
-        endpoint,
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 2048,
-            "temperature": 0.0,
-        },
-        timeout=120,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    content = data.get("choices", [{}])[0].get("message", {}).get("content")
-    return (content or "").strip()
+# Reader adapters moved to evals/reader.py (pluggable; OpenRouter is optional,
+# behind the `reader-openrouter` extra). The default reader is the host model.

@@ -91,8 +91,8 @@ try:
 
     async def _test_stdio():
         server_params = StdioServerParameters(
-            command="memcontext",
-            args=["serve", "--transport", "stdio", "--db", ":memory:"],
+            command=sys.executable,
+            args=["-m", "memcontext.mcp_server", "--db", ":memory:"],
         )
         async with stdio_client(server_params) as (read, write):
             async with ClientSession(read, write) as session:

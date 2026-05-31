@@ -688,6 +688,12 @@ class SimpleExtractor:
     """Local regex-only claim extractor. Dev/test fallback — NOT for production
     or benchmark use. Stores unmatched text as full-turn claims, which produces
     garbage retrieval context. Use LLMExtractor for benchmarks.
+
+    Fallback predicate: text that matches no pattern is recorded as
+    ``observation`` (a neutral observed statement) rather than ``user_fact`` —
+    e.g. "The weather is nice today" is an observation, not a fact about the
+    user. Falls back to ``user_fact`` only if the active pack lacks
+    ``observation``.
     """
 
     _PATTERNS: list[tuple[str, str]] = [

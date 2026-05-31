@@ -154,6 +154,26 @@ class EmbeddingClient:
         return out
 
 
+# --- default embedder (memoised) ---------------------------------------------
+
+
+_default_client: EmbeddingClient | None = None
+
+
+def _default_embedding_client() -> EmbeddingClient:
+    """Process-wide default embedder, constructed once and reused.
+
+    Constructing a fresh ``EmbeddingClient`` per call re-initialises the local
+    sentence-transformers model (~hundreds of ms each). Entry points that are
+    not handed an explicit client share this singleton, so the model loads
+    once instead of on every retrieve/ingest call.
+    """
+    global _default_client
+    if _default_client is None:
+        _default_client = EmbeddingClient()
+    return _default_client
+
+
 # --- blob encoding -----------------------------------------------------------
 
 
@@ -234,7 +254,7 @@ def embed_and_store(
     On failure, logs a warning and leaves the claim un-embedded so a
     backfill pass can pick it up later.
     """
-    effective = client or EmbeddingClient()
+    effective = client or _default_embedding_client()
     text = claim_retrieval_text(claim)
     try:
         cached = _cache_get(effective.model_version, text)
@@ -267,7 +287,7 @@ def backfill_embeddings(
     client: EmbeddingClient | None = None,
 ) -> int:
     """Embed every active claim not already in the sidecar. Returns count."""
-    effective = client or EmbeddingClient()
+    effective = client or _default_embedding_client()
     active = list_active_claims(conn, session_id)
     missing = _filter_missing_embeddings(conn, active, effective.model_version)
     if not missing:
@@ -363,7 +383,7 @@ def retrieve_relevant_claims(
     if not question or not question.strip():
         return []
 
-    effective = client or EmbeddingClient()
+    effective = client or _default_embedding_client()
     model_version = effective.model_version
 
     active = list_active_claims(conn, session_id)
@@ -663,7 +683,7 @@ def retrieve_hybrid(
 
     weights = weights or _default_weights()
 
-    effective = embedding_client or EmbeddingClient()
+    effective = embedding_client or _default_embedding_client()
     model_version = effective.model_version
 
     if include_superseded:
@@ -1122,7 +1142,7 @@ def retrieve_event_tuples(
     if not query or not query.strip():
         return []
 
-    effective = embedding_client or EmbeddingClient()
+    effective = embedding_client or _default_embedding_client()
     model_version = effective.model_version
 
     active = list_active_claims(conn, session_id)
@@ -1186,7 +1206,7 @@ def backfill_event_frame_embeddings(
     """Embed every event frame not already embedded. Returns count."""
     from memcontext.event_frames import list_event_frames
 
-    effective = client or EmbeddingClient()
+    effective = client or _default_embedding_client()
     frames = list_event_frames(conn, session_id)
     if not frames:
         return 0
@@ -1236,7 +1256,7 @@ def retrieve_event_frames(
     if not query or not query.strip():
         return []
 
-    effective = embedding_client or EmbeddingClient()
+    effective = embedding_client or _default_embedding_client()
     frames = list_event_frames(conn, session_id)
     if not frames:
         return []

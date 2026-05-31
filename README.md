@@ -112,22 +112,148 @@ Each observation gets a deterministic `snapshot_id` (SHA-256 of URL + timestamp)
 
 ## MCP Integration
 
-MemContext exposes 5 tools over the Model Context Protocol (stdio transport):
+MemContext exposes its memory tools over the Model Context Protocol (stdio transport):
 
 | Tool | Purpose |
 |------|---------|
 | `memory_store` | Ingest a turn + optional pre-structured claims |
 | `memory_query` | Retrieve ranked claims by relevance |
-| `memory_trace` | Walk the full provenance and supersession chain for a claim |
+| `brain` | Deterministic world-state by subject — value, status, confidence, provenance span, and per-subject gaps (no LLM) |
+| `memory_payload` | The same question as a `summary` / `vector` / `memcontext` payload (see the demo below) |
+| `memory_trace` | Walk the typed supersession lineage for a `claim_id` or a `(subject, predicate)` slot |
 | `memory_correct` | Dismiss a claim or replace it with a corrected value |
 | `memory_observe` | Ingest a browser page snapshot as structured claims |
 
 The MCP tools are pure functions in `mcp_tools.py` — no protocol dependency. The thin `mcp_server.py` wrapper handles stdio transport. You can import and test the tools without the MCP package installed.
 
 ```bash
-# Start the MCP server
-memcontext serve --db memory.db --transport stdio
+# Start the MCP server (PATH-independent launch)
+python -m memcontext.mcp_server --db memory.db
 ```
+
+---
+
+## Install & attach (Claude Code + Codex)
+
+One command installs an isolated environment, verifies the stdio server launches, and
+prints ready-to-paste MCP config for both clients:
+
+```bash
+./install.sh [DB_PATH]          # default DB: ~/.memcontext/memcontext.db
+```
+
+Or emit the config yourself (PATH-independent launch — no console script required):
+
+```bash
+memcontext mcp-config --client both --db memcontext.db
+```
+
+- **Claude Code** — paste the JSON into `.mcp.json` (project) or `~/.claude.json` (user).
+- **Codex** — paste the TOML block into `~/.codex/config.toml`.
+
+Both launch the server as `<python> -m memcontext.mcp_server --db <path>`. Restart the
+client and the `memory_*` tools appear.
+
+> The HTTP transport (`memcontext serve-http`) is loopback-only and bearer-authenticated by
+> default: every `/api/*` route requires `Authorization: Bearer $MEMCONTEXT_HTTP_TOKEN`
+> (auto-generated and printed if unset), CORS is locked to `MEMCONTEXT_HTTP_ORIGINS`, and
+> `--share` (public tunnel) refuses to start unless a token is set.
+
+## Validation experiment: does memory change the answer?
+
+A two-block experiment measures whether the **host model** answers with the **current**
+value of a fact (vs a stale/superseded one) across a multi-session task with planted
+correction points. The reader is the host model in both blocks; the only variable is
+MemContext's presence.
+
+- **Block A** — host tool with native memory only, MemContext not attached.
+- **Block B** — same task, MemContext attached over MCP.
+
+```bash
+# Block B: seed the task into MemContext, capture the projection at each probe
+python -m validation.run --block B --db validation.db
+# Block A: same probes, native memory only (no seeding)
+python -m validation.run --block A --db validation.db
+```
+
+Each command writes `validation_answers_<block>.jsonl`. The host model answers each probe
+(for Block B it may call `memory_query`/`brain`), filling the `answer` field. Then score:
+
+```bash
+python -m validation.score validation_answers_B.jsonl
+```
+
+The forgetting-aware scorer rewards using the current value and penalizes reliance on
+invalidated facts, reporting `accuracy`, `stale_rate`, and `traceable`. To verify the
+harness end-to-end without the host model, run Block B with `--self-check` (fills answers
+from the deterministic projection and scores — a pipeline smoke, not the experiment).
+
+> Multi-tenancy (a tenant boundary above `session_id`) is a deferred platform-tier item,
+> out of scope for this build.
+
+---
+
+## Demo: one corrected fact, three memories
+
+A self-contained, model-free showcase of MemContext's three differentiators —
+**deterministic projection**, **span-level provenance**, and **typed
+supersession** — in a single scenario. The reader is held constant (the host
+model attached to the MCP server) and only the *memory payload* varies. The demo
+makes no external API call, uses no API key, and introduces no second model. (The
+vector payload uses the repo's existing *local* embedder; everything else runs
+fully offline.)
+
+**Scenario** — a team states their database, then corrects it four turns later:
+
+```
+Turn 1: We use Postgres for the main database.
+Turn 5: Actually we migrated off Postgres, we're on DynamoDB now.
+Question: What database do they use?
+```
+
+**Run it:**
+
+```bash
+memcontext demo                 # developer pack (default)
+memcontext demo --pack general
+```
+
+It seeds the transcript, then prints the `brain()` world-state, the supersession
+trace, and the same question answered from three payloads:
+
+```
+[ vector payload ]  top-k raw statements by cosine similarity
+  sim 0.647  "We use Postgres for the main database."            <- stale, ranked first
+  sim 0.446  "Actually we migrated off Postgres, ... DynamoDB now."
+
+[ memcontext payload ]  structured projection
+  current_value: DynamoDB  (ACTIVE, conf 0.95)
+  source: Turn 5 span [44:52] "DynamoDB"
+  superseded: Postgres  <-- user_correction  (Turn 1)
+```
+
+**Why the same reader can only answer from the projection:**
+
+- **Summary payload** is the raw transcript — both values appear as prose with no current-value field and no source, so the reader can paraphrase but cannot say which is current or cite where it came from.
+- **Vector payload** is top-k statements by similarity — both values surface and similarity is not recency or truth (here the *stale* Postgres line even outranks the migration), so there is no signal for which one holds.
+- **memcontext payload** is the deterministic projection — one current value (DynamoDB, ACTIVE) with an exact source span, the prior value retained beneath it via a typed `user_correction` edge, so the reader states the answer and cites Turn 5.
+
+**Run it live inside an MCP client** (same reader, three payloads): after
+`memcontext demo`, serve the seeded database and ask the host model to call the
+`memory_payload` tool with `mode=summary`, `mode=vector`, and `mode=memcontext`
+(session `demo`), then compare the three answers side by side.
+
+```bash
+memcontext serve --db memcontext_demo.db --transport stdio
+```
+
+> Individual views are also available as CLI commands: `memcontext brain --db
+> memcontext_demo.db --session demo --pack developer` and `memcontext trace --db
+> memcontext_demo.db --session demo --subject main_database --predicate
+> decision_made`. (Pass the same `--pack` the db was seeded with — the gaps
+> report is computed against that vocabulary.)
+
+See [`demo/`](demo/) for the hardcoded transcript and the one-command runner.
 
 ---
 

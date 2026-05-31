@@ -9,7 +9,9 @@ import json
 import sqlite3
 import uuid
 
+from memcontext.brain import brain
 from memcontext.claims import (
+    find_same_identity_claim,
     get_claim,
     get_superseded_by,
     get_turn,
@@ -45,16 +47,18 @@ def handle_memory_store(
     result = on_new_turn(conn, session_id=sid, speaker=sp, text=text, extractor=extractor)
 
     if entities and result.created_claims:
-        for ent in entities:
-            ent_text = ent.get("text", "")
-            ent_type = ent.get("type", "proper_noun")
-            if ent_text:
-                for claim in result.created_claims:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO claim_entities (claim_id, entity_text, entity_type)"
-                        " VALUES (?, ?, ?)",
-                        (claim.claim_id, ent_text.lower(), ent_type),
-                    )
+        rows = [
+            (claim.claim_id, ent["text"].lower(), ent.get("type", "proper_noun"))
+            for ent in entities
+            if ent.get("text")
+            for claim in result.created_claims
+        ]
+        if rows:
+            conn.executemany(
+                "INSERT OR IGNORE INTO claim_entities (claim_id, entity_text, entity_type)"
+                " VALUES (?, ?, ?)",
+                rows,
+            )
 
     return {
         "turn_id": result.turn.turn_id if result.turn else None,
@@ -194,19 +198,115 @@ def handle_memory_stats(conn: sqlite3.Connection) -> dict:
     }
 
 
+def handle_brain(
+    conn: sqlite3.Connection,
+    *,
+    session_id: str = "default",
+) -> dict:
+    """Deterministic world-state projection grouped by subject (no LLM).
+
+    Returns the current value, status, confidence, and provenance handle for
+    every active fact, plus a per-subject gaps report (vocabulary predicates
+    with no active claim). Reads from the projection only.
+    """
+    return brain(conn, session_id=session_id)
+
+
+def handle_memory_payload(
+    conn: sqlite3.Connection,
+    *,
+    question: str,
+    mode: str,
+    session_id: str = "default",
+) -> dict:
+    """Return the memory payload for a question in one of three modes.
+
+    ``mode`` is ``summary`` (raw transcript blob), ``vector`` (top-k statements
+    by similarity, local embedder), or ``memcontext`` (structured projection).
+    Holds the reader constant and varies only the payload — the demo's
+    apples-to-apples comparison.
+    """
+    from memcontext.payloads import (
+        memcontext_payload,
+        summary_payload,
+        vector_payload,
+    )
+
+    if mode == "summary":
+        return summary_payload(conn, session_id, question)
+    if mode == "vector":
+        return vector_payload(conn, session_id, question)
+    if mode == "memcontext":
+        return memcontext_payload(conn, session_id, question)
+    return {"error": f"Unknown mode: {mode!r}. Use summary|vector|memcontext."}
+
+
 def handle_memory_trace(
     conn: sqlite3.Connection,
     *,
-    claim_id: str,
+    claim_id: str | None = None,
+    session_id: str = "default",
+    subject: str | None = None,
+    predicate: str | None = None,
 ) -> dict:
+    """Trace a claim's source and supersession lineage.
+
+    Resolve the head claim by ``claim_id``, or by ``(session_id, subject,
+    predicate)`` (the newest active claim for that slot). Returns the rich
+    ``lineage`` — newest-first, each step carrying value, status, typed edge,
+    source turn, and span quote — alongside the legacy head fields.
+    """
+    if claim_id is None:
+        if not (subject and predicate):
+            return {"error": "Provide claim_id, or both subject and predicate."}
+        head = find_same_identity_claim(
+            conn, session_id=session_id, subject=subject, predicate=predicate
+        )
+        if head is None:
+            return {
+                "error": f"No active claim for {subject}/{predicate} in {session_id}",
+                "subject": subject,
+                "predicate": predicate,
+                "lineage": [],
+            }
+        claim_id = head.claim_id
+
     claim = get_claim(conn, claim_id)
     if claim is None:
         return {"error": f"Claim {claim_id} not found"}
 
+    # Rich lineage (reuse build_chain): oldest-first → present newest-first.
+    from memcontext.chains import build_chain
+
+    lineage = []
+    for step in reversed(build_chain(conn, claim_id)):
+        step_claim = get_claim(conn, step.claim_id)
+        step_turn = get_turn(conn, step.source_turn_id)
+        cs = step_claim.char_start if step_claim else None
+        ce = step_claim.char_end if step_claim else None
+        quote = (
+            step_turn.text[cs:ce]
+            if step_turn and cs is not None and ce is not None
+            else None
+        )
+        lineage.append({
+            "claim_id": step.claim_id,
+            "value": step.value,
+            "status": step_claim.status.value if step_claim else "unknown",
+            "edge_type": step.edge_type,
+            "confidence": step_claim.confidence if step_claim else None,
+            "source_turn_id": step.source_turn_id,
+            "speaker": step_turn.speaker.value if step_turn else None,
+            "text": step_turn.text if step_turn else None,
+            "char_start": cs,
+            "char_end": ce,
+            "quote": quote,
+        })
+
     source_turn = get_turn(conn, claim.source_turn_id)
     span = span_for_claim(conn, claim_id)
 
-    # Walk supersession chain
+    # Legacy forward walk (kept for backward compatibility with the claim_id tool).
     chain = []
     current_id = claim_id
     visited = set()
@@ -218,6 +318,8 @@ def handle_memory_trace(
         current_id = next_id
 
     return {
+        "subject": claim.subject,
+        "predicate": claim.predicate,
         "claim": {
             "claim_id": claim.claim_id,
             "subject": claim.subject,
@@ -235,6 +337,7 @@ def handle_memory_trace(
             "start": span.char_start,
             "end": span.char_end,
         } if span and span.char_start is not None else None,
+        "lineage": lineage,
         "supersession_chain": chain,
     }
 
@@ -452,14 +555,17 @@ def handle_memory_observe_url(
     login_password: str | None = None,
     login_url: str | None = None,
     connect_browser: bool = False,
+    allow_password_login: bool = False,
 ) -> dict:
     """Observe a live URL, capture a11y tree, extract and store claims.
 
-    Auth modes (pick one):
-    - connect_browser=True — attach to user's running Chrome on port 9222.
-      Inherits all sessions: SSO, 2FA, OAuth, saved passwords. No
-      credentials needed. This is how CUAs work on Cloud PCs.
+    Auth modes (pick one), preferred first:
+    - connect_browser=True — attach to the user's running Chrome on port 9222.
+      Inherits all sessions: SSO, 2FA, OAuth, saved passwords. No credentials
+      needed. PREFERRED — never handles raw passwords.
     - login_email/password — launch headless, fill login form, then read.
+      Disabled unless allow_password_login=True (raw passwords are a hazard:
+      they transit as plain args and get typed into the page).
     - neither — launch headless, read the page unauthenticated.
 
     If the URL was previously observed in the same session, supersession
@@ -471,6 +577,17 @@ def handle_memory_observe_url(
     from memcontext.observe.extractors import _url_to_subject
 
     sid = session_id or "observe_default"
+
+    if login_password and not allow_password_login:
+        return {
+            "error": (
+                "password login is disabled by default. Prefer connect_browser=true "
+                "(attach to your running Chrome — inherits SSO/2FA, no credentials). "
+                "To pass a raw password anyway, set allow_password_login=true."
+            ),
+            "url": url,
+        }
+
     title, a11y_tree, dom_hash = _capture_page(
         url,
         login_email=login_email,
