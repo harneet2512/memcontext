@@ -48,3 +48,20 @@ Explicitly **NOT** claimable today:
 - Whether **every** sidecar/cache (`event_frame_embeddings`, `profiles`, the `brain` projection) is cleaned on supersession — only `claim_embeddings` cleanup was traced (`claims.py:480`).
 - **stdio** MCP transport auth — the HTTP bearer gate is confirmed; stdio is assumed local-unauthed but the transport was not traced.
 - Whether the **browser/observe** write path passes through `admission` — the HTTP ingest does (`http_server.py:282`); the observe path was not fully traced.
+
+---
+
+## Post-implementation status (Trust & Governance layer, `68b84cb..d9426d1`)
+The 6-phase build in `TRUST_GOVERNANCE_PLAN.md` was implemented; this baseline (graded @ `b575125`) has since changed. Re-graded against live code:
+
+| # | Dimension | Was | Now | What landed |
+|---|---|---|---|---|
+| A | Write integrity / poisoning | ABSENT | **PRESENT** | P4 — served low-trust memory is quarantine-flagged; serving writes no content (MINJA loop closed); blocked overrides recorded as drift |
+| B | Provenance completeness | PARTIAL | **PRESENT** | P1 — `session_digests.source_claim_ids`; provenance invariant across served-summary tables |
+| C | Forgetting / deletion | ABSENT | **PRESENT** | P2 — `forget()` cascade-consistent hard delete + verifiable `decisions` audit; `memory_forget` + `cli forget` |
+| D | Governance / access control | PARTIAL | **PARTIAL+** | P5 — record-level namespace isolation enforced at the door. *Remaining:* per-principal scoped HTTP tokens (transport layer) |
+| E | Confidentiality / isolation | PARTIAL (leaky) | **PRESENT** | P5 — `namespace` tenant scope; cross-session sweep bounded; foreign-session reads denied |
+| F | Source-trust tiering | PARTIAL | **PRESENT** | P3 — `claim_metadata.source_trust`, a source-trust RRF channel, and a supersession guard |
+| G | Trust observability | ABSENT | **PRESENT** | P6 — `trust_status` / `memory_trust_status` / `cli trust-status` |
+
+**Smallest credible trust claim now:** every served claim/episode is traceable to an immutable source; memory can be provably, completely, and auditably erased; memory is ranked and superseded by source trust; low-trust/injected content cannot silently become acted-on fact; memory is tenant-isolated; and all of the above is measured. **Still not claimable:** per-principal transport authorization (D remainder) and turn-text redaction for subject-forgets on shared turns.
