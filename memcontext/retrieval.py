@@ -956,10 +956,27 @@ def retrieve_hybrid(
         query_entities = {e.text.lower() for e in extract_entities(query)}
         query_words = set(query_norm.split())
         match_set = query_entities | query_words
+        # Entity/graph expansion (Cycle A): pull in claims of entities that
+        # co-occur with a query entity (1-hop graph neighbors), so a 2-hop query
+        # surfaces related facts the flat token match misses. Gated on the query
+        # naming a known entity; deterministic, zero-LLM, best-effort.
+        neighbor_claim_ids: set[str] = set()
+        if query_entities:
+            try:
+                from memcontext.entity_graph import EntityGraph
+                graph = EntityGraph(conn, session_id)
+                for qe in query_entities:
+                    ek = _normalise_subject(qe)
+                    if graph.has_entity(ek):
+                        neighbor_claim_ids |= graph.neighbor_claim_ids(ek, max_hops=1)
+            except Exception:  # noqa: BLE001
+                neighbor_claim_ids = set()
         for i, c in enumerate(active):
             claim_ents = entities_by_claim.get(c.claim_id, set())
             if claim_ents & match_set:
                 ent_scores[i] = max(ent_scores[i], 1.0)
+            elif c.claim_id in neighbor_claim_ids:
+                ent_scores[i] = max(ent_scores[i], 0.6)  # 2-hop graph neighbor
     except Exception:  # noqa: BLE001
         pass
 
