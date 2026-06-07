@@ -114,12 +114,16 @@ def _normalise_subject(subject: str) -> str:
 # --------------------------------------------------------------- turns CRUD ---
 
 
-def insert_turn(conn: sqlite3.Connection, turn: Turn) -> None:
-    """Insert a turn (episode). Duplicate IDs raise `sqlite3.IntegrityError`."""
+def insert_turn(conn: sqlite3.Connection, turn: Turn, *, namespace: str = "default") -> None:
+    """Insert a turn (episode). Duplicate IDs raise `sqlite3.IntegrityError`.
+
+    ``namespace`` is the tenant / isolation scope for the episode (default
+    ``'default'`` keeps single-tenant deployments unchanged).
+    """
     conn.execute(
         "INSERT INTO turns (turn_id, session_id, speaker, text, ts, asr_confidence,"
-        " source_type, source_metadata, extraction_status)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " source_type, source_metadata, extraction_status, namespace)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             turn.turn_id,
             turn.session_id,
@@ -130,6 +134,7 @@ def insert_turn(conn: sqlite3.Connection, turn: Turn) -> None:
             turn.source_type.value,
             turn.source_metadata,
             turn.extraction_status.value,
+            namespace,
         ),
     )
     log.debug(

@@ -42,6 +42,7 @@ def handle_memory_store(
     entities: list[dict] | None = None,
     extractor: ExtractorFn | None = None,
     queue: ExtractionQueue | None = None,
+    namespace: str = "default",
 ) -> dict:
     sid = session_id or f"session_{uuid.uuid4().hex[:8]}"
     sp = Speaker.USER if speaker == "user" else Speaker.ASSISTANT
@@ -60,6 +61,7 @@ def handle_memory_store(
     result = on_new_turn(
         conn, session_id=sid, speaker=sp, text=text, extractor=ext,
         queue=q, embedder=episode_embedder(), semantic=semantic_supersession(),
+        namespace=namespace,
     )
 
     if entities and result.created_claims:
@@ -86,6 +88,14 @@ def handle_memory_store(
     }
 
 
+def _session_in_namespace(conn: sqlite3.Connection, session_id: str, namespace: str) -> bool:
+    """True if the session has any episode in the given namespace (tenant scope)."""
+    return conn.execute(
+        "SELECT 1 FROM turns WHERE session_id = ? AND namespace = ? LIMIT 1",
+        (session_id, namespace),
+    ).fetchone() is not None
+
+
 def handle_memory_query(
     conn: sqlite3.Connection,
     *,
@@ -93,6 +103,7 @@ def handle_memory_query(
     session_id: str | None = None,
     top_k: int = 10,
     debug: bool = False,
+    namespace: str | None = None,
 ) -> dict:
     from memcontext.claims import get_claim, get_turn
     from memcontext.retrieval import (
@@ -114,6 +125,10 @@ def handle_memory_query(
 
     # Unified two-tier retrieval (facts + episodes, source-tagged, RRF-fused).
     if session_id:
+        # Namespace isolation: a caller bound to a namespace cannot read a session
+        # owned by a different tenant.
+        if namespace is not None and not _session_in_namespace(conn, session_id, namespace):
+            return {"claims": [], "episodes": [], "total": 0, "denied": "namespace"}
         hits = retrieve_memory(
             conn, session_id=session_id, query=query, top_k=top_k, explain=explain,
             include_superseded=history,
@@ -122,7 +137,14 @@ def handle_memory_query(
     else:
         # Every session that has episodes — episodes exist even when a session's
         # facts are absent/pending (the Tier-1 floor), so scope by turns, not claims.
-        rows = conn.execute("SELECT DISTINCT session_id FROM turns").fetchall()
+        # Namespace isolation: the cross-session sweep is bounded to the caller's
+        # namespace, never "all sessions in the DB".
+        if namespace is not None:
+            rows = conn.execute(
+                "SELECT DISTINCT session_id FROM turns WHERE namespace = ?", (namespace,)
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT DISTINCT session_id FROM turns").fetchall()
         sids = [r["session_id"] if isinstance(r, sqlite3.Row) else r[0] for r in rows]
         if not sids:
             return {"claims": [], "episodes": [], "total": 0}

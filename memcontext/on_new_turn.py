@@ -268,6 +268,7 @@ def on_new_turn(
     turn_id: str | None = None,
     queue: ExtractionQueue | None = None,
     embedder: EmbeddingClient | None = None,
+    namespace: str = "default",
 ) -> TurnResult:
     """Ingest one turn (episode) end-to-end.
 
@@ -306,7 +307,7 @@ def on_new_turn(
         ts=now_ns(),
         asr_confidence=asr_confidence,
     )
-    insert_turn(conn, turn)
+    insert_turn(conn, turn, namespace=namespace)
     bus.publish(TURN_ADDED, {"turn_id": turn.turn_id, "session_id": session_id})
 
     # Tier-1 floor: embed the episode synchronously (local model, never an LLM).

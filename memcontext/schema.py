@@ -391,7 +391,7 @@ CREATE INDEX IF NOT EXISTS idx_life_events_subject ON life_events(subject);
 
 # Bump when adding a migration step below. Existing databases upgrade forward
 # on open; fresh databases get every step applied once.
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -581,6 +581,17 @@ def _migrate(conn: sqlite3.Connection) -> None:
         try:
             conn.execute(
                 "ALTER TABLE claim_metadata ADD COLUMN source_trust REAL DEFAULT 0.5"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already present
+
+    if current < 10:
+        # v10: tenant/namespace isolation — the scope above session. Retrieval is
+        # bounded to the caller's namespace so memory never crosses a tenant
+        # boundary. Default 'default' keeps existing single-tenant data intact.
+        try:
+            conn.execute(
+                "ALTER TABLE turns ADD COLUMN namespace TEXT NOT NULL DEFAULT 'default'"
             )
         except sqlite3.OperationalError:
             pass  # column already present
