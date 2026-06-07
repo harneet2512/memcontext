@@ -106,37 +106,28 @@ def ingest(text: str, db: str, session: str, speaker: str) -> None:
 @click.option("--session", default="default", help="Session ID.")
 @click.option("--top-k", default=10, help="Max results.")
 def query_cmd(query_text: str, db: str, session: str, top_k: int) -> None:
-    """Query memory for relevant claims."""
-    from memcontext.claims import list_active_claims
-    from memcontext.retrieval import retrieve_hybrid
+    """Query memory — unified two-tier retrieval (facts + episodes), the same
+    path the MCP/HTTP door serves (was facts-only via retrieve_hybrid)."""
+    from memcontext.retrieval import retrieve_memory
     from memcontext.schema import open_database
 
     conn = open_database(db)
-    active = list_active_claims(conn, session)
+    hits = retrieve_memory(conn, session_id=session, query=query_text, top_k=top_k)
 
-    if not active:
-        click.echo("No active claims found.")
+    if not hits:
+        click.echo("No relevant memory found.")
         conn.close()
         return
 
-    results = retrieve_hybrid(
-        conn, session_id=session, query=query_text, top_k=top_k,
-    )
-
-    if not results:
-        results = [(c, 0.0) for c in active[:top_k]]
-
-    click.echo(f"Found {len(results)} claim(s):")
-    for claim, score in results:
-        out = {
-            "claim_id": claim.claim_id,
-            "subject": claim.subject,
-            "predicate": claim.predicate,
-            "value": claim.value,
-            "confidence": claim.confidence,
+    click.echo(f"Found {len(hits)} memory item(s):")
+    for hit, score in hits:
+        click.echo(json.dumps({
+            "kind": hit.kind,
+            "id": hit.id,
+            "text": hit.text,
+            "source_turn_id": hit.source_turn_id,
             "score": round(score, 3),
-        }
-        click.echo(json.dumps(out))
+        }))
     conn.close()
 
 
@@ -573,6 +564,23 @@ def storage_stats(db: str) -> None:
     click.echo(f"Life events:       {events}")
     click.echo(f"Retrieval surface: {active} claims")
     click.echo(f"Provenance depth:  {active + superseded} claims reachable via chain walking")
+    conn.close()
+
+
+@main.command("reindex-importance")
+@click.option("--db", default="memcontext.db", help="Database path")
+def reindex_importance_cmd(db: str) -> None:
+    """Recompute importance scores for all active claims (run after backfills).
+
+    Wires importance.recompute_all_importance, which previously had no caller.
+    """
+    from memcontext.importance import recompute_all_importance
+    from memcontext.schema import open_database
+
+    conn = open_database(db)
+    n = recompute_all_importance(conn)
+    conn.commit()
+    click.echo(f"Recomputed importance for {n} claim(s).")
     conn.close()
 
 

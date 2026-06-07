@@ -92,15 +92,18 @@ def handle_memory_query(
     query: str,
     session_id: str | None = None,
     top_k: int = 10,
+    debug: bool = False,
 ) -> dict:
     from memcontext.claims import get_claim, get_turn
     from memcontext.retrieval import (
+        bump_access,
         classify_query_depth,
         classify_query_predicates,
         retrieve_memory,
         retrieve_memory_across,
     )
 
+    explain: dict[str, dict[str, float]] | None = {} if debug else None
     _, query_type = classify_query_predicates(query)
     if top_k == 10:
         _, top_k = classify_query_depth(query)
@@ -108,7 +111,7 @@ def handle_memory_query(
     # Unified two-tier retrieval (facts + episodes, source-tagged, RRF-fused).
     if session_id:
         hits = retrieve_memory(
-            conn, session_id=session_id, query=query, top_k=top_k,
+            conn, session_id=session_id, query=query, top_k=top_k, explain=explain,
         )
         total = len(list_active_claims(conn, session_id))
     else:
@@ -119,7 +122,7 @@ def handle_memory_query(
         if not sids:
             return {"claims": [], "episodes": [], "total": 0}
         hits = retrieve_memory_across(
-            conn, session_ids=sids, query=query, top_k=top_k,
+            conn, session_ids=sids, query=query, top_k=top_k, explain=explain,
         )
         total = conn.execute(
             "SELECT COUNT(*) FROM claims"
@@ -158,6 +161,21 @@ def handle_memory_query(
                 "score": norm,
             })
 
+    # Usage reinforcement: the fact claims we served are now "accessed".
+    bump_access(conn, [c["claim_id"] for c in claims_out])
+
+    # Token accounting (zero-LLM, ~chars/4) for what we serve, by source type.
+    def _toks(text: str) -> int:
+        return max(1, len(text or "") // 4)
+    fact_tokens = sum(_toks(c.get("value") or "") for c in claims_out)
+    episode_tokens = sum(_toks(e.get("text") or "") for e in episodes_out)
+    token_report = {
+        "fact_tokens": fact_tokens,
+        "episode_tokens": episode_tokens,
+        "total_tokens": fact_tokens + episode_tokens,
+        "served_items": len(claims_out) + len(episodes_out),
+    }
+
     _READER_HINTS = {
         "assistant_recall": "Answer based on what the assistant previously said, recommended, or did.",
         "preference": "State the user's preference directly. If preferences changed, use the most recent.",
@@ -166,13 +184,18 @@ def handle_memory_query(
         "fact_recall": "Answer directly from the retrieved facts.",
     }
 
-    return {
+    result: dict = {
         "claims": claims_out,
         "episodes": episodes_out,
         "total": total,
         "query_type": query_type,
         "reader_hint": _READER_HINTS.get(query_type, _READER_HINTS["fact_recall"]),
+        "token_report": token_report,
     }
+    if debug and explain is not None:
+        served = [c["claim_id"] for c in claims_out]
+        result["ranking"] = {cid: explain[cid] for cid in served if cid in explain}
+    return result
 
 
 def handle_memory_profile(

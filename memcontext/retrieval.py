@@ -904,12 +904,16 @@ def retrieve_hybrid(
         sem_scores.append(score)
 
     meta_rows = conn.execute(
-        f"SELECT claim_id, entity_key, COALESCE(importance_score, 0.5) AS importance_score"
+        f"SELECT claim_id, entity_key, COALESCE(importance_score, 0.5) AS importance_score,"
+        f" COALESCE(access_count, 0) AS access_count"
         f" FROM claim_metadata WHERE claim_id IN ({placeholders})", ids,
     ).fetchall()
     entity_by_id: dict[str, str] = {r["claim_id"]: r["entity_key"] for r in meta_rows}
     importance_by_id: dict[str, float] = {
         r["claim_id"]: float(r["importance_score"]) for r in meta_rows
+    }
+    usage_by_id: dict[str, float] = {
+        r["claim_id"]: float(r["access_count"]) for r in meta_rows
     }
 
     from memcontext.claims import _normalise_subject
@@ -974,6 +978,9 @@ def retrieve_hybrid(
     # Importance: computed at ingest (importance.py) + stored in claim_metadata.
     # Now a first-class ranking signal (previously read only by digests/profiles).
     imp_scores: list[float] = [importance_by_id.get(c.claim_id, 0.5) for c in active]
+    # Usage: access_count, incremented when a claim is served (handle_memory_query).
+    # Cue-dependent reinforcement — frequently-retrieved claims rank up over time.
+    usage_scores: list[float] = [usage_by_id.get(c.claim_id, 0.0) for c in active]
 
     sem_ranks = _rrf_ranks(sem_scores)
     ent_ranks = _rrf_ranks(ent_scores)
@@ -984,6 +991,7 @@ def retrieve_hybrid(
     conf_ranks = _rrf_ranks(conf_scores)
     freq_ranks = _rrf_ranks(freq_scores)
     imp_ranks = _rrf_ranks(imp_scores)
+    usage_ranks = _rrf_ranks(usage_scores)
 
     w_sem = weights[0] if len(weights) > 0 else 1.0
     w_ent = weights[1] if len(weights) > 1 else 1.0
@@ -992,6 +1000,7 @@ def retrieve_hybrid(
     w_conf = 0.1
     w_freq = 0.1
     w_imp = 0.15
+    w_usage = 0.1
 
     if not has_embeddings:
         w_sem = 0.0
@@ -1008,6 +1017,7 @@ def retrieve_hybrid(
             "confidence": w_conf / (RRF_K + conf_ranks[i]),
             "frequency": w_freq / (RRF_K + freq_ranks[i]),
             "importance": w_imp / (RRF_K + imp_ranks[i]),
+            "usage": w_usage / (RRF_K + usage_ranks[i]),
         }
         fused_score = sum(contrib.values())
         if explain is not None:
@@ -1309,6 +1319,31 @@ def search_raw_turns(
     return scored[:top_k]
 
 
+def bump_access(
+    conn: sqlite3.Connection, claim_ids: list[str], *, now_ts: int | None = None
+) -> None:
+    """Reinforce served claims: increment access_count + stamp last_accessed_ts.
+
+    Best-effort, non-blocking, zero-LLM — a usage-tracking failure must never
+    break a read. The serving door calls this for the fact claims it returns; the
+    counts feed the usage ranking channel (cue-dependent reinforcement).
+    """
+    if not claim_ids:
+        return
+    if now_ts is None:
+        from memcontext.claims import now_ns
+        now_ts = now_ns()
+    try:
+        ph = ",".join("?" for _ in claim_ids)
+        conn.execute(
+            f"UPDATE claim_metadata SET access_count = COALESCE(access_count, 0) + 1,"
+            f" last_accessed_ts = ? WHERE claim_id IN ({ph})",
+            (now_ts, *claim_ids),
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("substrate.usage_bump_failed")
+
+
 def retrieve_memory(
     conn: sqlite3.Connection,
     *,
@@ -1316,6 +1351,7 @@ def retrieve_memory(
     query: str,
     top_k: int = DEFAULT_TOP_K,
     embedding_client: EmbeddingClient | None = None,
+    explain: dict[str, dict[str, float]] | None = None,
 ) -> list[tuple[MemoryHit, float]]:
     """Unified Tier-1 + Tier-2 retrieval: facts AND episodes, source-tagged.
 
@@ -1330,7 +1366,7 @@ def retrieve_memory(
 
     facts = retrieve_hybrid(
         conn, session_id=session_id, query=query, top_k=top_k,
-        embedding_client=embedding_client,
+        embedding_client=embedding_client, explain=explain,
     )
     episodes = retrieve_episodes(
         conn, session_id=session_id, query=query, top_k=top_k,
@@ -1346,6 +1382,7 @@ def retrieve_memory_across(
     query: str,
     top_k: int = DEFAULT_TOP_K,
     embedding_client: EmbeddingClient | None = None,
+    explain: dict[str, dict[str, float]] | None = None,
 ) -> list[tuple[MemoryHit, float]]:
     """Unified retrieval across MANY sessions — fuse per-session rankings by RANK.
 
@@ -1374,7 +1411,7 @@ def retrieve_memory_across(
     for sid in session_ids:
         fused.extend(retrieve_memory(
             conn, session_id=sid, query=query, top_k=top_k,
-            embedding_client=embedding_client,
+            embedding_client=embedding_client, explain=explain,
         ))
     # Same tie-break as the within-session fusion: score desc, facts before
     # episodes on an exact tie, then id for determinism.

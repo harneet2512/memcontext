@@ -66,3 +66,71 @@ def test_explain_is_opt_in_default_off():
     _ingest(conn, "alice", "tea")
     hits = retrieve_hybrid(conn, session_id="s1", query="tea", top_k=5)
     assert hits and all(len(h) == 2 for h in hits)
+
+
+def test_v5_usage_columns_exist():
+    """Schema v5 adds access_count + last_accessed_ts to claim_metadata."""
+    conn = _conn()
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(claim_metadata)").fetchall()}
+    assert {"access_count", "last_accessed_ts"} <= cols
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+
+
+def test_serving_a_fact_reinforces_usage_and_reports_tokens():
+    """handle_memory_query bumps usage for served facts + returns a token report."""
+    from memcontext.mcp_tools import handle_memory_query
+
+    conn = _conn()
+    _ingest(conn, "alice", "coffee")
+    cid = conn.execute("SELECT claim_id FROM claims").fetchone()["claim_id"]
+    before = conn.execute(
+        "SELECT COALESCE(access_count, 0) FROM claim_metadata WHERE claim_id = ?", (cid,)
+    ).fetchone()[0]
+
+    res = handle_memory_query(conn, query="coffee", session_id="s1", top_k=5)
+
+    after = conn.execute(
+        "SELECT access_count FROM claim_metadata WHERE claim_id = ?", (cid,)
+    ).fetchone()[0]
+    assert after == before + 1, "serving a fact reinforces its usage (RED before v5)"
+
+    tr = res["token_report"]
+    assert tr["total_tokens"] == tr["fact_tokens"] + tr["episode_tokens"]
+    assert tr["served_items"] == len(res["claims"]) + len(res["episodes"])
+
+
+def test_query_debug_exposes_ranking_breakdown():
+    """debug=True surfaces the per-claim signal breakdown through the door."""
+    from memcontext.mcp_tools import handle_memory_query
+
+    conn = _conn()
+    _ingest(conn, "alice", "coffee")
+    res = handle_memory_query(conn, query="coffee", session_id="s1", top_k=5, debug=True)
+    assert "ranking" in res and res["claims"]
+    cid = res["claims"][0]["claim_id"]
+    assert {"importance", "usage", "final"} <= set(res["ranking"][cid])
+
+
+def test_cli_query_is_unified_and_reindex_importance_works(tmp_path):
+    """cli query now serves the unified two-tier path; reindex-importance wires
+    the previously-dormant recompute_all_importance."""
+    from click.testing import CliRunner
+
+    from memcontext.cli import main
+
+    db = str(tmp_path / "m.db")
+    conn = open_database(db)
+    conn.row_factory = sqlite3.Row
+    _ingest(conn, "alice", "coffee")
+    conn.commit()
+    conn.close()
+
+    runner = CliRunner()
+    r = runner.invoke(main, ["query", "coffee", "--db", db, "--session", "s1"])
+    assert r.exit_code == 0, r.output
+    # unified output shape (kind=fact|episode) — was a facts-only claim shape before
+    assert '"kind"' in r.output
+
+    r = runner.invoke(main, ["reindex-importance", "--db", db])
+    assert r.exit_code == 0, r.output
+    assert "Recomputed importance" in r.output

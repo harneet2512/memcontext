@@ -391,7 +391,7 @@ CREATE INDEX IF NOT EXISTS idx_life_events_subject ON life_events(subject);
 
 # Bump when adding a migration step below. Existing databases upgrade forward
 # on open; fresh databases get every step applied once.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -525,6 +525,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 conn.execute("COMMIT")
             finally:
                 conn.execute("PRAGMA foreign_keys=ON")
+
+    if current < 5:
+        # v5: usage/access signals on claim_metadata — retrieval reinforcement
+        # (incremented when a claim is served; a ranking signal + decay input).
+        for _col in (
+            "ALTER TABLE claim_metadata ADD COLUMN access_count INTEGER DEFAULT 0",
+            "ALTER TABLE claim_metadata ADD COLUMN last_accessed_ts INTEGER",
+        ):
+            try:
+                conn.execute(_col)
+            except sqlite3.OperationalError:
+                pass  # column already present
 
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     log.debug("substrate.db_migrated", from_version=current, to_version=SCHEMA_VERSION)

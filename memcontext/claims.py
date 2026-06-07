@@ -355,25 +355,36 @@ def insert_fact(
             event_ts,
         ),
     )
-    # claim_metadata is structured-only (entity_key + predicate_family).
-    if structured and norm_subject and predicate:
-        conn.execute(
-            "INSERT INTO claim_metadata (claim_id, entity_key, predicate_family,"
-            " temporal_bin) VALUES (?, ?, ?, ?)",
-            (cid, norm_subject, predicate, _temporal_bin(valid_from_ts)),
-        )
-    # Lightweight entities (no LLM) — from the NL text, so NL-only facts still
-    # populate the entity retrieval channel.
+    # Lightweight entities (no LLM) from the NL text — extracted first so an
+    # NL-only fact can anchor its metadata entity_key on its most salient entity.
+    ents: list = []
     try:
         from memcontext.entities import extract_entities
-        for ent in extract_entities(text or ""):
-            conn.execute(
-                "INSERT OR IGNORE INTO claim_entities (claim_id, entity_text, entity_type)"
-                " VALUES (?, ?, ?)",
-                (cid, ent.text.lower(), ent.entity_type),
-            )
+        ents = list(extract_entities(text or ""))
     except Exception:  # noqa: BLE001
-        pass
+        ents = []
+
+    # claim_metadata for EVERY fact (NL-only included). Previously structured-only,
+    # which left NL facts invisible to the entity/temporal/importance channels and
+    # without an importance row. NL facts now anchor entity_key on their top entity
+    # and mark predicate_family='nl'; the importance row is created by importance.py.
+    if structured and norm_subject and predicate:
+        meta_entity, meta_family = norm_subject, predicate
+    else:
+        meta_entity = _normalise_subject(ents[0].text) if ents else ""
+        meta_family = "nl"
+    conn.execute(
+        "INSERT INTO claim_metadata (claim_id, entity_key, predicate_family,"
+        " temporal_bin) VALUES (?, ?, ?, ?)",
+        (cid, meta_entity, meta_family, _temporal_bin(valid_from_ts)),
+    )
+
+    for ent in ents:
+        conn.execute(
+            "INSERT OR IGNORE INTO claim_entities (claim_id, entity_text, entity_type)"
+            " VALUES (?, ?, ?)",
+            (cid, ent.text.lower(), ent.entity_type),
+        )
 
     log.info(
         "substrate.fact_inserted",

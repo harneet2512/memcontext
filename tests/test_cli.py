@@ -63,7 +63,8 @@ def test_cli_query_empty_session(tmp_path):
     runner.invoke(main, ["init", "--db", db_path])
     result = runner.invoke(main, ["query", "anything", "--db", db_path])
     assert result.exit_code == 0
-    assert "No active claims" in result.output
+    # cli query is now unified two-tier retrieval (facts + episodes), not facts-only.
+    assert "No relevant memory" in result.output
 
 
 def test_cli_serve_command_exists():

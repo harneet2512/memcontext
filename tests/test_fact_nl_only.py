@@ -66,10 +66,13 @@ def test_nl_only_fact_stored_with_null_triple():
     ).fetchone()
     assert row["subject"] is None and row["predicate"] is None and row["value"] is None
     assert row["text"] == fact.text
-    # No claim_metadata for an NL-only fact (it is structured-only)...
-    assert conn.execute(
-        "SELECT COUNT(*) AS n FROM claim_metadata WHERE claim_id = ?", (fact.claim_id,)
-    ).fetchone()["n"] == 0
+    # NL-only facts now DO get a claim_metadata row (entity/temporal indexing +
+    # an importance slot) — anchored on the top entity, predicate_family='nl'.
+    meta = conn.execute(
+        "SELECT predicate_family, temporal_bin FROM claim_metadata WHERE claim_id = ?",
+        (fact.claim_id,),
+    ).fetchone()
+    assert meta is not None and meta["predicate_family"] == "nl"
 
 
 def test_out_of_vocab_predicate_demotes_not_drops():
