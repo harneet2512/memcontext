@@ -24,6 +24,7 @@ out of scope for v1; the structured claims are fully removed).
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 import uuid
@@ -125,6 +126,19 @@ def forget(
                 (json.dumps(kept), sentence_id),
             )
 
+    # --- redaction map: the forgotten subject+value per source turn, so a turn that
+    # SURVIVES (shared with other claims) keeps no raw forgotten content in its text ---
+    redactions: dict[str, set[str]] = {}
+    for stid, subj, val in conn.execute(
+        f"SELECT source_turn_id, subject, value FROM claims WHERE claim_id IN ({ph})",
+        tuple(targets),
+    ).fetchall():
+        bucket = redactions.setdefault(stid, set())
+        if subj:
+            bucket.add(subj)
+        if val:
+            bucket.add(val)
+
     # --- delete the claims -> FK cascade (embeddings/metadata/entities/edges/frame_claims) ---
     conn.execute(f"DELETE FROM claims WHERE claim_id IN ({ph})", tuple(targets))
 
@@ -135,6 +149,16 @@ def forget(
         ).fetchone()[0]
         if remaining == 0:
             conn.execute("DELETE FROM turns WHERE turn_id = ?", (tid,))
+
+    # --- redact forgotten content from turns that survived (shared with other claims) ---
+    for tid, strings in redactions.items():
+        row = conn.execute("SELECT text FROM turns WHERE turn_id = ?", (tid,)).fetchone()
+        if row is None:
+            continue  # turn was deleted as an orphan -> nothing left to redact
+        text = row[0] or ""
+        for s in strings:
+            text = re.sub(re.escape(s), "[redacted]", text, flags=re.IGNORECASE)
+        conn.execute("UPDATE turns SET text = ? WHERE turn_id = ?", (text, tid))
 
     log.info("substrate.forgotten", target_type=target_type, target_id=target_id,
              count=len(targets), decision_id=decision_id, reason=reason)

@@ -118,3 +118,25 @@ def test_forget_via_cli(tmp_path):
     assert '"forgotten": 1' in r.output
     conn2 = open_database(db)
     assert conn2.execute("SELECT COUNT(*) FROM claims WHERE subject='alice'").fetchone()[0] == 0
+
+
+def test_forget_redacts_shared_surviving_turn():
+    """A turn shared between a forgotten subject and a survivor keeps no raw PII."""
+    conn = _conn()
+    on_new_turn(
+        conn, session_id="s1", speaker=Speaker.USER,
+        text="alice likes coffee and bob likes tea",
+        extractor=PassthroughExtractor([
+            {"subject": "alice", "predicate": "user_fact", "value": "coffee", "confidence": 0.9},
+            {"subject": "bob", "predicate": "user_fact", "value": "tea", "confidence": 0.9},
+        ]),
+    )
+    forget(conn, subject="alice")
+
+    row = conn.execute("SELECT text FROM turns").fetchone()
+    assert row is not None  # the shared turn survives (bob's claim remains)
+    text = row["text"].lower()
+    assert "alice" not in text and "coffee" not in text  # forgotten PII redacted
+    assert "bob" in text and "tea" in text                # survivor intact
+    assert "[redacted]" in text
+    assert _count(conn, "SELECT COUNT(*) FROM claims WHERE subject='bob'") == 1
