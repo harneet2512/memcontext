@@ -315,6 +315,24 @@ def handle_memory_output_provenance(
     return out
 
 
+def handle_memory_forget(
+    conn: sqlite3.Connection,
+    *,
+    claim_id: str | None = None,
+    subject: str | None = None,
+    session_id: str | None = None,
+    predicate: str | None = None,
+    reason: str = "user_request",
+) -> dict:
+    """Right-to-be-forgotten: hard-delete the target memory and cascade along the
+    provenance + supersession graph (no residual content), audited to `decisions`.
+    Specify exactly one of claim_id / subject / session_id / predicate."""
+    from memcontext.forgetting import forget
+
+    return forget(conn, claim_id=claim_id, subject=subject,
+                  session_id=session_id, predicate=predicate, reason=reason)
+
+
 def handle_memory_profile(
     conn: sqlite3.Connection,
     *,

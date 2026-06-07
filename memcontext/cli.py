@@ -719,6 +719,28 @@ def reindex_embeddings_cmd(db: str, session: str | None) -> None:
     conn.close()
 
 
+@main.command("forget")
+@click.option("--db", default="memcontext.db", help="Database path")
+@click.option("--claim-id", default=None, help="Forget a single claim")
+@click.option("--subject", default=None, help="Forget everything about a subject")
+@click.option("--session", default=None, help="Forget an entire session")
+@click.option("--predicate", default=None, help="Forget all claims with a predicate")
+@click.option("--reason", default="user_request", help="Audit reason")
+def forget_cmd(db, claim_id, subject, session, predicate, reason):
+    """Right-to-be-forgotten: cascade-consistent hard delete (no residual), audited
+    to the decisions log. Specify exactly one of --claim-id/--subject/--session/--predicate.
+    """
+    from memcontext.forgetting import forget
+    from memcontext.schema import open_database
+
+    conn = open_database(db)
+    res = forget(conn, claim_id=claim_id, subject=subject,
+                 session_id=session, predicate=predicate, reason=reason)
+    conn.commit()
+    click.echo(json.dumps(res))
+    conn.close()
+
+
 def cli() -> None:
     """Console-script entry point: run the CLI, surfacing DB errors cleanly.
 
