@@ -110,7 +110,7 @@ Both hit the same SQLite database. An observation made through the REST API is q
 - **Four-signal hybrid retrieval** — semantic + BM25 + entity + temporal, fused via Reciprocal Rank Fusion.
 - **Browser observation** — accessibility tree extraction from live pages. Diff-based revisits trigger automatic supersession.
 - **Deterministic core** — projections, profiles, digests, chains, provenance, importance scoring all run without LLMs. Reduces cost and variance.
-- **Audit-first design** — full claim lifecycle and supersession history. Built for medical audit in RobbyMD; works for any high-stakes memory.
+- **Audit-first design** — full claim lifecycle, supersession history, decision tracking. Built for medical audit in RobbyMD; works for any high-stakes memory.
 
 ---
 

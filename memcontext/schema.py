@@ -8,6 +8,7 @@ Tables:
 - turns — conversation turns
 - claims — atomic facts extracted from turns, with temporal validity
 - supersession_edges — typed edges linking old → new claims
+- decisions — audit trail for user actions
 - output_sentences — generated text with provenance back to claims
 - claim_embeddings — sidecar for retrieval vectors
 - claim_metadata — sidecar for multi-signal retrieval fusion
@@ -271,6 +272,16 @@ CREATE TABLE IF NOT EXISTS supersession_edges (
 CREATE INDEX IF NOT EXISTS idx_supersession_old ON supersession_edges(old_claim_id);
 CREATE INDEX IF NOT EXISTS idx_supersession_new ON supersession_edges(new_claim_id);
 
+CREATE TABLE IF NOT EXISTS decisions (
+    decision_id           TEXT PRIMARY KEY,
+    session_id            TEXT NOT NULL,
+    kind                  TEXT NOT NULL,
+    target_type           TEXT NOT NULL,
+    target_id             TEXT NOT NULL,
+    claim_state_snapshot  TEXT NOT NULL,
+    ts                    INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS output_sentences (
     sentence_id       TEXT PRIMARY KEY,
     session_id        TEXT NOT NULL,
@@ -380,7 +391,7 @@ CREATE INDEX IF NOT EXISTS idx_life_events_subject ON life_events(subject);
 
 # Bump when adding a migration step below. Existing databases upgrade forward
 # on open; fresh databases get every step applied once.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 7
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -551,12 +562,6 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 conn.execute(_col)
             except sqlite3.OperationalError:
                 pass  # column already present
-
-    if current < 8:
-        # v8: drop the dormant `decisions` table — created since v0 but never
-        # written or read (no decision-tracking path in this substrate). Removed
-        # rather than left dormant; reproducible since it always held no rows.
-        conn.execute("DROP TABLE IF EXISTS decisions")
 
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     log.debug("substrate.db_migrated", from_version=current, to_version=SCHEMA_VERSION)
