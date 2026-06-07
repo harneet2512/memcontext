@@ -53,6 +53,7 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
         handle_memory_volatility,
         handle_memory_working_context,
         handle_memory_procedures,
+        handle_memory_output_provenance,
     )
 
     conn = open_database(db_path)
@@ -330,6 +331,20 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
                 },
             ),
             Tool(
+                name="memory_output_provenance",
+                description="Output-sentence provenance (audit): record which generated sentences cite which claims, and trace claim<->sentence<->turn links. Deterministic, zero-LLM.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "record": {"type": "array"},
+                        "claim_id": {"type": "string"},
+                        "turn_id": {"type": "string"},
+                        "sentence_id": {"type": "string"},
+                    },
+                },
+            ),
+            Tool(
                 name="memory_tuples",
                 description="Project a session's active facts into event tuples (subject, action, object, validity window). Pure read projection, zero-LLM.",
                 inputSchema={
@@ -392,6 +407,8 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
                 result = handle_memory_working_context(conn, **arguments)
             elif name == "memory_procedures":
                 result = handle_memory_procedures(conn, **arguments)
+            elif name == "memory_output_provenance":
+                result = handle_memory_output_provenance(conn, **arguments)
             elif name == "memory_tuples":
                 result = handle_memory_tuples(conn, **arguments)
             elif name == "memory_entity_graph":
@@ -454,6 +471,7 @@ def create_http_app(db_path: str = "memcontext.db"):
         handle_memory_volatility,
         handle_memory_working_context,
         handle_memory_procedures,
+        handle_memory_output_provenance,
     )
     from memcontext.schema import open_database
 
@@ -505,6 +523,8 @@ def create_http_app(db_path: str = "memcontext.db"):
                      inputSchema={"type":"object","properties":{"session_id":{"type":"string"},"token_budget":{"type":"integer","default":2000}},"required":["session_id"]}),
                 Tool(name="memory_procedures", description="Detect recurring procedures (ordered action sequences) across sessions. EXPERIMENTAL: disabled unless MEMCONTEXT_EXPERIMENTAL_PROCEDURAL=1.",
                      inputSchema={"type":"object","properties":{"min_sessions":{"type":"integer","default":2}}}),
+                Tool(name="memory_output_provenance", description="Output-sentence provenance (audit): record which sentences cite which claims; trace claim<->sentence<->turn links.",
+                     inputSchema={"type":"object","properties":{"session_id":{"type":"string"},"record":{"type":"array"},"claim_id":{"type":"string"},"turn_id":{"type":"string"},"sentence_id":{"type":"string"}}}),
                 Tool(name="memory_tuples", description="Project a session's active facts into event tuples (subject, action, object, validity).",
                      inputSchema={"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"]}),
                 Tool(name="memory_entity_graph", description="Co-occurrence neighbors of an entity within a session's claim graph.",
@@ -546,6 +566,8 @@ def create_http_app(db_path: str = "memcontext.db"):
                     result = handle_memory_working_context(conn, **arguments)
                 elif name == "memory_procedures":
                     result = handle_memory_procedures(conn, **arguments)
+                elif name == "memory_output_provenance":
+                    result = handle_memory_output_provenance(conn, **arguments)
                 elif name == "memory_tuples":
                     result = handle_memory_tuples(conn, **arguments)
                 elif name == "memory_entity_graph":

@@ -272,6 +272,49 @@ def handle_memory_procedures(
     }
 
 
+def handle_memory_output_provenance(
+    conn: sqlite3.Connection,
+    *,
+    session_id: str | None = None,
+    record: list[dict] | None = None,
+    claim_id: str | None = None,
+    turn_id: str | None = None,
+    sentence_id: str | None = None,
+) -> dict:
+    """Output-sentence provenance (audit-first): record which generated sentences
+    cite which claims, and trace the bidirectional claim <-> sentence <-> turn
+    links. Wires the previously-unreachable provenance functions.
+    """
+    from memcontext.provenance import (
+        OutputSection,
+        claim_ids_for_turn,
+        insert_output_sentence,
+        sentence_ids_for_claim,
+        turn_id_for_sentence,
+    )
+
+    out: dict = {}
+    if record and session_id:
+        ids: list[str] = []
+        for i, s in enumerate(record):
+            row = insert_output_sentence(
+                conn, session_id=session_id,
+                section=OutputSection(s.get("section", "summary")),
+                ordinal=int(s.get("ordinal", i)),
+                text=s.get("text", ""),
+                source_claim_ids=list(s.get("source_claim_ids", [])),
+            )
+            ids.append(row.sentence_id)
+        out["recorded"] = ids
+    if claim_id:
+        out["cited_in"] = sentence_ids_for_claim(conn, claim_id)
+    if turn_id:
+        out["claims_from_turn"] = claim_ids_for_turn(conn, turn_id)
+    if sentence_id:
+        out["turn_of_sentence"] = turn_id_for_sentence(conn, sentence_id)
+    return out
+
+
 def handle_memory_profile(
     conn: sqlite3.Connection,
     *,
