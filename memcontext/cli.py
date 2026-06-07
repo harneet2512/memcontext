@@ -604,6 +604,24 @@ def prune_memory_cmd(db: str, threshold: float, min_age_days: float) -> None:
     conn.close()
 
 
+@main.command("consolidate")
+@click.option("--db", default="memcontext.db", help="Database path")
+@click.option("--min-sessions", default=3, type=int,
+              help="Graduate facts recurring across at least this many sessions")
+def consolidate_cmd(db: str, min_sessions: int) -> None:
+    """Graduate cross-session-recurring facts into durable consolidated facts
+    (episodic -> semantic). Deterministic, zero-LLM; never deletes.
+    """
+    from memcontext.consolidate import consolidate_facts
+    from memcontext.schema import open_database
+
+    conn = open_database(db)
+    n = consolidate_facts(conn, min_sessions=min_sessions)
+    conn.commit()
+    click.echo(f"Consolidated {n} cross-session fact(s).")
+    conn.close()
+
+
 def cli() -> None:
     """Console-script entry point: run the CLI, surfacing DB errors cleanly.
 
