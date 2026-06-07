@@ -218,6 +218,33 @@ def handle_memory_query(
     return result
 
 
+def handle_memory_working_context(
+    conn: sqlite3.Connection,
+    *,
+    session_id: str,
+    token_budget: int = 2000,
+) -> dict:
+    """Working context: the task-relevant memory for a session within a token
+    budget, cued by recent turns (query-free) rather than all active memory."""
+    from memcontext.working_context import build_working_context
+
+    ctx = build_working_context(conn, session_id, token_budget=token_budget)
+    return {
+        "session_id": ctx.session_id,
+        "recent_turn_ids": ctx.recent_turn_ids,
+        "salient_entities": ctx.salient_entities,
+        "facts": [
+            {"kind": h.kind, "id": h.id, "text": h.text, "score": round(s, 4)}
+            for h, s in ctx.facts
+        ],
+        "token_budget": ctx.token_budget,
+        "tokens_used": ctx.tokens_used,
+        "total_active": ctx.total_active,
+        "included": ctx.included,
+        "excluded_for_budget": ctx.excluded_for_budget,
+    }
+
+
 def handle_memory_profile(
     conn: sqlite3.Connection,
     *,

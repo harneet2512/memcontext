@@ -622,6 +622,34 @@ def consolidate_cmd(db: str, min_sessions: int) -> None:
     conn.close()
 
 
+@main.command("working-context")
+@click.option("--db", default="memcontext.db", help="Database path")
+@click.option("--session", default="default", help="Session id")
+@click.option("--token-budget", default=2000, type=int,
+              help="Token budget for the assembled working set")
+def working_context_cmd(db: str, session: str, token_budget: int) -> None:
+    """Assemble the task-relevant memory for a session within a token budget
+    (working context), cued by recent turns instead of all active memory.
+    """
+    from memcontext.schema import open_database
+    from memcontext.working_context import build_working_context
+
+    conn = open_database(db)
+    ctx = build_working_context(conn, session, token_budget=token_budget)
+    click.echo(json.dumps({
+        "session_id": ctx.session_id,
+        "salient_entities": ctx.salient_entities,
+        "included": ctx.included,
+        "total_active": ctx.total_active,
+        "tokens_used": ctx.tokens_used,
+        "token_budget": ctx.token_budget,
+        "excluded_for_budget": ctx.excluded_for_budget,
+        "facts": [{"kind": h.kind, "text": h.text, "score": round(s, 3)}
+                  for h, s in ctx.facts],
+    }))
+    conn.close()
+
+
 def cli() -> None:
     """Console-script entry point: run the CLI, surfacing DB errors cleanly.
 
