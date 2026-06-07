@@ -755,6 +755,32 @@ def trust_status_cmd(db):
     conn.close()
 
 
+@main.command("grant")
+@click.option("--db", default="memcontext.db", help="Database path")
+@click.option("--principal", required=True, help="Principal name")
+@click.option("--namespace", required=True, help="Namespace the token is scoped to")
+@click.option("--token", default=None, help="Token to grant (generated if omitted)")
+@click.option("--read-only", is_flag=True, default=False, help="Grant read-only access")
+def grant_cmd(db, principal, namespace, token, read_only):
+    """Grant a principal a scoped access token (namespace + read/write permission).
+    The token is stored hashed; the plaintext is printed once, here."""
+    import secrets as _secrets
+
+    from memcontext.authz import register_principal
+    from memcontext.schema import open_database
+
+    tok = token or _secrets.token_urlsafe(32)
+    conn = open_database(db)
+    register_principal(conn, token=tok, principal=principal, namespace=namespace,
+                       can_write=not read_only)
+    conn.commit()
+    conn.close()
+    click.echo(json.dumps({
+        "principal": principal, "namespace": namespace,
+        "can_write": not read_only, "token": tok,
+    }))
+
+
 def cli() -> None:
     """Console-script entry point: run the CLI, surfacing DB errors cleanly.
 

@@ -282,6 +282,14 @@ CREATE TABLE IF NOT EXISTS decisions (
     ts                    INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS principals (
+    token_hash  TEXT PRIMARY KEY,
+    principal   TEXT NOT NULL,
+    namespace   TEXT NOT NULL,
+    can_write   INTEGER NOT NULL DEFAULT 1,
+    created_ts  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS output_sentences (
     sentence_id       TEXT PRIMARY KEY,
     session_id        TEXT NOT NULL,
@@ -391,7 +399,7 @@ CREATE INDEX IF NOT EXISTS idx_life_events_subject ON life_events(subject);
 
 # Bump when adding a migration step below. Existing databases upgrade forward
 # on open; fresh databases get every step applied once.
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -595,6 +603,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
             )
         except sqlite3.OperationalError:
             pass  # column already present
+
+    if current < 11:
+        # v11: per-principal access control. A bearer token (stored hashed) maps to
+        # a principal scoped to a namespace + read/write permission.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS principals ("
+            " token_hash TEXT PRIMARY KEY, principal TEXT NOT NULL,"
+            " namespace TEXT NOT NULL, can_write INTEGER NOT NULL DEFAULT 1,"
+            " created_ts INTEGER NOT NULL)"
+        )
 
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     log.debug("substrate.db_migrated", from_version=current, to_version=SCHEMA_VERSION)

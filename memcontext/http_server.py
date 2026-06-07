@@ -73,11 +73,27 @@ def _configure_auth() -> str:
 @app.middleware("http")
 async def _require_bearer(request: Request, call_next):
     if request.url.path.startswith("/api/"):
-        token = _configure_auth()
         header = request.headers.get("authorization", "")
         provided = header[7:].strip() if header[:7].lower() == "bearer " else ""
-        if not (provided and secrets.compare_digest(provided, token)):
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        # Per-principal access control once any principal is registered; otherwise
+        # the single shared token applies (backward compatible).
+        from memcontext.authz import any_principals, resolve_principal
+
+        conn = _conn
+        if conn is not None and any_principals(conn):
+            principal = resolve_principal(conn, provided)
+            if principal is None:
+                return JSONResponse({"error": "unauthorized"}, status_code=401)
+            request.state.namespace = principal.namespace
+            request.state.can_write = principal.can_write
+            request.state.principal = principal.name
+        else:
+            token = _configure_auth()
+            if not (provided and secrets.compare_digest(provided, token)):
+                return JSONResponse({"error": "unauthorized"}, status_code=401)
+            request.state.namespace = None  # single shared key = unrestricted
+            request.state.can_write = True
+            request.state.principal = "shared"
     return await call_next(request)
 
 
@@ -141,21 +157,27 @@ class ObserveRequest(BaseModel):
 # ── Endpoints ────────────────────────────────────────────
 
 @app.post("/api/memory/store")
-def memory_store(req: StoreRequest):
+def memory_store(req: StoreRequest, request: Request):
+    if not getattr(request.state, "can_write", True):
+        raise HTTPException(403, "read-only principal")
     from memcontext.mcp_tools import handle_memory_store
     claims = [c.model_dump() for c in req.claims] if req.claims else None
+    ns = getattr(request.state, "namespace", None)
     return handle_memory_store(
         get_conn(), text=req.text, speaker=req.speaker,
         session_id=req.session_id, claims=claims,
+        namespace=ns or "default",
     )
 
 
 @app.post("/api/memory/query")
-def memory_query(req: QueryRequest):
+def memory_query(req: QueryRequest, request: Request):
     from memcontext.mcp_tools import handle_memory_query
+    ns = getattr(request.state, "namespace", None)
     return handle_memory_query(
         get_conn(), query=req.query,
         session_id=req.session_id, top_k=req.top_k,
+        namespace=ns,
     )
 
 
