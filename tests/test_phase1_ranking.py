@@ -134,3 +134,23 @@ def test_cli_query_is_unified_and_reindex_importance_works(tmp_path):
     r = runner.invoke(main, ["reindex-importance", "--db", db])
     assert r.exit_code == 0, r.output
     assert "Recomputed importance" in r.output
+
+
+def test_importance_is_computed_at_ingest_not_only_on_supersession():
+    """LIPI fix: every new claim gets importance computed at ingest, so the
+    importance ranking channel isn't inert (flat 0.5) for never-superseded claims."""
+    conn = _conn()
+    on_new_turn(
+        conn, session_id="s1", speaker=Speaker.USER, text="alice strong fact",
+        extractor=PassthroughExtractor(
+            [{"subject": "alice", "predicate": "user_fact", "value": "x", "confidence": 0.99}]),
+    )
+    on_new_turn(
+        conn, session_id="s1", speaker=Speaker.USER, text="bob weak fact",
+        extractor=PassthroughExtractor(
+            [{"subject": "bob", "predicate": "user_fact", "value": "y", "confidence": 0.20}]),
+    )
+    scores = [r[0] for r in conn.execute("SELECT importance_score FROM claim_metadata").fetchall()]
+    assert len(scores) == 2
+    # computed at ingest (no supersession here): values differ or aren't the flat default
+    assert len({round(s, 4) for s in scores}) > 1 or any(abs(s - 0.5) > 1e-6 for s in scores)

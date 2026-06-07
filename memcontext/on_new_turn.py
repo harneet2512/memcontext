@@ -229,11 +229,15 @@ def run_extraction(
     )
 
     try:
-        if edges:
-            from memcontext.importance import compute_importance
-            for edge in edges:
-                compute_importance(conn, edge.old_claim_id)
-                compute_importance(conn, edge.new_claim_id)
+        # Importance for EVERY new claim at ingest, not only superseded ones, so the
+        # importance ranking signal has real values instead of a flat 0.5 default in
+        # the common never-superseded case. Deterministic + zero-LLM; new_claim_ids
+        # are already in `created`, so only the retired old claims need a recompute.
+        from memcontext.importance import compute_importance
+        for _claim in created:
+            compute_importance(conn, _claim.claim_id)
+        for edge in edges:
+            compute_importance(conn, edge.old_claim_id)
 
         turn_count = conn.execute(
             "SELECT COUNT(*) FROM turns WHERE session_id = ?", (session_id,)
