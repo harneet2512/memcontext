@@ -666,6 +666,44 @@ def procedures_cmd(db: str, min_sessions: int) -> None:
     conn.close()
 
 
+@main.command("reindex-embeddings")
+@click.option("--db", default="memcontext.db", help="Database path")
+@click.option("--session", default=None, help="Session id (default: all sessions)")
+def reindex_embeddings_cmd(db: str, session: str | None) -> None:
+    """Backfill missing embeddings (claims, episodes, event frames) -- useful after
+    enabling embeddings on a DB that was ingested while they were off.
+    """
+    from memcontext.retrieval import (
+        backfill_embeddings,
+        backfill_episode_embeddings,
+        backfill_event_frame_embeddings,
+        episode_embedder,
+    )
+    from memcontext.schema import open_database
+
+    conn = open_database(db)
+    client = episode_embedder()
+    if client is None:
+        click.echo("Embeddings are disabled (MEMCONTEXT_EMBED_EPISODES=0); nothing to backfill.")
+        conn.close()
+        return
+    if session:
+        sessions = [session]
+    else:
+        sessions = [r[0] for r in conn.execute("SELECT DISTINCT session_id FROM turns").fetchall()]
+    claims = episodes = frames = 0
+    for sid in sessions:
+        claims += backfill_embeddings(conn, sid, client=client)
+        episodes += backfill_episode_embeddings(conn, sid, client=client)
+        frames += backfill_event_frame_embeddings(conn, sid, client=client)
+    conn.commit()
+    click.echo(
+        f"Backfilled embeddings: {claims} claim(s), {episodes} episode(s), "
+        f"{frames} event frame(s) across {len(sessions)} session(s)."
+    )
+    conn.close()
+
+
 def cli() -> None:
     """Console-script entry point: run the CLI, surfacing DB errors cleanly.
 
