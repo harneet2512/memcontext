@@ -51,7 +51,11 @@ def status(db: str) -> None:
     total_turns = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
     sessions = conn.execute("SELECT COUNT(DISTINCT session_id) FROM turns").fetchone()[0]
 
+    from memcontext.retrieval import semantic_enabled
     click.echo(f"Database: {os.path.abspath(db)}")
+    click.echo(
+        f"Semantic memory: {'ON (embeddings)' if semantic_enabled() else 'OFF -- lexical-only (BM25)'}"
+    )
     click.echo(f"Sessions: {sessions}")
     click.echo(f"Turns: {total_turns}")
     click.echo(f"Claims: {total_claims} total, {active_claims} active")
@@ -276,6 +280,12 @@ def observe(url: str, db: str, session: str, login_email: str | None, login_url:
 )
 def serve(db: str, transport: str) -> None:
     """Start the MCP server (for Claude Code, Cursor)."""
+    from memcontext.retrieval import enforce_semantic_policy, semantic_enabled
+
+    click.echo(
+        f"[memcontext] Semantic memory: {'ON' if semantic_enabled() else 'OFF (degraded lexical-only)'}"
+    )
+    enforce_semantic_policy()  # loud warning, or raises under MEMCONTEXT_REQUIRE_EMBEDDINGS=1
     try:
         from memcontext.mcp_server import run_server
 
@@ -296,7 +306,12 @@ def serve(db: str, transport: str) -> None:
 def serve_http(db: str, port: int, host: str, share: bool) -> None:
     """Start the HTTP API server (for ChatGPT, Gemini, browser extensions, any AI)."""
     from memcontext.http_server import run_server
+    from memcontext.retrieval import enforce_semantic_policy, semantic_enabled
 
+    click.echo(
+        f"[memcontext] Semantic memory: {'ON' if semantic_enabled() else 'OFF (degraded lexical-only)'}"
+    )
+    enforce_semantic_policy()
     click.echo(f"[memcontext] Local MCP ready (stdio)")
     click.echo(f"[memcontext] HTTP API ready: http://localhost:{port}")
     click.echo(f"[memcontext] Database: {db}")

@@ -218,6 +218,33 @@ def semantic_supersession():
     return SemanticSupersession(emb)
 
 
+def semantic_enabled() -> bool:
+    """True when a real embedder is configured — i.e. semantic retrieval and Pass-2
+    supersession are active. False means the engine is in lexical-only (BM25) mode."""
+    return episode_embedder() is not None
+
+
+def enforce_semantic_policy() -> bool:
+    """Serving guard: MemContext IS semantic memory, so running without an embedder
+    is a DEGRADED lexical-only mode, not normal operation. Returns True when
+    semantic is on. When off: raises if MEMCONTEXT_REQUIRE_EMBEDDINGS=1 (strict),
+    else emits a loud warning. Call at serving/ingest entry points so the degraded
+    mode is never silent.
+    """
+    if semantic_enabled():
+        return True
+    msg = (
+        "MemContext is running WITHOUT embeddings: semantic retrieval and Pass-2 "
+        "supersession are DISABLED. This is degraded, lexical-only (BM25) mode — "
+        "not the product's normal operation. Set MEMCONTEXT_EMBED_EPISODES=1 (the "
+        "default) with an embedding model available to enable semantic memory."
+    )
+    if os.environ.get("MEMCONTEXT_REQUIRE_EMBEDDINGS", "") == "1":
+        raise RuntimeError(msg)
+    log.warning("substrate.semantic_disabled", detail=msg)
+    return False
+
+
 # --- blob encoding -----------------------------------------------------------
 
 
