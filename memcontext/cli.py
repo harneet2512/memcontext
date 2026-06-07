@@ -72,7 +72,8 @@ def status(db: str) -> None:
     default="user",
     help="Speaker role.",
 )
-def ingest(text: str, db: str, session: str, speaker: str) -> None:
+@click.option("--namespace", default="default", help="Tenant namespace (isolation scope).")
+def ingest(text: str, db: str, session: str, speaker: str, namespace: str) -> None:
     """Ingest a text turn and extract claims."""
     from memcontext.on_new_turn import on_new_turn
     from memcontext.schema import Speaker, open_database
@@ -88,6 +89,7 @@ def ingest(text: str, db: str, session: str, speaker: str) -> None:
     result = on_new_turn(
         conn, session_id=session, speaker=sp, text=text, extractor=extractor,
         embedder=episode_embedder(), semantic=semantic_supersession(),
+        namespace=namespace,
     )
 
     if not result.admitted:
@@ -109,13 +111,19 @@ def ingest(text: str, db: str, session: str, speaker: str) -> None:
 @click.option("--db", default="memcontext.db", help="Database file path.")
 @click.option("--session", default="default", help="Session ID.")
 @click.option("--top-k", default=10, help="Max results.")
-def query_cmd(query_text: str, db: str, session: str, top_k: int) -> None:
+@click.option("--namespace", default=None, help="Restrict to a tenant namespace (isolation).")
+def query_cmd(query_text: str, db: str, session: str, top_k: int, namespace: str | None) -> None:
     """Query memory — unified two-tier retrieval (facts + episodes), the same
     path the MCP/HTTP door serves (was facts-only via retrieve_hybrid)."""
+    from memcontext.mcp_tools import _session_in_namespace
     from memcontext.retrieval import retrieve_memory
     from memcontext.schema import open_database
 
     conn = open_database(db)
+    if namespace is not None and not _session_in_namespace(conn, session, namespace):
+        click.echo("Access denied: session not in namespace.")
+        conn.close()
+        return
     hits = retrieve_memory(conn, session_id=session, query=query_text, top_k=top_k)
 
     if not hits:

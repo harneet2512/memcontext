@@ -78,6 +78,10 @@ def handle_memory_store(
                 rows,
             )
 
+    # EXPERIMENTAL anomaly detection (flag-gated; no-op without an embedder)
+    from memcontext.anomaly import check_write
+    check_write(conn, sid, text, episode_embedder())
+
     return {
         "turn_id": result.turn.turn_id if result.turn else None,
         "session_id": sid,

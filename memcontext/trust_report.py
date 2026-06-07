@@ -10,7 +10,25 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import sqlite3
+
+
+def _stale_windows_ns() -> dict[str, int]:
+    """Per-volatility staleness windows (ns). Configurable via env; sensible defaults."""
+    day = 86_400 * 1_000_000_000
+
+    def days(env: str, default: int) -> int:
+        try:
+            return int(os.environ.get(env, default))
+        except ValueError:
+            return default
+
+    return {
+        "stable": days("MEMCONTEXT_STALE_STABLE_DAYS", 365) * day,
+        "evolving": days("MEMCONTEXT_STALE_EVOLVING_DAYS", 90) * day,
+        "volatile": days("MEMCONTEXT_STALE_VOLATILE_DAYS", 14) * day,
+    }
 
 
 def trust_status(conn: sqlite3.Connection) -> dict:
@@ -72,8 +90,7 @@ def trust_status(conn: sqlite3.Connection) -> dict:
         " GROUP BY c.subject, c.predicate"
     ).fetchall():
         supersession_counts[(s_subj, s_pred)] = int(s_n)
-    _DAY_NS = 86_400 * 1_000_000_000
-    _windows = {"stable": 365 * _DAY_NS, "evolving": 90 * _DAY_NS, "volatile": 14 * _DAY_NS}
+    _windows = _stale_windows_ns()
     _now = time.time_ns()
     stale = 0
     for a_subj, a_pred, a_ts in conn.execute(
