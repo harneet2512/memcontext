@@ -1063,3 +1063,39 @@ def _count_a11y_nodes(tree: dict) -> int:
     for child in tree.get("children", []):
         count += _count_a11y_nodes(child)
     return count
+
+
+def handle_tool_discover(
+    conn: sqlite3.Connection,
+    *,
+    query: str,
+    session_ids: list[str] | None = None,
+    top_k: int = 10,
+    use_memory: bool = False,
+) -> dict:
+    """Activation layer: return the curated top-K tools for a query.
+
+    Query-only by default; ``use_memory=True`` additionally conditions on the
+    user's memory via the Session-1 public surface (``retrieve_memory_across``).
+    Uses the substrate's default embedder (respects MEMCONTEXT_EMBED_EPISODES).
+    """
+    from memcontext.retrieval import episode_embedder
+    from memcontext.tool_activation import discover_tools
+
+    results = discover_tools(
+        conn,
+        query=query,
+        session_ids=session_ids or [],
+        top_k=top_k,
+        use_memory=use_memory,
+        embedder=episode_embedder(),
+    )
+    return {
+        "query": query,
+        "used_memory": any(r.used_memory for r in results),
+        "count": len(results),
+        "tools": [
+            {"tool_id": r.tool_id, "name": r.name, "score": round(r.score, 6)}
+            for r in results
+        ],
+    }

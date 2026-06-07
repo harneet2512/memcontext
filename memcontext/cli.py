@@ -789,6 +789,75 @@ def grant_cmd(db, principal, namespace, token, read_only):
     }))
 
 
+@main.group()
+def tools() -> None:
+    """Activation layer: ingest, embed, and discover tools from the registry."""
+
+
+@tools.command("ingest")
+@click.argument("json_file")
+@click.option("--db", default="memcontext.db", help="Database file path.")
+@click.option("--server", default="mcp", help="Parent MCP server name/id.")
+def tools_ingest(json_file: str, db: str, server: str) -> None:
+    """Ingest an MCP tools/list JSON payload into the tool registry."""
+    import json as _json
+    from pathlib import Path
+
+    from memcontext.schema import open_database
+    from memcontext.tool_registry import ingest_mcp_tools_list
+
+    conn = open_database(db)
+    data = _json.loads(Path(json_file).read_text(encoding="utf-8"))
+    n = ingest_mcp_tools_list(conn, data, server=server)
+    conn.commit()
+    conn.close()
+    click.echo(f"Ingested {n} tools from {json_file} (server={server}).")
+
+
+@tools.command("reindex")
+@click.option("--db", default="memcontext.db", help="Database file path.")
+def tools_reindex(db: str) -> None:
+    """Embed registry tools not yet embedded (uses the local embedder)."""
+    from memcontext.retrieval import EmbeddingClient
+    from memcontext.schema import open_database
+    from memcontext.tool_registry import embed_tools
+
+    conn = open_database(db)
+    n = embed_tools(conn, embedder=EmbeddingClient())
+    conn.commit()
+    conn.close()
+    click.echo(f"Embedded {n} tools.")
+
+
+@tools.command("discover")
+@click.argument("query_text")
+@click.option("--db", default="memcontext.db", help="Database file path.")
+@click.option("--top-k", default=10, help="Max tools to return.")
+@click.option("--use-memory", is_flag=True, default=False, help="Condition on user memory.")
+@click.option("--session", "sessions", multiple=True, help="Memory session id (repeatable).")
+def tools_discover(
+    query_text: str, db: str, top_k: int, use_memory: bool, sessions: tuple[str, ...]
+) -> None:
+    """Return the curated top-K tools for a query (query-only by default)."""
+    from memcontext.retrieval import EmbeddingClient
+    from memcontext.schema import open_database
+    from memcontext.tool_activation import discover_tools
+
+    conn = open_database(db)
+    results = discover_tools(
+        conn, query=query_text, session_ids=list(sessions), top_k=top_k,
+        use_memory=use_memory, embedder=EmbeddingClient(),
+    )
+    conn.close()
+    if not results:
+        click.echo("No tools found (is the registry populated? run `tools ingest`).")
+        return
+    used = any(r.used_memory for r in results)
+    click.echo(f"Top {len(results)} tools (used_memory={used}):")
+    for r in results:
+        click.echo(json.dumps({"tool_id": r.tool_id, "name": r.name, "score": round(r.score, 4)}))
+
+
 def cli() -> None:
     """Console-script entry point: run the CLI, surfacing DB errors cleanly.
 

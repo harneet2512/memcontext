@@ -394,12 +394,45 @@ CREATE TABLE IF NOT EXISTS life_events (
     significance        REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_life_events_subject ON life_events(subject);
+
+-- Tool registry (activation layer, additive). Independent of claim/turn/memory
+-- tables. `id` = source:source_dataset:source_tool_id so re-ingest is idempotent.
+-- Raw source/MCP fields are preserved in the *_json columns.
+CREATE TABLE IF NOT EXISTS tool_schemas (
+    id                 TEXT PRIMARY KEY,
+    name               TEXT NOT NULL,
+    description        TEXT NOT NULL DEFAULT '',
+    parameters_json    TEXT,
+    returns_json       TEXT,
+    parent_mcp_server  TEXT,
+    server_url_or_id   TEXT,
+    domain_tags        TEXT,
+    source             TEXT NOT NULL,
+    source_dataset     TEXT,
+    source_tool_id     TEXT,
+    metadata_json      TEXT,
+    created_at         INTEGER NOT NULL,
+    updated_at         INTEGER NOT NULL,
+    UNIQUE (source, source_dataset, source_tool_id)
+);
+CREATE INDEX IF NOT EXISTS idx_tool_schemas_name ON tool_schemas(name);
+CREATE INDEX IF NOT EXISTS idx_tool_schemas_source ON tool_schemas(source, source_dataset);
+
+-- Sidecar vectors for the tool registry. Mirrors claim_embeddings.
+CREATE TABLE IF NOT EXISTS tool_embeddings (
+    tool_id            TEXT PRIMARY KEY REFERENCES tool_schemas(id) ON DELETE CASCADE,
+    embedding_model    TEXT NOT NULL,
+    embedding          BLOB NOT NULL,
+    embedded_text      TEXT NOT NULL,
+    created_at         INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tool_embeddings_model ON tool_embeddings(embedding_model);
 """
 
 
 # Bump when adding a migration step below. Existing databases upgrade forward
 # on open; fresh databases get every step applied once.
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -612,6 +645,36 @@ def _migrate(conn: sqlite3.Connection) -> None:
             " token_hash TEXT PRIMARY KEY, principal TEXT NOT NULL,"
             " namespace TEXT NOT NULL, can_write INTEGER NOT NULL DEFAULT 1,"
             " created_ts INTEGER NOT NULL)"
+        )
+
+    if current < 12:
+        # v12 (activation layer): additive tool registry, independent of claim/turn/
+        # memory tables — no memory behavior changes. Mirrors the fresh-DB _SCHEMA_SQL
+        # block; tool_embeddings mirrors claim_embeddings so the vector codec is reused.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tool_schemas ("
+            " id TEXT PRIMARY KEY, name TEXT NOT NULL,"
+            " description TEXT NOT NULL DEFAULT '', parameters_json TEXT,"
+            " returns_json TEXT, parent_mcp_server TEXT, server_url_or_id TEXT,"
+            " domain_tags TEXT, source TEXT NOT NULL, source_dataset TEXT,"
+            " source_tool_id TEXT, metadata_json TEXT, created_at INTEGER NOT NULL,"
+            " updated_at INTEGER NOT NULL,"
+            " UNIQUE (source, source_dataset, source_tool_id))"
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tool_schemas_name ON tool_schemas(name)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tool_schemas_source"
+            " ON tool_schemas(source, source_dataset)"
+        )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tool_embeddings ("
+            " tool_id TEXT PRIMARY KEY REFERENCES tool_schemas(id) ON DELETE CASCADE,"
+            " embedding_model TEXT NOT NULL, embedding BLOB NOT NULL,"
+            " embedded_text TEXT NOT NULL, created_at INTEGER NOT NULL)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tool_embeddings_model"
+            " ON tool_embeddings(embedding_model)"
         )
 
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
