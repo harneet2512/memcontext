@@ -51,17 +51,19 @@ Explicitly **NOT** claimable today:
 
 ---
 
-## Post-implementation status (Trust & Governance layer, `68b84cb..d9426d1`)
-The 6-phase build in `TRUST_GOVERNANCE_PLAN.md` was implemented; this baseline (graded @ `b575125`) has since changed. Re-graded against live code:
+## Post-implementation status (Trust & Governance layer, `68b84cb..cf3ccdd`)
+The 9-phase build in `TRUST_GOVERNANCE_PLAN.md` (6 phases + 3 remainder-closers) was implemented; this baseline (graded @ `b575125`) has since changed. Re-graded against live code — **all seven dimensions PRESENT:**
 
 | # | Dimension | Was | Now | What landed |
 |---|---|---|---|---|
 | A | Write integrity / poisoning | ABSENT | **PRESENT** | P4 — served low-trust memory is quarantine-flagged; serving writes no content (MINJA loop closed); blocked overrides recorded as drift |
 | B | Provenance completeness | PARTIAL | **PRESENT** | P1 — `session_digests.source_claim_ids`; provenance invariant across served-summary tables |
-| C | Forgetting / deletion | ABSENT | **PRESENT** | P2 — `forget()` cascade-consistent hard delete + verifiable `decisions` audit; `memory_forget` + `cli forget` |
-| D | Governance / access control | PARTIAL | **PARTIAL+** | P5 — record-level namespace isolation enforced at the door. *Remaining:* per-principal scoped HTTP tokens (transport layer) |
+| C | Forgetting / deletion | ABSENT | **PRESENT** | P2 — `forget()` cascade-consistent hard delete + verifiable `decisions` audit; **P8** — turn-text redaction on shared surviving turns |
+| D | Governance / access control | PARTIAL | **PRESENT** | **P7** — per-principal scoped tokens (sha256-hashed) → namespace + read/write binding, enforced in the HTTP transport; `cli grant` |
 | E | Confidentiality / isolation | PARTIAL (leaky) | **PRESENT** | P5 — `namespace` tenant scope; cross-session sweep bounded; foreign-session reads denied |
 | F | Source-trust tiering | PARTIAL | **PRESENT** | P3 — `claim_metadata.source_trust`, a source-trust RRF channel, and a supersession guard |
-| G | Trust observability | ABSENT | **PRESENT** | P6 — `trust_status` / `memory_trust_status` / `cli trust-status` |
+| G | Trust observability | ABSENT | **PRESENT** | P6 — `trust_status` / `memory_trust_status` / `cli trust-status`; **P9** — real per-slot volatility-window staleness |
 
-**Smallest credible trust claim now:** every served claim/episode is traceable to an immutable source; memory can be provably, completely, and auditably erased; memory is ranked and superseded by source trust; low-trust/injected content cannot silently become acted-on fact; memory is tenant-isolated; and all of the above is measured. **Still not claimable:** per-principal transport authorization (D remainder) and turn-text redaction for subject-forgets on shared turns.
+**Smallest credible trust claim now:** every served claim/episode is traceable to an immutable source; memory can be provably, completely, auditably erased (with raw-text redaction on shared turns); memory is ranked and superseded by source trust; low-trust/injected content cannot silently become acted-on fact; memory is tenant-isolated and access-controlled per principal; and the whole posture (incl. staleness) is measured.
+
+**Genuinely still future (honest, by-design or minor):** embedding-based anomaly detection on inbound writes (P4 uses contradiction-based drift, not embedding-anomaly); learned/configurable staleness windows (currently heuristic 365/90/14-day defaults); per-principal binding on the local stdio/CLI paths (local-operator surfaces, trusted by design — authz is enforced on the remote HTTP surface).
