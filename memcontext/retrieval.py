@@ -1328,32 +1328,39 @@ def retrieve_memory_across(
     top_k: int = DEFAULT_TOP_K,
     embedding_client: EmbeddingClient | None = None,
 ) -> list[tuple[MemoryHit, float]]:
-    """Unified retrieval across MANY sessions — one global fusion, not a merge of
-    per-session fusions.
+    """Unified retrieval across MANY sessions — fuse per-session rankings by RANK.
 
-    Collects every session's facts and episodes, ranks each *pool globally* by
-    its own hybrid score, then runs the second-level RRF once. Doing the fusion
-    once (rather than per-session then re-sorting by raw score) is what lets an
-    episode at global rank 1 outrank a fact at global rank ~8 — otherwise the
-    fact weight (1.0 vs 0.9) makes facts from every session crowd out all
-    episodes. Used by the cross-session serving door.
+    Each session is an independent ranking source, and **raw hybrid scores are
+    not comparable across sessions**: BM25/semantic magnitudes scale with a
+    session's size and content, so a long, on-topic-but-irrelevant session
+    carries larger raw scores than a terse session that happens to hold the
+    answer. Reciprocal Rank Fusion exists precisely to fuse such lists — it uses
+    only **rank**, never raw score. So we run the within-session fact+episode
+    fusion (`retrieve_memory`, whose scores are `w / (RRF_K + rank_within_its_
+    session)`) for each session and merge the results.
+
+    Consequence: a session's rank-1 hit scores `w / (RRF_K + 1)` regardless of
+    session, so every queried session is represented (up to `top_k`) and the
+    answer surfaces even from a low-raw-score session. Pooling all sessions and
+    sorting by raw score (the earlier approach) silenced whole sessions whose
+    score magnitudes were smaller — a session-size bias, not relevance.
+
+    This is plain RRF (Cormack et al.): rank within each source, fuse by rank.
+    It needs no per-source score calibration and no tuning, so it generalizes to
+    any number/shape of sessions.
     """
     if not query or not query.strip() or not session_ids:
         return []
-    facts: list[tuple[Claim, float]] = []
-    episodes: list[tuple[Turn, float]] = []
+    fused: list[tuple[MemoryHit, float]] = []
     for sid in session_ids:
-        facts.extend(retrieve_hybrid(
+        fused.extend(retrieve_memory(
             conn, session_id=sid, query=query, top_k=top_k,
             embedding_client=embedding_client,
         ))
-        episodes.extend(retrieve_episodes(
-            conn, session_id=sid, query=query, top_k=top_k,
-            embedding_client=embedding_client,
-        ))
-    facts.sort(key=lambda x: (-x[1], x[0].claim_id))
-    episodes.sort(key=lambda x: (-x[1], x[0].turn_id))
-    return _fuse_memory(facts, episodes, top_k)
+    # Same tie-break as the within-session fusion: score desc, facts before
+    # episodes on an exact tie, then id for determinism.
+    fused.sort(key=lambda h: (-h[1], h[0].kind != "fact", h[0].id))
+    return fused[:top_k]
 
 
 def _fuse_memory(

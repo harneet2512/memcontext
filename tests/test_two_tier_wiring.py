@@ -213,3 +213,44 @@ def test_entity_graph_tool_returns_shape():
     out = handle_memory_entity_graph(conn, session_id="s1", entity="anna")
     assert out["entity"] == "anna"
     assert isinstance(out["neighbors"], list)
+
+
+def test_cross_session_fusion_is_rank_based_not_raw_score():
+    """retrieve_memory_across must fuse sessions by RANK (RRF), not raw score.
+
+    A verbose session with many query-matching facts has larger raw BM25/semantic
+    scores than a terse session that actually holds the answer. Correct RRF gives
+    each session's rank-1 the same weight, so the answer session is represented.
+
+    RED before the fix: the function pooled all sessions' facts and sorted by raw
+    score, so the high-score 'noise' session filled top_k and the 'answer'
+    session was dropped entirely. This is a general IR property, not a
+    LongMemEval quirk.
+    """
+    from memcontext.claims import get_turn
+
+    conn = _fresh()
+    # Two symmetric sessions, each holding one query-matching fact. Whatever their
+    # raw scores, correct RRF gives EACH session's rank-1 the same reciprocal-rank
+    # weight (1/(RRF_K+1)). Global raw-score pooling instead assigns them GLOBAL
+    # ranks 1 and 2 -> different scores -> one session is implicitly demoted.
+    _ingest(conn, "sA", "I live in Berlin", "user", "user_fact", "lives in Berlin")
+    _ingest(conn, "sB", "I work in Berlin", "user", "user_fact", "works in Berlin")
+
+    hits = retrieve_memory_across(conn, session_ids=["sA", "sB"],
+                                  query="Berlin", top_k=10)
+
+    top_fact_score: dict = {}
+    for h, s in hits:
+        if h.kind != "fact":
+            continue
+        t = get_turn(conn, h.source_turn_id)
+        sid = t.session_id if t is not None else None
+        top_fact_score.setdefault(sid, s)  # first = highest (list is score-sorted)
+
+    assert set(top_fact_score) >= {"sA", "sB"}, "both sessions must be represented"
+    scores = [top_fact_score["sA"], top_fact_score["sB"]]
+    assert abs(scores[0] - scores[1]) < 1e-9, (
+        "per-session rank-1 facts must score EQUALLY (rank-based RRF); unequal "
+        "scores mean the fusion ranked by raw score globally and demoted a session"
+    )
