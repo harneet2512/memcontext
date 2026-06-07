@@ -65,6 +65,15 @@ def _get_speaker(conn: sqlite3.Connection, turn_id: str) -> Speaker:
     return Speaker(row["speaker"])
 
 
+def _claim_trust(conn: sqlite3.Connection, claim_id: str) -> float:
+    """Source-trust weight of a claim (0.5 neutral if unset)."""
+    row = conn.execute(
+        "SELECT COALESCE(source_trust, 0.5) FROM claim_metadata WHERE claim_id = ?",
+        (claim_id,),
+    ).fetchone()
+    return float(row[0]) if row else 0.5
+
+
 def detect_pass1(
     conn: sqlite3.Connection,
     new_claim: Claim,
@@ -145,6 +154,17 @@ def detect_pass1(
         new_turn_speaker=new_speaker,
         old_turn_speaker=old_speaker,
     )
+
+    # Source-trust guard (Phase 3): a markedly lower-trust source must NOT REPLACE
+    # or REFUTE a higher-trust fact (e.g. a browsed-page value overriding what the
+    # user stated). Confirmations / refinements are unaffected.
+    if edge_type in (EdgeType.USER_CORRECTION, EdgeType.CONTRADICTS) and (
+        _claim_trust(conn, new_claim.claim_id) + 0.2 < _claim_trust(conn, old_claim.claim_id)
+    ):
+        log.info("substrate.supersession_blocked_low_trust",
+                 new_claim_id=new_claim.claim_id, old_claim_id=old_claim.claim_id,
+                 edge_type=edge_type.value)
+        return None
 
     edge = write_supersession_edge(
         conn,

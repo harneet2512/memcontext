@@ -391,7 +391,7 @@ CREATE INDEX IF NOT EXISTS idx_life_events_subject ON life_events(subject);
 
 # Bump when adding a migration step below. Existing databases upgrade forward
 # on open; fresh databases get every step applied once.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -570,6 +570,17 @@ def _migrate(conn: sqlite3.Connection) -> None:
         try:
             conn.execute(
                 "ALTER TABLE session_digests ADD COLUMN source_claim_ids TEXT"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already present
+
+    if current < 9:
+        # v9: source-trust tiering — how much to trust a claim by WHERE it came
+        # from (the user vs a tool vs a browsed page vs the assistant). Feeds the
+        # retrieval ranking + a supersession guard. Default 0.5 (neutral).
+        try:
+            conn.execute(
+                "ALTER TABLE claim_metadata ADD COLUMN source_trust REAL DEFAULT 0.5"
             )
         except sqlite3.OperationalError:
             pass  # column already present

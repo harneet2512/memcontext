@@ -373,10 +373,18 @@ def insert_fact(
     else:
         meta_entity = _normalise_subject(ents[0].text) if ents else ""
         meta_family = "nl"
+    # Source trust (Phase 3): intrinsic to the claim, derived from its source
+    # episode's origin (user vs tool vs browser vs assistant) so retrieval and
+    # supersession can weigh how much to trust it.
+    from memcontext.source_trust import trust_for_source
+    _trow = conn.execute(
+        "SELECT source_type, speaker FROM turns WHERE turn_id = ?", (source_turn_id,)
+    ).fetchone()
+    _src_trust = trust_for_source(_trow[0], _trow[1]) if _trow else 0.5
     conn.execute(
         "INSERT INTO claim_metadata (claim_id, entity_key, predicate_family,"
-        " temporal_bin) VALUES (?, ?, ?, ?)",
-        (cid, meta_entity, meta_family, _temporal_bin(valid_from_ts)),
+        " temporal_bin, source_trust) VALUES (?, ?, ?, ?, ?)",
+        (cid, meta_entity, meta_family, _temporal_bin(valid_from_ts), _src_trust),
     )
 
     for ent in ents:

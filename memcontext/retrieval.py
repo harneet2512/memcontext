@@ -961,7 +961,8 @@ def retrieve_hybrid(
     meta_rows = conn.execute(
         f"SELECT claim_id, entity_key, COALESCE(importance_score, 0.5) AS importance_score,"
         f" COALESCE(access_count, 0) AS access_count,"
-        f" COALESCE(demoted, 0) AS demoted"
+        f" COALESCE(demoted, 0) AS demoted,"
+        f" COALESCE(source_trust, 0.5) AS source_trust"
         f" FROM claim_metadata WHERE claim_id IN ({placeholders})", ids,
     ).fetchall()
     entity_by_id: dict[str, str] = {r["claim_id"]: r["entity_key"] for r in meta_rows}
@@ -973,6 +974,10 @@ def retrieve_hybrid(
     }
     # Utility-weighted retention: demoted claims leave active retrieval.
     demoted_ids: set[str] = {r["claim_id"] for r in meta_rows if r["demoted"]}
+    # Source trust: how much to trust each claim by where it came from (Phase 3).
+    trust_by_id: dict[str, float] = {
+        r["claim_id"]: float(r["source_trust"]) for r in meta_rows
+    }
 
     from memcontext.claims import _normalise_subject
     hint_norm = _normalise_subject(entity_hint) if entity_hint else ""
@@ -1056,6 +1061,7 @@ def retrieve_hybrid(
     # Usage: access_count, incremented when a claim is served (handle_memory_query).
     # Cue-dependent reinforcement — frequently-retrieved claims rank up over time.
     usage_scores: list[float] = [usage_by_id.get(c.claim_id, 0.0) for c in active]
+    trust_scores: list[float] = [trust_by_id.get(c.claim_id, 0.5) for c in active]
 
     sem_ranks = _rrf_ranks(sem_scores)
     ent_ranks = _rrf_ranks(ent_scores)
@@ -1067,6 +1073,7 @@ def retrieve_hybrid(
     freq_ranks = _rrf_ranks(freq_scores)
     imp_ranks = _rrf_ranks(imp_scores)
     usage_ranks = _rrf_ranks(usage_scores)
+    trust_ranks = _rrf_ranks(trust_scores)
 
     w_sem = weights[0] if len(weights) > 0 else 1.0
     w_ent = weights[1] if len(weights) > 1 else 1.0
@@ -1076,6 +1083,7 @@ def retrieve_hybrid(
     w_freq = 0.1
     w_imp = 0.15
     w_usage = 0.1
+    w_trust = 0.12
 
     # Freshness: knowledge-update / temporal queries ask for the CURRENT value, so
     # weight recency (the temporal channel) higher — the latest active fact wins.
@@ -1100,6 +1108,7 @@ def retrieve_hybrid(
             "frequency": w_freq / (RRF_K + freq_ranks[i]),
             "importance": w_imp / (RRF_K + imp_ranks[i]),
             "usage": w_usage / (RRF_K + usage_ranks[i]),
+            "source_trust": w_trust / (RRF_K + trust_ranks[i]),
         }
         fused_score = sum(contrib.values())
         if explain is not None:
