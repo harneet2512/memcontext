@@ -391,7 +391,7 @@ CREATE INDEX IF NOT EXISTS idx_life_events_subject ON life_events(subject);
 
 # Bump when adding a migration step below. Existing databases upgrade forward
 # on open; fresh databases get every step applied once.
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -562,6 +562,17 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 conn.execute(_col)
             except sqlite3.OperationalError:
                 pass  # column already present
+
+    if current < 8:
+        # v8: provenance completeness — surface the source claim_ids a digest
+        # summarized into a queryable column (previously only buried in digest_data
+        # JSON), so every served summary is traceable and cascade-deletable.
+        try:
+            conn.execute(
+                "ALTER TABLE session_digests ADD COLUMN source_claim_ids TEXT"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already present
 
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     log.debug("substrate.db_migrated", from_version=current, to_version=SCHEMA_VERSION)

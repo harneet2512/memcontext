@@ -141,8 +141,8 @@ def store_digest(conn: sqlite3.Connection, digest: SessionDigest) -> None:
     conn.execute(
         """
         INSERT OR REPLACE INTO session_digests
-            (session_id, digest_text, digest_data, claim_count, built_at_ts)
-        VALUES (?, ?, ?, ?, ?)
+            (session_id, digest_text, digest_data, claim_count, built_at_ts, source_claim_ids)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
             digest.session_id,
@@ -150,6 +150,7 @@ def store_digest(conn: sqlite3.Connection, digest: SessionDigest) -> None:
             digest_data,
             digest.total_claims,
             time.time_ns(),
+            json.dumps(all_claim_ids, ensure_ascii=False),
         ),
     )
     log.info("digests.stored", session_id=digest.session_id)
