@@ -5,6 +5,7 @@ import json
 import sqlite3
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 import structlog
 
@@ -14,8 +15,8 @@ log = structlog.get_logger(__name__)
 @dataclass(slots=True)
 class SessionDigest:
     session_id: str
-    key_facts: list[dict] = field(default_factory=list)  # top 3 by importance
-    updates: list[dict] = field(default_factory=list)     # supersession events
+    key_facts: list[dict[str, Any]] = field(default_factory=list)  # top 3 by importance
+    updates: list[dict[str, Any]] = field(default_factory=list)    # supersession events
     remaining_count: int = 0
     total_claims: int = 0
 
@@ -57,6 +58,9 @@ def build_session_digest(
                 "claim_id": r["claim_id"],
                 "predicate": r["predicate"],
                 "value": r["value"],
+                # NL form (always present) — lets NL-only facts (empty triple)
+                # surface in the digest instead of rendering as garbage.
+                "text": r["text"] if "text" in r.keys() else None,
                 "importance": r["importance_score"],
             }
         )
@@ -66,7 +70,7 @@ def build_session_digest(
     update_rows = conn.execute(
         """
         SELECT e.edge_id, e.old_claim_id, e.new_claim_id, e.edge_type,
-               c_new.predicate, c_new.value AS new_value,
+               c_new.predicate, c_new.value AS new_value, c_new.text AS new_text,
                c_old.value AS old_value
         FROM supersession_edges e
         JOIN claims c_new ON e.new_claim_id = c_new.claim_id
@@ -87,6 +91,7 @@ def build_session_digest(
                 "claim_id": cid,
                 "predicate": ur["predicate"],
                 "new_value": ur["new_value"],
+                "new_text": ur["new_text"] if "new_text" in ur.keys() else None,
                 "old_value": ur["old_value"],
                 "edge_type": ur["edge_type"],
             }
@@ -186,14 +191,15 @@ def format_digest(digest: SessionDigest) -> str:
     lines = [header]
 
     for kf in digest.key_facts:
-        lines.append(
-            f"  Key: [{kf['predicate']}] {kf['value']}"
-            f" (importance: {kf['importance']:.2f})"
-        )
+        # Structured facts render as the triple; NL-only facts (empty triple)
+        # render their NL text so they are not dropped from the digest.
+        body = f"[{kf['predicate']}] {kf['value']}" if kf.get("predicate") else kf.get("text", "")
+        lines.append(f"  Key: {body} (importance: {kf['importance']:.2f})")
 
     for upd in digest.updates:
+        new = f"[{upd['predicate']}] {upd['new_value']}" if upd.get("predicate") else upd.get("new_text", "")
         lines.append(
-            f"  Update: [{upd['predicate']}] {upd['new_value']}"
+            f"  Update: {new}"
             f" (was: {upd['old_value']}, via {upd['edge_type']})"
         )
 

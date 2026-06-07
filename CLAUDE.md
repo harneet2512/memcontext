@@ -6,6 +6,28 @@ MemContext is a domain-agnostic memory and context substrate for AI agents. It o
 
 The product is not a benchmark hack. The benchmark is only a diagnostic instrument.
 
+## Branch Model (READ BEFORE COMMITTING)
+
+There is exactly **one product branch: `master` (main)**. Everything that *is*
+the product — the `memcontext/` package, its unit tests, `predicate_packs/`,
+product docs — lives and ships on `master`.
+
+The other branches are **not** the product:
+- a **feature-trial** branch — where new feature trials are explored
+- a **release-hardening** branch — pre-release stabilization
+- **all other branches are trials** — and trials are **reproducible benchmark
+  artifacts**: self-contained so anyone can download the branch and re-run the
+  trial to verify the result. Benchmark harnesses, eval scripts, run configs,
+  dataset wiring, and trial scratch live here, never on `master`.
+
+**The rule:** product code is released to **`master`**. Do **NOT** make a product
+release on a trial/benchmark branch — those exist to be reproduced and checked,
+not to ship from. When product work was done on a trial branch, promote *only the
+product files* (`memcontext/`, `tests/`, `predicate_packs/`, product docs) to
+`master`; leave `evals/`, benchmark harnesses, and trial artifacts on the trial
+branch. This is the structural side of the Anti-Overfitting / benchmark-isolation
+rule: the product and the instrument that measures it never share a branch.
+
 ## Project Structure
 
 ```
@@ -57,6 +79,18 @@ python -m pytest tests/ -v          # Run tests
 - All tests use `:memory:` SQLite and NullEmbedder. Zero model downloads in CI.
 - `SUBSTRATE_PACKS_DIR` env var overrides predicate pack location; conftest sets it automatically.
 - `active_pack().cache_clear()` must be called after changing `ACTIVE_PACK` env var.
+
+## Working Discipline — read this file first, then LIPI (every step)
+
+At the **start of every step / unit of work**, re-read this `CLAUDE.md` and name the rules
+that bind the step (especially the Development Rules below, the Research Rule, and the
+Anti-Overfitting Rule). At the **end of every step**, diagnose with **LIPI**
+(see [`LIPI.md`](LIPI.md)): walk all four avenues — **L**ogic, **I**mplementation,
+**I**ntegration, **P**lumbing — and state what you checked and found in each (broken or
+clean), even the clean ones. Fix the *deepest* layer that explains a failure, not the first
+plausible one, then re-check the other three for regressions. A bugfix commit (or PR note)
+must reference the LIPI root cause by layer + `file:line`. Do not ship a symptom patch that
+leaves a deeper cause live.
 
 ## Anti-Overfitting Rule
 

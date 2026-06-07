@@ -119,24 +119,49 @@ class SemanticSupersession:
         *,
         new_turn_text: str = "",
     ) -> SupersessionEdge | None:
-        """Find the nearest prior active claim in the same predicate family.
+        """Find the nearest prior active claim and supersede it if close enough.
 
-        Returns edge if cosine >= threshold, marks old claim superseded; else None.
-        Guard: same-turn candidates are excluded.
+        Two modes, picked by whether the new fact carries a structured predicate:
+
+        - STRUCTURED: candidates share the same predicate family; identity is
+          ``subject predicate [context]`` (value excluded so "3 days" vs "4 days"
+          still match). Unchanged from the original Pass-2.
+        - NL-ONLY (no predicate): the always-available fallback. Candidates are
+          all other active facts in the session; identity is the fact's NL
+          ``text``. Needs no structured field — determinism comes from the
+          deterministic embedder + threshold, not from predicate typing.
+
+        Returns the typed SEMANTIC_REPLACE edge (and marks the old claim
+        superseded) if cosine >= threshold, else None. Same-turn and self
+        candidates are excluded in both modes.
         """
-        rows = conn.execute(
-            "SELECT * FROM claims WHERE session_id = ?"
-            " AND predicate = ?"
-            " AND status IN ('active','confirmed')"
-            " AND claim_id != ?"
-            " AND source_turn_id != ?",
-            (
-                new_claim.session_id,
-                new_claim.predicate,
-                new_claim.claim_id,
-                new_claim.source_turn_id,
-            ),
-        ).fetchall()
+        nl_mode = not new_claim.predicate
+        if nl_mode:
+            rows = conn.execute(
+                "SELECT * FROM claims WHERE session_id = ?"
+                " AND status IN ('active','confirmed')"
+                " AND claim_id != ?"
+                " AND source_turn_id != ?",
+                (
+                    new_claim.session_id,
+                    new_claim.claim_id,
+                    new_claim.source_turn_id,
+                ),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM claims WHERE session_id = ?"
+                " AND predicate = ?"
+                " AND status IN ('active','confirmed')"
+                " AND claim_id != ?"
+                " AND source_turn_id != ?",
+                (
+                    new_claim.session_id,
+                    new_claim.predicate,
+                    new_claim.claim_id,
+                    new_claim.source_turn_id,
+                ),
+            ).fetchall()
         if not rows:
             return None
 
@@ -144,11 +169,18 @@ class SemanticSupersession:
 
         candidates = [row_to_claim(r) for r in rows]
 
-        new_text = identity_text(new_claim, new_turn_text)
-        cand_texts: list[str] = []
-        for c in candidates:
-            old_ctx = self._lookup_turn_text(conn, c.source_turn_id)
-            cand_texts.append(identity_text(c, old_ctx))
+        if nl_mode:
+            new_text = new_claim.text or new_turn_text
+            cand_texts = [
+                c.text or self._lookup_turn_text(conn, c.source_turn_id)
+                for c in candidates
+            ]
+        else:
+            new_text = identity_text(new_claim, new_turn_text)
+            cand_texts = [
+                identity_text(c, self._lookup_turn_text(conn, c.source_turn_id))
+                for c in candidates
+            ]
 
         vecs = self._embedder.embed([new_text, *cand_texts])
         if len(vecs) != 1 + len(candidates):

@@ -22,6 +22,8 @@ from memcontext.schema import (
     Claim,
     ClaimStatus,
     EdgeType,
+    ExtractionStatus,
+    SourceType,
     Speaker,
     SupersessionEdge,
     Turn,
@@ -61,14 +63,21 @@ def new_turn_id() -> str:
 
 
 def row_to_claim(row: sqlite3.Row) -> Claim:
-    """Map a sqlite3.Row from `claims` into the typed `Claim` dataclass."""
+    """Map a sqlite3.Row from `claims` into the typed `Claim` dataclass.
+
+    The structured triple is optional at the storage layer (NULL for NL-only
+    facts). It is surfaced as the empty string ``""`` rather than ``None`` so the
+    dataclass stays non-Optional and every existing consumer keeps working; an
+    empty ``subject``/``predicate``/``value`` is the "no structured field"
+    sentinel (test with truthiness). The NL ``text`` is always present from v4 on.
+    """
     keys = set(row.keys())
     return Claim(
         claim_id=row["claim_id"],
         session_id=row["session_id"],
-        subject=row["subject"],
-        predicate=row["predicate"],
-        value=row["value"],
+        subject=row["subject"] or "",
+        predicate=row["predicate"] or "",
+        value=row["value"] or "",
         value_normalised=row["value_normalised"],
         confidence=row["confidence"],
         source_turn_id=row["source_turn_id"],
@@ -79,6 +88,7 @@ def row_to_claim(row: sqlite3.Row) -> Claim:
         valid_from_ts=row["valid_from_ts"] if "valid_from_ts" in keys else None,
         valid_until_ts=row["valid_until_ts"] if "valid_until_ts" in keys else None,
         event_ts=row["event_ts"] if "event_ts" in keys else None,
+        text=row["text"] if "text" in keys else None,
     )
 
 
@@ -105,10 +115,11 @@ def _normalise_subject(subject: str) -> str:
 
 
 def insert_turn(conn: sqlite3.Connection, turn: Turn) -> None:
-    """Insert a turn. Duplicate IDs raise `sqlite3.IntegrityError`."""
+    """Insert a turn (episode). Duplicate IDs raise `sqlite3.IntegrityError`."""
     conn.execute(
-        "INSERT INTO turns (turn_id, session_id, speaker, text, ts, asr_confidence)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO turns (turn_id, session_id, speaker, text, ts, asr_confidence,"
+        " source_type, source_metadata, extraction_status)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             turn.turn_id,
             turn.session_id,
@@ -116,6 +127,9 @@ def insert_turn(conn: sqlite3.Connection, turn: Turn) -> None:
             turn.text,
             turn.ts,
             turn.asr_confidence,
+            turn.source_type.value,
+            turn.source_metadata,
+            turn.extraction_status.value,
         ),
     )
     log.debug(
@@ -123,17 +137,13 @@ def insert_turn(conn: sqlite3.Connection, turn: Turn) -> None:
         session_id=turn.session_id,
         turn_id=turn.turn_id,
         speaker=turn.speaker.value,
+        source_type=turn.source_type.value,
     )
 
 
-def get_turn(conn: sqlite3.Connection, turn_id: str) -> Turn | None:
-    row = conn.execute(
-        "SELECT turn_id, session_id, speaker, text, ts, asr_confidence"
-        " FROM turns WHERE turn_id = ?",
-        (turn_id,),
-    ).fetchone()
-    if row is None:
-        return None
+def row_to_turn(row: sqlite3.Row) -> Turn:
+    """Map a `turns` row into a `Turn`, tolerating pre-v3 rows missing columns."""
+    keys = set(row.keys())
     return Turn(
         turn_id=row["turn_id"],
         session_id=row["session_id"],
@@ -141,47 +151,84 @@ def get_turn(conn: sqlite3.Connection, turn_id: str) -> Turn | None:
         text=row["text"],
         ts=row["ts"],
         asr_confidence=row["asr_confidence"],
+        source_type=(
+            SourceType(row["source_type"])
+            if "source_type" in keys and row["source_type"] is not None
+            else SourceType.CONVERSATION
+        ),
+        source_metadata=row["source_metadata"] if "source_metadata" in keys else None,
+        extraction_status=(
+            ExtractionStatus(row["extraction_status"])
+            if "extraction_status" in keys and row["extraction_status"] is not None
+            else ExtractionStatus.PENDING
+        ),
     )
+
+
+def get_turn(conn: sqlite3.Connection, turn_id: str) -> Turn | None:
+    row = conn.execute(
+        "SELECT * FROM turns WHERE turn_id = ?",
+        (turn_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return row_to_turn(row)
 
 
 # -------------------------------------------------------------- claims CRUD ---
 
 
-def validate_claim(
-    *,
-    subject: str,
-    predicate: str,
-    value: str,
-    confidence: float,
-    source_turn_id: str,
-    char_start: int | None,
-    char_end: int | None,
-    turn_text_len: int | None = None,
-    allowed_predicates: frozenset[str] | None = None,
-) -> None:
-    """Write-time validation. Raises `ClaimValidationError` on any violation.
+def predicate_in_vocab(
+    predicate: str, allowed_predicates: frozenset[str] | None = None
+) -> bool:
+    """Whether `predicate` belongs to the active (or given) predicate pack.
 
-    If `allowed_predicates` is None, attempts to load from the active pack.
+    Governs only whether the optional STRUCTURED triple is attached — NOT whether
+    a fact is stored. An out-of-vocab predicate demotes the fact to NL-only; it is
+    never dropped. If the pack cannot be loaded the predicate is treated as in-vocab
+    (we cannot prove otherwise, so we keep the structure).
     """
-    if not subject or not subject.strip():
-        raise ClaimValidationError("subject must be non-empty")
-
     if allowed_predicates is not None:
-        allowed = allowed_predicates
+        allowed: frozenset[str] | None = allowed_predicates
     else:
         try:
             from memcontext.predicate_packs import active_pack
             allowed = active_pack().predicate_families
         except Exception:  # noqa: BLE001
             allowed = None
+    return allowed is None or predicate in allowed
 
-    if allowed is not None and predicate not in allowed:
-        raise ClaimValidationError(
-            f"predicate {predicate!r} not in allowed set; "
-            f"allowed = {sorted(allowed)}"
-        )
-    if not value or not value.strip():
-        raise ClaimValidationError("value must be non-empty")
+
+def validate_claim(
+    *,
+    text: str | None,
+    subject: str | None,
+    predicate: str | None,
+    value: str | None,
+    confidence: float,
+    source_turn_id: str,
+    char_start: int | None,
+    char_end: int | None,
+    turn_text_len: int | None = None,
+) -> None:
+    """Write-time validation. Raises `ClaimValidationError` on any violation.
+
+    A fact is either STRUCTURED (subject+predicate+value all present, all
+    non-empty) or NL-only (text present, no triple). Predicate vocabulary is NOT
+    gated here — see `predicate_in_vocab`; an out-of-vocab predicate demotes to
+    NL-only, it never fails validation.
+    """
+    structured = bool(subject or predicate or value)
+    if structured:
+        if not (subject and subject.strip()):
+            raise ClaimValidationError("structured fact: subject must be non-empty")
+        if not (predicate and predicate.strip()):
+            raise ClaimValidationError("structured fact: predicate must be non-empty")
+        if not (value and value.strip()):
+            raise ClaimValidationError("structured fact: value must be non-empty")
+    elif not (text and text.strip()):
+        raise ClaimValidationError("NL fact: text must be non-empty")
+
     if not (0.0 <= confidence <= 1.0):
         raise ClaimValidationError(f"confidence {confidence} outside [0, 1]")
     if not source_turn_id:
@@ -200,6 +247,160 @@ def validate_claim(
             raise ClaimValidationError(
                 f"char_end {char_end} exceeds source turn length {turn_text_len}"
             )
+
+
+def insert_fact(
+    conn: sqlite3.Connection,
+    *,
+    session_id: str,
+    source_turn_id: str,
+    confidence: float,
+    text: str | None = None,
+    subject: str | None = None,
+    predicate: str | None = None,
+    value: str | None = None,
+    value_normalised: str | None = None,
+    char_start: int | None = None,
+    char_end: int | None = None,
+    claim_id: str | None = None,
+    status: ClaimStatus = ClaimStatus.ACTIVE,
+    valid_from: int | None = None,
+    valid_until: int | None = None,
+    event_ts: int | None = None,
+    allowed_predicates: frozenset[str] | None = None,
+) -> Claim:
+    """Insert a fact (NL-first). The persisted unit of Tier-2 memory.
+
+    A fact ALWAYS stores NL ``text`` and links back to its source episode
+    (``source_turn_id``). The structured triple ``(subject, predicate, value)`` is
+    an OPTIONAL precision layer, attached only when all three are supplied AND the
+    predicate is in the active pack. An out-of-vocab predicate DEMOTES the fact to
+    NL-only (triple stored as NULL) — it is never dropped. ``text`` is synthesised
+    from the triple when not supplied, so structured facts retrieve exactly as
+    before. Returns the persisted ``Claim`` (NL-only facts carry ``""`` triple).
+    """
+    turn = get_turn(conn, source_turn_id)
+    if turn is None:
+        raise ClaimValidationError(
+            f"source_turn_id {source_turn_id!r} does not reference any turn"
+        )
+
+    # Treat the empty-string triple sentinel (from a Claim round-trip) as absent,
+    # so re-inserting a previously NL-only fact stays NL-only.
+    subject = subject or None
+    predicate = predicate or None
+    value = value or None
+
+    structured = bool(subject and predicate and value)
+    # Demote an out-of-vocab structured triple to NL-only — never drop the fact.
+    if structured and not predicate_in_vocab(predicate or "", allowed_predicates):
+        if not text:
+            text = f"{_normalise_subject(subject or '')} {predicate} {value}"
+        log.info(
+            "substrate.predicate_demoted_to_nl",
+            session_id=session_id,
+            predicate=predicate,
+        )
+        subject = predicate = value = None
+        structured = False
+
+    norm_subject = _normalise_subject(subject) if structured and subject else None
+    # NL form. Structured facts synthesise it to exactly match the legacy
+    # `claim_retrieval_text` triple string, so retrieval/embeddings are unchanged.
+    if not text and structured:
+        text = f"{norm_subject} {predicate} {value}"
+
+    validate_claim(
+        text=text,
+        subject=subject,
+        predicate=predicate,
+        value=value,
+        confidence=confidence,
+        source_turn_id=source_turn_id,
+        char_start=char_start,
+        char_end=char_end,
+        turn_text_len=len(turn.text),
+    )
+
+    cid = claim_id or new_claim_id()
+    ts = now_ns()
+    valid_from_ts = ts if valid_from is None else valid_from
+    valid_until_ts = valid_until
+    if valid_until_ts is not None and valid_until_ts <= valid_from_ts:
+        raise ClaimValidationError(
+            f"valid_until ({valid_until_ts}) must be > valid_from ({valid_from_ts})"
+        )
+
+    conn.execute(
+        "INSERT INTO claims (claim_id, session_id, text, subject, predicate, value,"
+        " value_normalised, confidence, source_turn_id, status, created_ts,"
+        " char_start, char_end, valid_from_ts, valid_until_ts, event_ts)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            cid,
+            session_id,
+            text,
+            norm_subject,
+            predicate,
+            value,
+            value_normalised,
+            confidence,
+            source_turn_id,
+            status.value,
+            ts,
+            char_start,
+            char_end,
+            valid_from_ts,
+            valid_until_ts,
+            event_ts,
+        ),
+    )
+    # claim_metadata is structured-only (entity_key + predicate_family).
+    if structured and norm_subject and predicate:
+        conn.execute(
+            "INSERT INTO claim_metadata (claim_id, entity_key, predicate_family,"
+            " temporal_bin) VALUES (?, ?, ?, ?)",
+            (cid, norm_subject, predicate, _temporal_bin(valid_from_ts)),
+        )
+    # Lightweight entities (no LLM) — from the NL text, so NL-only facts still
+    # populate the entity retrieval channel.
+    try:
+        from memcontext.entities import extract_entities
+        for ent in extract_entities(text or ""):
+            conn.execute(
+                "INSERT OR IGNORE INTO claim_entities (claim_id, entity_text, entity_type)"
+                " VALUES (?, ?, ?)",
+                (cid, ent.text.lower(), ent.entity_type),
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
+    log.info(
+        "substrate.fact_inserted",
+        session_id=session_id,
+        claim_id=cid,
+        structured=structured,
+        predicate=predicate,
+        confidence=confidence,
+    )
+    return Claim(
+        claim_id=cid,
+        session_id=session_id,
+        subject=norm_subject or "",
+        predicate=predicate or "",
+        value=value or "",
+        value_normalised=value_normalised,
+        confidence=confidence,
+        source_turn_id=source_turn_id,
+        status=status,
+        created_ts=ts,
+        char_start=char_start,
+        char_end=char_end,
+        valid_from_ts=valid_from_ts,
+        valid_until_ts=valid_until_ts,
+        event_ts=event_ts,
+        text=text,
+    )
 
 
 def insert_claim(
@@ -221,99 +422,31 @@ def insert_claim(
     event_ts: int | None = None,
     allowed_predicates: frozenset[str] | None = None,
 ) -> Claim:
-    """Insert a new claim after validation.
+    """Insert a STRUCTURED fact. Thin wrapper over `insert_fact`.
 
-    Checks that `source_turn_id` refers to an existing turn.
-    Returns the persisted `Claim` with its server-assigned id + timestamp.
+    Back-compat entry point for callers that already have a triple. An
+    out-of-vocab predicate no longer raises — it demotes to an NL-only fact (the
+    returned `Claim` then carries an empty triple). Genuinely malformed input
+    (empty value, bad confidence/span, unknown turn) still raises
+    `ClaimValidationError`.
     """
-    turn = get_turn(conn, source_turn_id)
-    if turn is None:
-        raise ClaimValidationError(
-            f"source_turn_id {source_turn_id!r} does not reference any turn"
-        )
-    validate_claim(
+    return insert_fact(
+        conn,
+        session_id=session_id,
+        source_turn_id=source_turn_id,
+        confidence=confidence,
         subject=subject,
         predicate=predicate,
         value=value,
-        confidence=confidence,
-        source_turn_id=source_turn_id,
-        char_start=char_start,
-        char_end=char_end,
-        turn_text_len=len(turn.text),
-        allowed_predicates=allowed_predicates,
-    )
-
-    cid = claim_id or new_claim_id()
-    ts = now_ns()
-    valid_from_ts = ts if valid_from is None else valid_from
-    valid_until_ts = valid_until
-    if valid_until_ts is not None and valid_until_ts <= valid_from_ts:
-        raise ClaimValidationError(
-            f"valid_until ({valid_until_ts}) must be > valid_from ({valid_from_ts})"
-        )
-    norm_subject = _normalise_subject(subject)
-    conn.execute(
-        "INSERT INTO claims (claim_id, session_id, subject, predicate, value,"
-        " value_normalised, confidence, source_turn_id, status, created_ts,"
-        " char_start, char_end, valid_from_ts, valid_until_ts, event_ts)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            cid,
-            session_id,
-            norm_subject,
-            predicate,
-            value,
-            value_normalised,
-            confidence,
-            source_turn_id,
-            status.value,
-            ts,
-            char_start,
-            char_end,
-            valid_from_ts,
-            valid_until_ts,
-            event_ts,
-        ),
-    )
-    conn.execute(
-        "INSERT INTO claim_metadata (claim_id, entity_key, predicate_family,"
-        " temporal_bin) VALUES (?, ?, ?, ?)",
-        (cid, norm_subject, predicate, _temporal_bin(valid_from_ts)),
-    )
-    try:
-        from memcontext.entities import extract_entities
-        for ent in extract_entities(f"{subject} {predicate} {value}"):
-            conn.execute(
-                "INSERT OR IGNORE INTO claim_entities (claim_id, entity_text, entity_type)"
-                " VALUES (?, ?, ?)",
-                (cid, ent.text.lower(), ent.entity_type),
-            )
-    except Exception:  # noqa: BLE001
-        pass
-    log.info(
-        "substrate.claim_inserted",
-        session_id=session_id,
-        claim_id=cid,
-        subject=norm_subject,
-        predicate=predicate,
-        confidence=confidence,
-    )
-    return Claim(
-        claim_id=cid,
-        session_id=session_id,
-        subject=norm_subject,
-        predicate=predicate,
-        value=value,
         value_normalised=value_normalised,
-        confidence=confidence,
-        source_turn_id=source_turn_id,
-        status=status,
-        created_ts=ts,
         char_start=char_start,
         char_end=char_end,
-        valid_from_ts=valid_from_ts,
-        valid_until_ts=valid_until_ts,
+        claim_id=claim_id,
+        status=status,
+        valid_from=valid_from,
+        valid_until=valid_until,
         event_ts=event_ts,
+        allowed_predicates=allowed_predicates,
     )
 
 

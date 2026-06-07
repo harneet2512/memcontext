@@ -71,7 +71,10 @@ def test_simple_extractor_fallback():
     ext = SimpleExtractor()
     result = ext(_make_turn("The weather is nice today in downtown"))
     assert len(result) == 1
-    assert result[0].predicate == "user_fact"
+    # Unmatched generic text is a neutral *observation*, not a fact about the
+    # user (user_fact = the user's own name/location/occupation/etc). The general
+    # pack defines `observation` for exactly this, and SimpleExtractor prefers it.
+    assert result[0].predicate == "observation"
     assert "weather" in result[0].value.lower()
 
 

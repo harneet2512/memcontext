@@ -20,17 +20,29 @@ from dataclasses import dataclass
 import structlog
 
 from memcontext.claims import list_active_claims
-from memcontext.schema import Claim
+from memcontext.schema import Claim, Turn
 
 log = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
 class ActiveProjection:
-    """The authoritative active claim set for a session at a point in time."""
+    """The authoritative active claim set for a session at a point in time.
+
+    `episodes` is populated ONLY in the degraded case — when the session has no
+    active facts (extraction disabled or still pending) — with the most-recent
+    episodes, so the projection is never empty while episodes exist. When facts
+    are present, `episodes` is empty and `claims` is authoritative.
+    """
 
     session_id: str
     claims: tuple[Claim, ...]
+    episodes: tuple[Turn, ...] = ()
+
+    @property
+    def is_episode_backed(self) -> bool:
+        """True when this projection is degraded to episodes (no active facts)."""
+        return not self.claims and bool(self.episodes)
 
     @property
     def by_predicate(self) -> dict[str, tuple[Claim, ...]]:
@@ -57,16 +69,36 @@ class FilteredProjection:
 
 
 def rebuild_active_projection(
-    conn: sqlite3.Connection, session_id: str
+    conn: sqlite3.Connection,
+    session_id: str,
+    *,
+    episode_fallback_k: int = 10,
 ) -> ActiveProjection:
-    """Rebuild the active-claims projection for a session."""
+    """Rebuild the active-claims projection for a session.
+
+    Draws from active facts. When a session has NO active facts (Tier-2 empty —
+    extraction disabled or still pending), it degrades to the `episode_fallback_k`
+    most-recent episodes so the projection is never empty while episodes exist
+    (the Tier-1 graceful-degradation floor).
+    """
     claims = tuple(list_active_claims(conn, session_id))
+    episodes: tuple[Turn, ...] = ()
+    if not claims:
+        from memcontext.claims import row_to_turn
+        rows = conn.execute(
+            "SELECT * FROM turns WHERE session_id = ? ORDER BY ts DESC LIMIT ?",
+            (session_id, episode_fallback_k),
+        ).fetchall()
+        episodes = tuple(row_to_turn(r) for r in rows)
     log.debug(
         "substrate.active_projection_rebuilt",
         session_id=session_id,
         active_count=len(claims),
+        episode_fallback=len(episodes),
     )
-    return ActiveProjection(session_id=session_id, claims=claims)
+    return ActiveProjection(
+        session_id=session_id, claims=claims, episodes=episodes
+    )
 
 
 def filtered_projection(

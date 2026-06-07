@@ -42,19 +42,30 @@ def test_insert_and_get_claim(db: sqlite3.Connection, session_id: str, sample_tu
     assert retrieved.value == "lives in Toronto"
 
 
-def test_insert_claim_validates_predicate(
+def test_insert_claim_out_of_vocab_predicate_demotes_to_nl(
     db: sqlite3.Connection, session_id: str, sample_turn: Turn,
 ):
-    with pytest.raises(ClaimValidationError, match="predicate.*not in allowed"):
-        insert_claim(
-            db,
-            session_id=session_id,
-            subject="user",
-            predicate="invalid_predicate_xyz",
-            value="something",
-            confidence=0.5,
-            source_turn_id=sample_turn.turn_id,
-        )
+    """An out-of-vocab predicate no longer raises — it demotes to an NL-only
+    fact (triple dropped, NL `text` retained). The fact is never lost."""
+    claim = insert_claim(
+        db,
+        session_id=session_id,
+        subject="user",
+        predicate="invalid_predicate_xyz",
+        value="something",
+        confidence=0.5,
+        source_turn_id=sample_turn.turn_id,
+    )
+    # Stored, not dropped; structured triple demoted to empty; NL text synthesised.
+    assert claim.subject == "" and claim.predicate == "" and claim.value == ""
+    assert claim.text and "invalid_predicate_xyz" in claim.text
+    # Persisted with a NULL triple at the storage layer.
+    row = db.execute(
+        "SELECT subject, predicate, value, text FROM claims WHERE claim_id = ?",
+        (claim.claim_id,),
+    ).fetchone()
+    assert row["subject"] is None and row["predicate"] is None and row["value"] is None
+    assert row["text"] == claim.text
 
 
 def test_insert_claim_validates_confidence_bounds(

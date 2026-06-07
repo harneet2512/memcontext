@@ -462,6 +462,10 @@ class LLMExtractor:
         MEMCONTEXT_EXTRACTOR_ENDPOINT: OpenRouter endpoint override
     """
 
+    # Deferrable: makes blocking LLM/HTTP calls, so on_new_turn runs it off the
+    # write path on the extraction queue rather than inline.
+    is_deferrable = True
+
     def __init__(
         self,
         *,
@@ -499,8 +503,35 @@ class LLMExtractor:
                 )
             )
             self._api_key = api_key or os.environ.get("MEMCONTEXT_EXTRACTOR_API_KEY", "")
+            # Shared keep-alive session with a large connection pool. Without it,
+            # a bare requests.post per call + high concurrency + fast (no-think)
+            # responses churns connections faster than the OS can recycle them,
+            # causing SSL-EOF / connection-aborted storms (esp. on Windows).
+            import requests as _rq
+            from requests.adapters import HTTPAdapter as _HA
+            _pool = int(os.environ.get("MEMCONTEXT_EXTRACTOR_POOL", "128"))
+            self._session = _rq.Session()
+            _ad = _HA(pool_connections=_pool, pool_maxsize=_pool, max_retries=0)
+            self._session.mount("https://", _ad)
+            self._session.mount("http://", _ad)
+        elif self._backend == "gemini":
+            # Native Google Gemini via the google-genai SDK — the same backbone
+            # and SDK AMB/Hindsight use (gemini-2.5-flash-lite). Authenticated
+            # with the single GEMINI_API_KEY (or GOOGLE_API_KEY).
+            self._model = model or os.environ.get(
+                "MEMCONTEXT_EXTRACTOR_MODEL", "gemini-2.5-flash-lite"
+            )
+            self._base_url = None
+            self._api_key = (
+                api_key
+                or os.environ.get("GEMINI_API_KEY")
+                or os.environ.get("GOOGLE_API_KEY", "")
+            )
+            self._gemini_client = None
         else:
-            raise ValueError(f"Unknown backend: {self._backend}. Use 'ollama' or 'openrouter'.")
+            raise ValueError(
+                f"Unknown backend: {self._backend}. Use 'ollama', 'openrouter', or 'gemini'."
+            )
 
     def _ensure_prompt(self) -> None:
         if self._system_prompt is None:
@@ -556,6 +587,8 @@ class LLMExtractor:
         try:
             if self._backend == "ollama":
                 content = self._call_ollama(messages)
+            elif self._backend == "gemini":
+                content = self._call_gemini(messages)
             else:
                 content = self._call_openrouter(messages)
         except Exception as exc:
@@ -611,16 +644,21 @@ class LLMExtractor:
         payload = {
             "model": self._model,
             "messages": cached_messages,
-            "max_tokens": 1024,
+            "max_tokens": int(os.environ.get("MEMCONTEXT_EXTRACTOR_MAX_TOKENS", "2048")),
             "temperature": 0.0,
             "response_format": {"type": "json_object"},
         }
+        # DeepSeek-direct V4 thinks by DEFAULT — disable it (extraction needs no
+        # reasoning; thinking is ~14x slower under load). Gated by env because the
+        # same `thinking:disabled` param backfires when routed via OpenRouter.
+        if os.environ.get("MEMCONTEXT_EXTRACTOR_NO_THINK", "") == "1":
+            payload["thinking"] = {"type": "disabled"}
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "X-Title": "memcontext",
         }
         for attempt in range(6):
-            resp = requests.post(
+            resp = self._session.post(
                 self._base_url, headers=headers, json=payload,
                 timeout=self._timeout,
             )
@@ -631,6 +669,66 @@ class LLMExtractor:
         resp.raise_for_status()
         return resp.json().get("choices", [{}])[0].get("message", {}).get("content") or "{}"
 
+    def _call_gemini(self, messages: list[dict]) -> str:
+        """Call Google Gemini via the google-genai SDK (same SDK AMB uses).
+
+        System message → system_instruction; remaining messages → contents.
+        Forces JSON output. Retries on 429/503 with exponential backoff. The
+        client is created once and reused (thread-safe for generate_content).
+        """
+        import time
+
+        if not self._api_key:
+            raise ValueError(
+                "GEMINI_API_KEY (or GOOGLE_API_KEY) required for the gemini backend."
+            )
+
+        client = getattr(self, "_gemini_client", None)
+        if client is None:
+            try:
+                from google import genai
+            except ImportError as exc:
+                raise ImportError(
+                    "The gemini backend requires google-genai. "
+                    "Install it with: pip install google-genai"
+                ) from exc
+            client = genai.Client(api_key=self._api_key)
+            self._gemini_client = client
+
+        from google.genai import types
+
+        system = next(
+            (m["content"] for m in messages if m.get("role") == "system"), ""
+        )
+        user = "\n\n".join(
+            m["content"] for m in messages if m.get("role") != "system"
+        )
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            system_instruction=system or None,
+            temperature=0.0,
+        )
+
+        delay = 5.0
+        for attempt in range(6):
+            try:
+                resp = client.models.generate_content(
+                    model=self._model, contents=user, config=config,
+                )
+                return resp.text or "{}"
+            except Exception as exc:
+                msg = str(exc)
+                retryable = (
+                    "429" in msg or "RESOURCE_EXHAUSTED" in msg
+                    or "503" in msg or "UNAVAILABLE" in msg
+                )
+                if retryable and attempt < 5:
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                raise
+        raise RuntimeError("gemini request failed after retries")
+
     @staticmethod
     def is_available(backend: str | None = None) -> bool:
         """Check if the configured backend is reachable."""
@@ -639,6 +737,10 @@ class LLMExtractor:
         be = backend or os.environ.get("MEMCONTEXT_EXTRACTOR_BACKEND", "ollama")
         if be == "openrouter":
             return bool(os.environ.get("MEMCONTEXT_EXTRACTOR_API_KEY", ""))
+        if be == "gemini":
+            return bool(
+                os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+            )
         # Ollama: check localhost
         base_url = os.environ.get("MEMCONTEXT_OLLAMA_URL", "http://localhost:11434")
         try:
@@ -661,6 +763,9 @@ class PassthroughExtractor:
     The MCP client (e.g., Claude Code) performs extraction and passes
     structured claims directly. This extractor just converts them.
     """
+
+    # Not deferrable: instant, no LLM/HTTP — runs inline on the write path.
+    is_deferrable = False
 
     def __init__(self, claims: list[dict]) -> None:
         self._claims = claims
@@ -688,7 +793,16 @@ class SimpleExtractor:
     """Local regex-only claim extractor. Dev/test fallback — NOT for production
     or benchmark use. Stores unmatched text as full-turn claims, which produces
     garbage retrieval context. Use LLMExtractor for benchmarks.
+
+    Fallback predicate: text that matches no pattern is recorded as
+    ``observation`` (a neutral observed statement) rather than ``user_fact`` —
+    e.g. "The weather is nice today" is an observation, not a fact about the
+    user. Falls back to ``user_fact`` only if the active pack lacks
+    ``observation``.
     """
+
+    # Not deferrable: regex-only, no LLM/HTTP — runs inline on the write path.
+    is_deferrable = False
 
     _PATTERNS: list[tuple[str, str]] = [
         (r"(?:I|i) (?:prefer|like|love|enjoy|favor)\b(.+)", "user_preference"),

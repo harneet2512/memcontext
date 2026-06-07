@@ -53,6 +53,10 @@ class PredicatePack:
     aux_data_path: Path | None = None
     few_shot_examples: tuple[FewShotExample, ...] = ()
     description: str = ""
+    # Predicates whose (subject, predicate) slot holds ONE current value: a new
+    # value supersedes the prior one deterministically (cardinality supersession),
+    # bypassing the token-overlap gate. Empty by default -> no behavior change.
+    single_valued: frozenset[str] = frozenset()
 
 
 def _parse_few_shot(raw: dict) -> FewShotExample:
@@ -102,6 +106,8 @@ def load_pack(pack_dir: str | Path) -> PredicatePack:
     example_entries = examples_raw.get("examples", examples_raw) if isinstance(examples_raw, dict) else examples_raw
     examples = tuple(_parse_few_shot(ex) for ex in example_entries)
 
+    single_valued = frozenset(predicates_raw.get("single_valued", []))
+
     return PredicatePack(
         pack_id=pack_id,
         predicate_families=families,
@@ -109,6 +115,7 @@ def load_pack(pack_dir: str | Path) -> PredicatePack:
         aux_data_path=aux_data_path,
         few_shot_examples=examples,
         description=str(predicates_raw.get("description", "")),
+        single_valued=single_valued,
     )
 
 
@@ -125,6 +132,7 @@ def load_packs(pack_ids: list[str]) -> PredicatePack:
 
     packs = [load_pack(pid) for pid in pack_ids]
     merged_families = frozenset().union(*(p.predicate_families for p in packs))
+    merged_single = frozenset().union(*(p.single_valued for p in packs))
     merged_sub_slots: dict[str, frozenset[str]] = {}
     for p in packs:
         merged_sub_slots.update(p.sub_slots)
@@ -140,6 +148,7 @@ def load_packs(pack_ids: list[str]) -> PredicatePack:
         sub_slots=merged_sub_slots,
         few_shot_examples=merged_examples,
         description=merged_desc,
+        single_valued=merged_single,
     )
 
 

@@ -8,12 +8,15 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from typing import TYPE_CHECKING
 
+from memcontext.brain import brain
 from memcontext.claims import (
+    find_same_identity_claim,
     get_claim,
     get_superseded_by,
     get_turn,
-    insert_claim,
+    insert_fact,
     list_active_claims,
     row_to_claim,
     set_claim_status,
@@ -24,6 +27,10 @@ from memcontext.provenance import span_for_claim
 from memcontext.schema import ClaimStatus, EdgeType, Speaker
 from memcontext.supersession import write_supersession_edge
 
+if TYPE_CHECKING:
+    from memcontext.extraction_queue import ExtractionQueue
+    from memcontext.on_new_turn import ExtractorFn
+
 
 def handle_memory_store(
     conn: sqlite3.Connection,
@@ -33,28 +40,41 @@ def handle_memory_store(
     session_id: str | None = None,
     claims: list[dict] | None = None,
     entities: list[dict] | None = None,
+    extractor: ExtractorFn | None = None,
+    queue: ExtractionQueue | None = None,
 ) -> dict:
     sid = session_id or f"session_{uuid.uuid4().hex[:8]}"
     sp = Speaker.USER if speaker == "user" else Speaker.ASSISTANT
 
+    # Pre-structured claims extract inline (Passthrough is never deferred). With
+    # no claims, use the server-injected persistent extractor + queue when
+    # provided, so a deferrable (LLM) extractor runs async off the write path.
     if claims:
-        extractor = PassthroughExtractor(claims)
+        ext: ExtractorFn = PassthroughExtractor(claims)
+        q: ExtractionQueue | None = None
     else:
-        extractor = auto_extractor()
+        ext = extractor or auto_extractor()
+        q = queue
 
-    result = on_new_turn(conn, session_id=sid, speaker=sp, text=text, extractor=extractor)
+    from memcontext.retrieval import episode_embedder
+    result = on_new_turn(
+        conn, session_id=sid, speaker=sp, text=text, extractor=ext,
+        queue=q, embedder=episode_embedder(),
+    )
 
     if entities and result.created_claims:
-        for ent in entities:
-            ent_text = ent.get("text", "")
-            ent_type = ent.get("type", "proper_noun")
-            if ent_text:
-                for claim in result.created_claims:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO claim_entities (claim_id, entity_text, entity_type)"
-                        " VALUES (?, ?, ?)",
-                        (claim.claim_id, ent_text.lower(), ent_type),
-                    )
+        rows = [
+            (claim.claim_id, ent["text"].lower(), ent.get("type", "proper_noun"))
+            for ent in entities
+            if ent.get("text")
+            for claim in result.created_claims
+        ]
+        if rows:
+            conn.executemany(
+                "INSERT OR IGNORE INTO claim_entities (claim_id, entity_text, entity_type)"
+                " VALUES (?, ?, ?)",
+                rows,
+            )
 
     return {
         "turn_id": result.turn.turn_id if result.turn else None,
@@ -73,41 +93,70 @@ def handle_memory_query(
     session_id: str | None = None,
     top_k: int = 10,
 ) -> dict:
-    from memcontext.retrieval import classify_query_depth, classify_query_predicates, retrieve_hybrid
+    from memcontext.claims import get_claim, get_turn
+    from memcontext.retrieval import (
+        classify_query_depth,
+        classify_query_predicates,
+        retrieve_memory,
+        retrieve_memory_across,
+    )
 
     _, query_type = classify_query_predicates(query)
     if top_k == 10:
         _, top_k = classify_query_depth(query)
 
+    # Unified two-tier retrieval (facts + episodes, source-tagged, RRF-fused).
     if session_id:
-        active = list_active_claims(conn, session_id)
-        if not active:
-            return {"claims": [], "total": 0}
-        top = retrieve_hybrid(
+        hits = retrieve_memory(
             conn, session_id=session_id, query=query, top_k=top_k,
         )
-        total = len(active)
+        total = len(list_active_claims(conn, session_id))
     else:
-        rows = conn.execute(
-            "SELECT DISTINCT session_id FROM claims"
-            " WHERE status IN ('active','confirmed','audited')",
-        ).fetchall()
-        if not rows:
-            return {"claims": [], "total": 0}
-        all_results: list[tuple] = []
-        total = 0
-        for r in rows:
-            sid = r["session_id"] if isinstance(r, sqlite3.Row) else r[0]
-            sid_active = list_active_claims(conn, sid)
-            total += len(sid_active)
-            results = retrieve_hybrid(
-                conn, session_id=sid, query=query, top_k=top_k,
-            )
-            all_results.extend(results)
-        all_results.sort(key=lambda x: (-x[1], x[0].claim_id))
-        top = all_results[:top_k]
+        # Every session that has episodes — episodes exist even when a session's
+        # facts are absent/pending (the Tier-1 floor), so scope by turns, not claims.
+        rows = conn.execute("SELECT DISTINCT session_id FROM turns").fetchall()
+        sids = [r["session_id"] if isinstance(r, sqlite3.Row) else r[0] for r in rows]
+        if not sids:
+            return {"claims": [], "episodes": [], "total": 0}
+        hits = retrieve_memory_across(
+            conn, session_ids=sids, query=query, top_k=top_k,
+        )
+        total = conn.execute(
+            "SELECT COUNT(*) FROM claims"
+            " WHERE status IN ('active','confirmed','audited')"
+        ).fetchone()[0]
 
-    max_score = top[0][1] if top and top[0][1] > 0 else 1.0
+    max_score = hits[0][1] if hits and hits[0][1] > 0 else 1.0
+
+    # Split the unified ranking back into source-tagged channels, preserving the
+    # fused score so a consumer can re-merge by score if it wants one stream.
+    claims_out: list[dict] = []
+    episodes_out: list[dict] = []
+    for hit, s in hits:
+        norm = round(s / max_score, 4) if s > 0 else 0.0
+        if hit.kind == "fact":
+            c = get_claim(conn, hit.id)
+            if c is None:
+                continue
+            claims_out.append({
+                "claim_id": c.claim_id,
+                "subject": c.subject,
+                "predicate": c.predicate,
+                "value": c.value,
+                "confidence": c.confidence,
+                "status": c.status.value,
+                "score": norm,
+            })
+        else:
+            t = get_turn(conn, hit.id)
+            if t is None:
+                continue
+            episodes_out.append({
+                "turn_id": t.turn_id,
+                "text": t.text,
+                "source_type": t.source_type.value,
+                "score": norm,
+            })
 
     _READER_HINTS = {
         "assistant_recall": "Answer based on what the assistant previously said, recommended, or did.",
@@ -118,18 +167,8 @@ def handle_memory_query(
     }
 
     return {
-        "claims": [
-            {
-                "claim_id": c.claim_id,
-                "subject": c.subject,
-                "predicate": c.predicate,
-                "value": c.value,
-                "confidence": c.confidence,
-                "status": c.status.value,
-                "score": round(s / max_score, 4) if s > 0 else 0.0,
-            }
-            for c, s in top
-        ],
+        "claims": claims_out,
+        "episodes": episodes_out,
         "total": total,
         "query_type": query_type,
         "reader_hint": _READER_HINTS.get(query_type, _READER_HINTS["fact_recall"]),
@@ -194,19 +233,272 @@ def handle_memory_stats(conn: sqlite3.Connection) -> dict:
     }
 
 
+def handle_memory_digest(conn: sqlite3.Connection, *, session_id: str) -> dict:
+    """Build, persist, and serve the session digest — the deterministic summary
+    layer: top key facts by importance + supersession updates + remaining count.
+
+    Persisting here is what finally populates the ``session_digests`` table in
+    production (the builder had no caller before this tool existed).
+    """
+    from memcontext.digests import build_session_digest, format_digest, store_digest
+
+    digest = build_session_digest(conn, session_id)
+    try:
+        store_digest(conn, digest)
+    except Exception:  # caching is best-effort; never fail the read on it
+        log.warning("mcp.digest_store_failed", session_id=session_id)
+    return {
+        "session_id": digest.session_id,
+        "key_facts": digest.key_facts,
+        "updates": digest.updates,
+        "remaining_count": digest.remaining_count,
+        "total_claims": digest.total_claims,
+        "text": format_digest(digest),
+    }
+
+
+def handle_memory_life_events(
+    conn: sqlite3.Connection,
+    *,
+    subject: str = "user",
+    window_hours: int = 24,
+    min_predicates: int = 3,
+) -> dict:
+    """Detect, persist, and serve life events — bursts of diverse predicate
+    changes for a subject inside a time window. Deterministic, zero-LLM.
+
+    Persisting here finally writes the ``life_events`` table (the detector had
+    no caller before this tool). Note: clustering keys on *structured*
+    predicates, so NL-only facts (out-of-vocab, predicate=None) don't form
+    life events — only in-vocab structured facts do.
+    """
+    from memcontext.life_events import detect_life_events, store_life_events
+
+    events = detect_life_events(
+        conn, subject, window_hours=window_hours, min_predicates=min_predicates
+    )
+    try:
+        store_life_events(conn, events)
+    except Exception:  # best-effort cache; never fail the read on it
+        log.warning("mcp.life_events_store_failed", subject=subject)
+    return {
+        "subject": subject,
+        "count": len(events),
+        "events": [
+            {
+                "event_id": e.event_id,
+                "timestamp_start": e.timestamp_start,
+                "timestamp_end": e.timestamp_end,
+                "predicates_affected": list(e.predicates_affected),
+                "claim_ids": list(e.claim_ids),
+                "summary_text": e.summary_text,
+                "significance": e.significance,
+            }
+            for e in events
+        ],
+    }
+
+
+def handle_memory_events(conn: sqlite3.Connection, *, session_id: str) -> dict:
+    """Assemble, persist, and serve event frames for a session — co-referent
+    claims grouped into multi-slot event records (who/what/where/when/amount).
+    Deterministic, zero-LLM. ``assemble_event_frames`` self-persists, so this
+    finally populates the ``event_frames`` table (it had no caller before).
+    """
+    from memcontext.event_frames import assemble_event_frames
+
+    frames = assemble_event_frames(conn, session_id)
+    return {
+        "session_id": session_id,
+        "count": len(frames),
+        "events": [
+            {
+                "event_id": f.event_id,
+                "event_type": f.event_type,
+                "participants": list(f.participants),
+                "item": f.item,
+                "location": f.location,
+                "time_expr": f.time_expr,
+                "amount": f.amount,
+                "supporting_claim_ids": list(f.supporting_claim_ids),
+                "confidence": f.confidence,
+                "missing_slots": list(f.missing_slots),
+            }
+            for f in frames
+        ],
+    }
+
+
+def handle_memory_volatility(
+    conn: sqlite3.Connection, *, subject: str = "user", predicate: str,
+) -> dict:
+    """Classify how volatile a (subject, predicate) slot is from its
+    supersession history: stable / evolving / volatile. Deterministic, zero-LLM.
+    (Operates on structured predicates; NL-only facts have no predicate to track.)
+    """
+    from memcontext.volatility import classify_predicate
+
+    v = classify_predicate(conn, subject, predicate)
+    return {
+        "subject": subject,
+        "predicate": predicate,
+        "classification": v.classification,
+        "change_count": v.change_count,
+        "avg_lifespan_days": v.avg_lifespan_days,
+        "current_streak_days": v.current_streak_days,
+    }
+
+
+def handle_memory_tuples(conn: sqlite3.Connection, *, session_id: str) -> dict:
+    """Project a session's active facts into event tuples
+    (subject, action, object, validity window). Pure read projection, zero-LLM.
+    """
+    from memcontext.event_tuples import claims_to_events
+
+    tuples = claims_to_events(list_active_claims(conn, session_id))
+    return {
+        "session_id": session_id,
+        "count": len(tuples),
+        "tuples": [
+            {
+                "subject": t.subject,
+                "action": t.action,
+                "obj": t.obj,
+                "valid_from_ts": t.valid_from_ts,
+                "valid_until_ts": t.valid_until_ts,
+                "claim_id": t.claim_id,
+            }
+            for t in tuples
+        ],
+    }
+
+
+def handle_memory_entity_graph(
+    conn: sqlite3.Connection, *, session_id: str, entity: str, max_hops: int = 1,
+) -> dict:
+    """Return an entity's co-occurrence neighbors within a session's claim graph
+    (entities mentioned together in the same turn). Deterministic, zero-LLM.
+    """
+    from memcontext.entity_graph import EntityGraph
+
+    graph = EntityGraph(conn, session_id)
+    return {
+        "session_id": session_id,
+        "entity": entity,
+        "max_hops": max_hops,
+        "neighbors": sorted(graph.neighbors(entity, max_hops=max_hops)),
+    }
+
+
+def handle_brain(
+    conn: sqlite3.Connection,
+    *,
+    session_id: str = "default",
+) -> dict:
+    """Deterministic world-state projection grouped by subject (no LLM).
+
+    Returns the current value, status, confidence, and provenance handle for
+    every active fact, plus a per-subject gaps report (vocabulary predicates
+    with no active claim). Reads from the projection only.
+    """
+    return brain(conn, session_id=session_id)
+
+
+def handle_memory_payload(
+    conn: sqlite3.Connection,
+    *,
+    question: str,
+    mode: str,
+    session_id: str = "default",
+) -> dict:
+    """Return the memory payload for a question in one of three modes.
+
+    ``mode`` is ``summary`` (raw transcript blob), ``vector`` (top-k statements
+    by similarity, local embedder), or ``memcontext`` (structured projection).
+    Holds the reader constant and varies only the payload — the demo's
+    apples-to-apples comparison.
+    """
+    from memcontext.payloads import (
+        memcontext_payload,
+        summary_payload,
+        vector_payload,
+    )
+
+    if mode == "summary":
+        return summary_payload(conn, session_id, question)
+    if mode == "vector":
+        return vector_payload(conn, session_id, question)
+    if mode == "memcontext":
+        return memcontext_payload(conn, session_id, question)
+    return {"error": f"Unknown mode: {mode!r}. Use summary|vector|memcontext."}
+
+
 def handle_memory_trace(
     conn: sqlite3.Connection,
     *,
-    claim_id: str,
+    claim_id: str | None = None,
+    session_id: str = "default",
+    subject: str | None = None,
+    predicate: str | None = None,
 ) -> dict:
+    """Trace a claim's source and supersession lineage.
+
+    Resolve the head claim by ``claim_id``, or by ``(session_id, subject,
+    predicate)`` (the newest active claim for that slot). Returns the rich
+    ``lineage`` — newest-first, each step carrying value, status, typed edge,
+    source turn, and span quote — alongside the legacy head fields.
+    """
+    if claim_id is None:
+        if not (subject and predicate):
+            return {"error": "Provide claim_id, or both subject and predicate."}
+        head = find_same_identity_claim(
+            conn, session_id=session_id, subject=subject, predicate=predicate
+        )
+        if head is None:
+            return {
+                "error": f"No active claim for {subject}/{predicate} in {session_id}",
+                "subject": subject,
+                "predicate": predicate,
+                "lineage": [],
+            }
+        claim_id = head.claim_id
+
     claim = get_claim(conn, claim_id)
     if claim is None:
         return {"error": f"Claim {claim_id} not found"}
 
+    # Rich lineage (reuse build_chain): oldest-first → present newest-first.
+    from memcontext.chains import build_chain
+
+    lineage = []
+    for step in reversed(build_chain(conn, claim_id)):
+        step_claim = get_claim(conn, step.claim_id)
+        step_turn = get_turn(conn, step.source_turn_id)
+        cs = step_claim.char_start if step_claim else None
+        ce = step_claim.char_end if step_claim else None
+        quote = (
+            step_turn.text[cs:ce]
+            if step_turn and cs is not None and ce is not None
+            else None
+        )
+        lineage.append({
+            "claim_id": step.claim_id,
+            "value": step.value,
+            "status": step_claim.status.value if step_claim else "unknown",
+            "edge_type": step.edge_type,
+            "confidence": step_claim.confidence if step_claim else None,
+            "source_turn_id": step.source_turn_id,
+            "speaker": step_turn.speaker.value if step_turn else None,
+            "text": step_turn.text if step_turn else None,
+            "char_start": cs,
+            "char_end": ce,
+            "quote": quote,
+        })
+
     source_turn = get_turn(conn, claim.source_turn_id)
     span = span_for_claim(conn, claim_id)
 
-    # Walk supersession chain
+    # Legacy forward walk (kept for backward compatibility with the claim_id tool).
     chain = []
     current_id = claim_id
     visited = set()
@@ -218,6 +510,8 @@ def handle_memory_trace(
         current_id = next_id
 
     return {
+        "subject": claim.subject,
+        "predicate": claim.predicate,
         "claim": {
             "claim_id": claim.claim_id,
             "subject": claim.subject,
@@ -235,6 +529,7 @@ def handle_memory_trace(
             "start": span.char_start,
             "end": span.char_end,
         } if span and span.char_start is not None else None,
+        "lineage": lineage,
         "supersession_chain": chain,
     }
 
@@ -262,15 +557,26 @@ def handle_memory_correct(
         if not new_value:
             return {"error": "new_value is required for correction"}
 
-        new_claim = insert_claim(
-            conn,
-            session_id=claim.session_id,
-            subject=claim.subject,
-            predicate=claim.predicate,
-            value=new_value,
-            confidence=1.0,
-            source_turn_id=claim.source_turn_id,
-        )
+        # Correct in kind: a structured claim keeps its triple (new value); an
+        # NL-only fact is corrected as NL text (it has no triple to carry).
+        if claim.predicate:
+            new_claim = insert_fact(
+                conn,
+                session_id=claim.session_id,
+                source_turn_id=claim.source_turn_id,
+                confidence=1.0,
+                subject=claim.subject,
+                predicate=claim.predicate,
+                value=new_value,
+            )
+        else:
+            new_claim = insert_fact(
+                conn,
+                session_id=claim.session_id,
+                source_turn_id=claim.source_turn_id,
+                confidence=1.0,
+                text=new_value,
+            )
         edge = write_supersession_edge(
             conn,
             old_claim_id=claim_id,
@@ -452,14 +758,17 @@ def handle_memory_observe_url(
     login_password: str | None = None,
     login_url: str | None = None,
     connect_browser: bool = False,
+    allow_password_login: bool = False,
 ) -> dict:
     """Observe a live URL, capture a11y tree, extract and store claims.
 
-    Auth modes (pick one):
-    - connect_browser=True — attach to user's running Chrome on port 9222.
-      Inherits all sessions: SSO, 2FA, OAuth, saved passwords. No
-      credentials needed. This is how CUAs work on Cloud PCs.
+    Auth modes (pick one), preferred first:
+    - connect_browser=True — attach to the user's running Chrome on port 9222.
+      Inherits all sessions: SSO, 2FA, OAuth, saved passwords. No credentials
+      needed. PREFERRED — never handles raw passwords.
     - login_email/password — launch headless, fill login form, then read.
+      Disabled unless allow_password_login=True (raw passwords are a hazard:
+      they transit as plain args and get typed into the page).
     - neither — launch headless, read the page unauthenticated.
 
     If the URL was previously observed in the same session, supersession
@@ -471,6 +780,17 @@ def handle_memory_observe_url(
     from memcontext.observe.extractors import _url_to_subject
 
     sid = session_id or "observe_default"
+
+    if login_password and not allow_password_login:
+        return {
+            "error": (
+                "password login is disabled by default. Prefer connect_browser=true "
+                "(attach to your running Chrome — inherits SSO/2FA, no credentials). "
+                "To pass a raw password anyway, set allow_password_login=true."
+            ),
+            "url": url,
+        }
+
     title, a11y_tree, dom_hash = _capture_page(
         url,
         login_email=login_email,

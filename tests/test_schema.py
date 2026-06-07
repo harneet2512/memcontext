@@ -28,6 +28,7 @@ def test_open_database_memory():
         "decisions",
         "output_sentences",
         "claim_embeddings",
+        "turn_embeddings",
         "claim_metadata",
         "event_frames",
         "event_frame_claims",

@@ -73,7 +73,13 @@ def detect_pass1(
 
     Returns the created edge (and marks the old claim superseded) or None if
     no prior matching active/confirmed claim exists.
+
+    Pass-1 is purely structural (keys on subject+predicate). NL-only facts have
+    no structured triple, so they cannot be matched here — they fall through to
+    the Pass-2 semantic path (see `supersession_semantic`).
     """
+    if not new_claim.subject or not new_claim.predicate:
+        return None
     rows = conn.execute(
         "SELECT * FROM claims WHERE session_id = ? AND subject = ? AND predicate = ?"
         " AND status IN ('active','confirmed') AND claim_id != ?"
@@ -91,27 +97,40 @@ def detect_pass1(
         return None
 
     from memcontext.claims import row_to_claim
-    import re as _re
-    _noise = {"the","a","an","is","was","to","for","and","or","of","in","on","at",
-              "it","my","i","me","we","up","so","no","not","but","with","has","had",
-              "be","do","did","will","been","just","very","really","also","about",
-              "some","from","that","this","more","than","each","during"}
+    from memcontext.predicate_packs import active_pack
 
-    new_content = set(_re.findall(r"[a-z0-9]+", new_claim.value.lower())) - _noise
-
+    new_value_norm = new_claim.value.strip().lower()
     best_match: Claim | None = None
-    best_jaccard: float = 0.0
 
-    for row in rows:
-        candidate = row_to_claim(row)
-        if candidate.value.strip().lower() == new_claim.value.strip().lower():
-            continue
-        old_content = set(_re.findall(r"[a-z0-9]+", candidate.value.lower())) - _noise
-        if old_content and new_content:
-            jaccard = len(old_content & new_content) / len(old_content | new_content)
-            if jaccard >= 0.3 and jaccard > best_jaccard:
-                best_jaccard = jaccard
+    if new_claim.predicate in active_pack().single_valued:
+        # Cardinality supersession: a single-valued (subject, predicate) slot holds
+        # ONE current value, so a new value supersedes the newest prior active claim
+        # regardless of token overlap (e.g. Postgres -> DynamoDB). Deterministic.
+        for row in rows:
+            candidate = row_to_claim(row)
+            if candidate.value.strip().lower() != new_value_norm:
                 best_match = candidate
+                break
+    else:
+        # Multi-valued / undeclared: keep the token-overlap gate so additive,
+        # distinct facts on a shared (subject, predicate) are not clobbered.
+        import re as _re
+        _noise = {"the","a","an","is","was","to","for","and","or","of","in","on","at",
+                  "it","my","i","me","we","up","so","no","not","but","with","has","had",
+                  "be","do","did","will","been","just","very","really","also","about",
+                  "some","from","that","this","more","than","each","during"}
+        new_content = set(_re.findall(r"[a-z0-9]+", new_claim.value.lower())) - _noise
+        best_jaccard: float = 0.0
+        for row in rows:
+            candidate = row_to_claim(row)
+            if candidate.value.strip().lower() == new_value_norm:
+                continue
+            old_content = set(_re.findall(r"[a-z0-9]+", candidate.value.lower())) - _noise
+            if old_content and new_content:
+                jaccard = len(old_content & new_content) / len(old_content | new_content)
+                if jaccard >= 0.3 and jaccard > best_jaccard:
+                    best_jaccard = jaccard
+                    best_match = candidate
 
     if best_match is None:
         return None

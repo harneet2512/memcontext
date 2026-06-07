@@ -97,9 +97,11 @@ def apply_changes(
     """
     from memcontext.extractors import PassthroughExtractor
     from memcontext.on_new_turn import on_new_turn
+    from memcontext.retrieval import episode_embedder
     from memcontext.schema import Speaker
 
     stats: dict = {"added": 0, "changed": 0, "supersessions": 0, "errors": []}
+    embedder = episode_embedder()
 
     # Store added claims
     if change_report.added_claims:
@@ -111,6 +113,7 @@ def apply_changes(
             speaker=Speaker.ASSISTANT,
             text=text,
             extractor=pt,
+            embedder=embedder,
         )
         stats["added"] = len(result.created_claims)
 
@@ -125,6 +128,7 @@ def apply_changes(
             speaker=Speaker.ASSISTANT,
             text=text,
             extractor=pt,
+            embedder=embedder,
         )
         stats["changed"] = len(result.created_claims)
         stats["supersessions"] = len(result.supersession_edges)

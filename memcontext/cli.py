@@ -76,11 +76,15 @@ def ingest(text: str, db: str, session: str, speaker: str) -> None:
     conn = open_database(db)
 
     from memcontext.extractors import auto_extractor
+    from memcontext.retrieval import episode_embedder
 
     extractor = auto_extractor()
 
     sp = Speaker.USER if speaker == "user" else Speaker.ASSISTANT
-    result = on_new_turn(conn, session_id=session, speaker=sp, text=text, extractor=extractor)
+    result = on_new_turn(
+        conn, session_id=session, speaker=sp, text=text, extractor=extractor,
+        embedder=episode_embedder(),
+    )
 
     if not result.admitted:
         click.echo(f"Turn rejected: {result.admission_reason}")
@@ -137,14 +141,81 @@ def query_cmd(query_text: str, db: str, session: str, top_k: int) -> None:
 
 
 @main.command()
+@click.option("--db", default="memcontext.db", help="Database file path.")
+@click.option("--session", default="default", help="Session ID.")
+@click.option("--pack", default="general", help="Predicate pack(s) the db was seeded with (controls the gaps vocabulary).")
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON instead of the formatted view.")
+def brain(db: str, session: str, pack: str, as_json: bool) -> None:
+    """Show the deterministic world-state projection (by subject, with provenance + gaps)."""
+    os.environ["ACTIVE_PACK"] = pack
+    from memcontext.predicate_packs import active_pack
+
+    active_pack.cache_clear()
+
+    from memcontext.brain import brain as brain_fn
+    from memcontext.schema import open_database
+
+    conn = open_database(db)
+    ws = brain_fn(conn, session_id=session)
+    conn.close()
+
+    if as_json:
+        click.echo(json.dumps(ws, indent=2))
+    else:
+        from memcontext.trace_view import format_world_state
+
+        click.echo(format_world_state(ws))
+
+
+@main.command()
+@click.option("--db", default="memcontext.db", help="Database file path.")
+@click.option("--session", default="default", help="Session ID.")
+@click.option("--subject", required=True, help="Subject to trace.")
+@click.option("--predicate", required=True, help="Predicate to trace.")
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON instead of the table.")
+def trace(db: str, session: str, subject: str, predicate: str, as_json: bool) -> None:
+    """Render the supersession lineage for a subject+predicate (active on top)."""
+    from memcontext.mcp_tools import handle_memory_trace
+    from memcontext.schema import open_database
+
+    conn = open_database(db)
+    result = handle_memory_trace(
+        conn, session_id=session, subject=subject, predicate=predicate
+    )
+    conn.close()
+
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+    else:
+        from memcontext.trace_view import render_trace_table
+
+        click.echo(render_trace_table(result))
+
+
+@main.command()
+@click.option("--db", default="memcontext_demo.db", help="Demo database file (recreated each run).")
+@click.option(
+    "--pack",
+    type=click.Choice(["developer", "general"]),
+    default="developer",
+    help="Predicate vocabulary for the demo (controls the gaps report).",
+)
+def demo(db: str, pack: str) -> None:
+    """Run the 'one corrected fact, three memories' differentiator demo."""
+    from demo.run_demo import run
+
+    run(db=db, pack=pack)
+
+
+@main.command()
 @click.argument("url")
 @click.option("--db", default="memcontext.db", help="Database file path.")
 @click.option("--session", default="observe_default", help="Session ID.")
-@click.option("--login-email", default=None, help="Email/username for authenticated access.")
-@click.option("--login-password", default=None, help="Password for authenticated access.")
+@click.option("--login-email", default=None, help="Email/username for form login. Prefer --connect-browser.")
 @click.option("--login-url", default=None, help="Login page URL if different from target.")
-@click.option("--connect-browser", is_flag=True, default=False, help="Attach to running Chrome on port 9222. Inherits all auth sessions.")
-def observe(url: str, db: str, session: str, login_email: str | None, login_password: str | None, login_url: str | None, connect_browser: bool) -> None:
+@click.option("--connect-browser", is_flag=True, default=False, help="PREFERRED: attach to running Chrome on port 9222. Inherits all auth sessions, no credentials.")
+@click.option("--allow-password-login", is_flag=True, default=False, help="Opt in to password login. Password is read from MEMCONTEXT_OBSERVE_PASSWORD or prompted (never a CLI arg).")
+def observe(url: str, db: str, session: str, login_email: str | None, login_url: str | None, connect_browser: bool, allow_password_login: bool) -> None:
     """Observe a live URL — open browser, capture accessibility tree, extract claims."""
     import logging
 
@@ -156,6 +227,15 @@ def observe(url: str, db: str, session: str, login_email: str | None, login_pass
     from memcontext.mcp_tools import handle_memory_observe_url
     from memcontext.schema import open_database
 
+    # Password is never a CLI arg (would leak in the process list / shell history).
+    # Read it from the environment, or prompt without echo when opted in.
+    login_password: str | None = None
+    if allow_password_login:
+        login_password = os.environ.get("MEMCONTEXT_OBSERVE_PASSWORD") or None
+        if login_password is None and login_email:
+            import getpass
+            login_password = getpass.getpass("Login password (hidden): ") or None
+
     conn = open_database(db)
     click.echo(f"[memcontext] Observing: {url}")
 
@@ -164,6 +244,7 @@ def observe(url: str, db: str, session: str, login_email: str | None, login_pass
             conn, url=url, session_id=session,
             login_email=login_email, login_password=login_password,
             login_url=login_url, connect_browser=connect_browser,
+            allow_password_login=allow_password_login,
         )
     except Exception as exc:
         click.echo(f"[memcontext] Error: {exc}", err=True)
@@ -254,6 +335,142 @@ def serve_http(db: str, port: int, host: str, share: bool) -> None:
         tunnel_thread.start()
 
     run_server(db_path=db, port=port, host=host)
+
+
+@main.command("mcp-config")
+@click.option(
+    "--client",
+    type=click.Choice(["claude", "codex", "both"]),
+    default="both",
+    help="Which client config to emit.",
+)
+@click.option("--db", default="memcontext.db", help="Database path (emitted absolute).")
+def mcp_config(client: str, db: str) -> None:
+    """Print ready-to-paste MCP client config to attach this server.
+
+    Uses a PATH-independent launch: `<python> -m memcontext.mcp_server --db <path>`,
+    so it works whether or not the `memcontext` console script is on PATH.
+    """
+    py = sys.executable
+    db_abs = os.path.abspath(db)
+    launch_args = ["-m", "memcontext.mcp_server", "--db", db_abs]
+
+    if client in ("claude", "both"):
+        cfg = {"mcpServers": {"memcontext": {"command": py, "args": launch_args}}}
+        click.echo("# Claude Code - add to .mcp.json (project) or ~/.claude.json (user):")
+        click.echo(json.dumps(cfg, indent=2))
+        click.echo("")
+
+    if client in ("codex", "both"):
+        # TOML literal (single-quoted) strings so Windows backslash paths need no escaping.
+        args_toml = ", ".join(f"'{a}'" for a in launch_args)
+        click.echo("# Codex - add to ~/.codex/config.toml:")
+        click.echo("[mcp_servers.memcontext]")
+        click.echo(f"command = '{py}'")
+        click.echo(f"args = [{args_toml}]")
+        click.echo("")
+
+
+@main.command()
+@click.option("--client", type=click.Choice(["claude", "codex", "both"]), default="both",
+              help="Which client(s) to attach to.")
+@click.option("--db", default="memcontext.db", help="Database file path (stored absolute).")
+@click.option("--user", is_flag=True, default=False,
+              help="Also write user config (~/.claude.json), attaching in every project.")
+@click.option("--project-dir", default=".", help="Project dir for Claude Code .mcp.json.")
+def attach(client: str, db: str, user: bool, project_dir: str) -> None:
+    """Attach MemContext to your AI client(s) — writes the config, no manual editing.
+
+    Claude Code → project .mcp.json (and ~/.claude.json with --user); Codex →
+    ~/.codex/config.toml. Idempotent (re-run is a no-op), backs up to *.bak, and
+    never touches other servers.
+    """
+    from memcontext import client_config as cc
+
+    py = sys.executable
+    db_abs = os.path.abspath(db)
+    targets = []
+    if client in ("claude", "both"):
+        targets.append(("Claude Code (project)", cc.claude_project_path(project_dir), cc.attach_claude))
+        if user:
+            targets.append(("Claude Code (user)", cc.claude_user_path(), cc.attach_claude))
+    if client in ("codex", "both"):
+        targets.append(("Codex", cc.codex_path(), cc.attach_codex))
+
+    for label, path, fn in targets:
+        changed = fn(path, py, db_abs)
+        click.echo(f"[memcontext] {label}: {'attached' if changed else 'already up to date'}  ({path})")
+    click.echo(f"[memcontext] database: {db_abs}")
+    click.echo("[memcontext] Restart your client(s) to load the memcontext tools.")
+
+
+@main.command()
+@click.option("--client", type=click.Choice(["claude", "codex", "both"]), default="both",
+              help="Which client config to detach from.")
+@click.option("--db", default="memcontext.db", help="DB path (only deleted with --purge).")
+@click.option("--user", is_flag=True, default=False,
+              help="Also remove from user config (~/.claude.json).")
+@click.option("--purge", is_flag=True, default=False,
+              help="Also DELETE the database file (irreversible). Off by default.")
+@click.option("--project-dir", default=".", help="Project dir for .mcp.json / .claude/ hooks.")
+def uninstall(client: str, db: str, user: bool, purge: bool, project_dir: str) -> None:
+    """Remove MemContext from agent configs. Preserves your data unless --purge."""
+    from memcontext import client_config as cc
+
+    removed: list[str] = []
+    if client in ("claude", "both"):
+        if cc.detach_claude(cc.claude_project_path(project_dir)):
+            removed.append(str(cc.claude_project_path(project_dir)))
+        if user and cc.detach_claude(cc.claude_user_path()):
+            removed.append(str(cc.claude_user_path()))
+    if client in ("codex", "both"):
+        if cc.detach_codex(cc.codex_path()):
+            removed.append(str(cc.codex_path()))
+
+    # Strip MemContext ambient hooks (urls under /api/hooks/) from .claude/settings.json.
+    settings_path = os.path.join(project_dir, ".claude", "settings.json")
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, encoding="utf-8") as f:
+                settings = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            settings = {}
+        hooks_cfg = settings.get("hooks")
+        if isinstance(hooks_cfg, dict):
+            changed = False
+            for event in list(hooks_cfg):
+                groups = [
+                    g for g in hooks_cfg[event]
+                    if not any("/api/hooks/" in (h.get("url", "")) for h in g.get("hooks", []))
+                ]
+                if groups != hooks_cfg[event]:
+                    changed = True
+                    if groups:
+                        hooks_cfg[event] = groups
+                    else:
+                        del hooks_cfg[event]
+            if changed:
+                if not hooks_cfg:
+                    settings.pop("hooks", None)
+                with open(settings_path, "w", encoding="utf-8") as f:
+                    json.dump(settings, f, indent=2)
+                removed.append(settings_path + " (hooks)")
+
+    for r in removed:
+        click.echo(f"[memcontext] detached from {r}")
+    if not removed:
+        click.echo("[memcontext] no MemContext config entries found.")
+
+    db_abs = os.path.abspath(db)
+    if purge:
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                os.remove(db_abs + suffix)
+            except OSError:
+                pass
+        click.echo(f"[memcontext] purged database {db_abs}")
+    elif os.path.exists(db_abs):
+        click.echo(f"[memcontext] your data is preserved at {db_abs} (use --purge to delete).")
 
 
 @main.group()
@@ -424,3 +641,22 @@ def eval_cmd(
     else:
         click.echo(f"Unknown suite: {suite}", err=True)
         raise SystemExit(1)
+
+
+def cli() -> None:
+    """Console-script entry point: run the CLI, surfacing DB errors cleanly.
+
+    A locked or corrupt database raises `DatabaseUnavailableError` from any
+    command; catch it here so the user sees a one-line message, not a traceback.
+    """
+    from memcontext.schema import DatabaseUnavailableError
+
+    try:
+        main()
+    except DatabaseUnavailableError as exc:
+        click.echo(f"[memcontext] {exc}", err=True)
+        raise SystemExit(1) from None
+
+
+if __name__ == "__main__":
+    cli()

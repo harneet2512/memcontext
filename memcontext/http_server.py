@@ -11,12 +11,19 @@ Same database, same memory. Two doors in.
 from __future__ import annotations
 
 import json
+import os
 import re
+import secrets
+import sys
 import time
 
+import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+log = structlog.get_logger(__name__)
 
 app = FastAPI(
     title="MemContext",
@@ -24,12 +31,65 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# CORS default-deny: no cross-origin access unless MEMCONTEXT_HTTP_ORIGINS lists
+# explicit origins. Never a wildcard — that plus credentials would expose the
+# authenticated store to any web page.
+_origins_env = os.environ.get("MEMCONTEXT_HTTP_ORIGINS", "").strip()
+_allowed_origins = [o.strip() for o in _origins_env.split(",") if o.strip() and o.strip() != "*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Auth: bearer token on every /api/* route (memory, hooks, sessions) ────────
+_http_token: str | None = None
+
+
+def _configure_auth() -> str:
+    """Resolve the bearer token: MEMCONTEXT_HTTP_TOKEN, else generate one once.
+
+    A generated token is printed to stderr so a loopback operator can use it;
+    set MEMCONTEXT_HTTP_TOKEN to pin a stable token (required for ``--share``).
+    """
+    global _http_token
+    if _http_token is None:
+        env_tok = os.environ.get("MEMCONTEXT_HTTP_TOKEN", "").strip()
+        if env_tok:
+            _http_token = env_tok
+        else:
+            _http_token = secrets.token_urlsafe(32)
+            print(
+                f"[memcontext] generated HTTP bearer token (set MEMCONTEXT_HTTP_TOKEN "
+                f"to pin): {_http_token}",
+                file=sys.stderr,
+            )
+    return _http_token
+
+
+@app.middleware("http")
+async def _require_bearer(request: Request, call_next):
+    if request.url.path.startswith("/api/"):
+        token = _configure_auth()
+        header = request.headers.get("authorization", "")
+        provided = header[7:].strip() if header[:7].lower() == "bearer " else ""
+        if not (provided and secrets.compare_digest(provided, token)):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return await call_next(request)
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception(request: Request, exc: Exception):
+    """Return a generic error — never a stack trace, path, or exception message.
+
+    Only the exception type (safe) is logged, to stderr.
+    """
+    log.error("http.unhandled_error", path=request.url.path, error_type=type(exc).__name__)
+    return JSONResponse({"error": "internal error"}, status_code=500)
+
 
 _conn = None
 
@@ -391,9 +451,10 @@ def health():
     return {"status": "ok", "service": "memcontext"}
 
 
-def run_server(*, db_path: str = "memcontext.db", port: int = 8100, host: str = "0.0.0.0"):
+def run_server(*, db_path: str = "memcontext.db", port: int = 8100, host: str = "127.0.0.1"):
     import uvicorn
     init_db(db_path)
+    _configure_auth()  # resolve/print the bearer token before serving
 
     # Mount MCP Streamable HTTP endpoint — ChatGPT connects here via Developer Mode
     try:

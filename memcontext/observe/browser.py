@@ -105,7 +105,9 @@ def observe_page(
     for c in claims:
         observation_text += f"\n- {c.get('subject', 'unknown')}: {c.get('value', '')}"
 
-    # Store via on_new_turn with PassthroughExtractor
+    # Store via on_new_turn with PassthroughExtractor. Embed the browser episode
+    # (Tier-1 floor) using the production-gated embedder.
+    from memcontext.retrieval import episode_embedder
     pt = PassthroughExtractor(claims)
     result = on_new_turn(
         conn,
@@ -113,6 +115,7 @@ def observe_page(
         speaker=Speaker.ASSISTANT,
         text=observation_text,
         extractor=pt,
+        embedder=episode_embedder(),
     )
 
     return ObservationResult(

@@ -27,13 +27,13 @@ import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import structlog
 
 from memcontext.claims import list_active_claims
 from memcontext.event_tuples import EventTuple, claim_to_event
-from memcontext.schema import Claim
+from memcontext.schema import Claim, Turn
 
 log = structlog.get_logger(__name__)
 
@@ -80,6 +80,21 @@ class RankedClaim:
     claim: Claim
     similarity_score: float
     embedding_model_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryHit:
+    """One unified retrieval result — a fact or an episode, source-tagged.
+
+    `kind` distinguishes the tier; `text` is the NL surface used for ranking
+    (fact `text` or episode text); `id` is the claim_id or turn_id;
+    `source_turn_id` links back to the originating episode for both kinds.
+    """
+
+    kind: Literal["fact", "episode"]
+    id: str
+    text: str
+    source_turn_id: str
 
 
 # --- embedding client --------------------------------------------------------
@@ -154,6 +169,42 @@ class EmbeddingClient:
         return out
 
 
+# --- default embedder (memoised) ---------------------------------------------
+
+
+_default_client: EmbeddingClient | None = None
+
+
+def _default_embedding_client() -> EmbeddingClient:
+    """Process-wide default embedder, constructed once and reused.
+
+    Constructing a fresh ``EmbeddingClient`` per call re-initialises the local
+    sentence-transformers model (~hundreds of ms each). Entry points that are
+    not handed an explicit client share this singleton, so the model loads
+    once instead of on every retrieve/ingest call.
+    """
+    global _default_client
+    if _default_client is None:
+        _default_client = EmbeddingClient()
+    return _default_client
+
+
+EPISODE_EMBED_ENV = "MEMCONTEXT_EMBED_EPISODES"
+
+
+def episode_embedder() -> EmbeddingClient | None:
+    """The embedder production entry points pass to `on_new_turn` for Tier-1.
+
+    Returns the default local embedding client so episodes embed synchronously
+    at ingest. Returns None when ``MEMCONTEXT_EMBED_EPISODES=0`` — the test suite
+    sets this (via conftest) so CI never loads or downloads a model. Production
+    leaves it unset (defaults on).
+    """
+    if os.environ.get(EPISODE_EMBED_ENV, "1") == "0":
+        return None
+    return _default_embedding_client()
+
+
 # --- blob encoding -----------------------------------------------------------
 
 
@@ -212,11 +263,16 @@ def _cache_put(model_version: str, text: str, vec: list[float]) -> None:
 
 
 def claim_retrieval_text(claim: Claim) -> str:
-    """Canonical text fed to the embedder for a claim.
+    """Canonical text fed to the embedder / BM25 for a fact.
 
-    Includes value (unlike identity_text in supersession_semantic which
-    excludes value for identity matching).
+    NL-first: prefer the fact's natural-language ``text`` (always present from
+    v4 on, including for NL-only facts with no structured triple). Falls back to
+    the synthesized ``subject predicate value`` triple for structured facts that
+    predate ``text`` (pre-v4 rows). Includes value (unlike identity_text in
+    supersession_semantic, which excludes value for identity matching).
     """
+    if claim.text:
+        return claim.text
     return f"{claim.subject} {claim.predicate} {claim.value}"
 
 
@@ -234,7 +290,7 @@ def embed_and_store(
     On failure, logs a warning and leaves the claim un-embedded so a
     backfill pass can pick it up later.
     """
-    effective = client or EmbeddingClient()
+    effective = client or _default_embedding_client()
     text = claim_retrieval_text(claim)
     try:
         cached = _cache_get(effective.model_version, text)
@@ -267,7 +323,7 @@ def backfill_embeddings(
     client: EmbeddingClient | None = None,
 ) -> int:
     """Embed every active claim not already in the sidecar. Returns count."""
-    effective = client or EmbeddingClient()
+    effective = client or _default_embedding_client()
     active = list_active_claims(conn, session_id)
     missing = _filter_missing_embeddings(conn, active, effective.model_version)
     if not missing:
@@ -326,6 +382,119 @@ def _filter_missing_embeddings(
     return out
 
 
+# --- Tier-1 episode embedding ------------------------------------------------
+
+
+def embed_and_store_episode(
+    conn: sqlite3.Connection,
+    turn: Turn,
+    *,
+    client: EmbeddingClient | None = None,
+) -> None:
+    """Embed an episode (turn) and upsert its vector into ``turn_embeddings``.
+
+    Mirrors :func:`embed_and_store` for claims, keyed on the episode's raw NL
+    ``text``. Called synchronously in the Tier-1 write path (the always-on,
+    zero-LLM floor); embedding is a local model inference (~tens of ms with
+    all-MiniLM-L6-v2, instant with NullEmbedder in tests), never an LLM call.
+    On failure, logs and leaves the episode un-embedded for a backfill pass.
+    """
+    effective = client or _default_embedding_client()
+    text = turn.text
+    try:
+        cached = _cache_get(effective.model_version, text)
+        if cached is not None:
+            vec = cached
+        else:
+            vec = effective.embed([text])[0]
+            _cache_put(effective.model_version, text, vec)
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "substrate.embed_episode_failed",
+            turn_id=turn.turn_id,
+            error=repr(exc)[:200],
+        )
+        return
+
+    conn.execute(
+        "INSERT OR REPLACE INTO turn_embeddings "
+        "(turn_id, embedding, embedding_model_version, embedded_at_unix) "
+        "VALUES (?, ?, ?, ?)",
+        (turn.turn_id, _encode_vector(vec), effective.model_version, int(time.time())),
+    )
+
+
+def backfill_episode_embeddings(
+    conn: sqlite3.Connection,
+    session_id: str,
+    *,
+    client: EmbeddingClient | None = None,
+) -> int:
+    """Embed every episode in the session not already in ``turn_embeddings``.
+
+    Returns the number of episodes embedded. Used to backfill legacy turns
+    migrated to episodes (v3) that predate write-time episode embedding.
+    """
+    from memcontext.claims import row_to_turn
+
+    effective = client or _default_embedding_client()
+    rows = conn.execute(
+        "SELECT * FROM turns WHERE session_id = ? ORDER BY ts ASC",
+        (session_id,),
+    ).fetchall()
+    turns = [row_to_turn(r) for r in rows]
+    missing = [
+        t
+        for t in turns
+        if _episode_embedding_version(conn, t.turn_id) != effective.model_version
+    ]
+    if not missing:
+        return 0
+
+    resolved: dict[str, list[float]] = {}
+    uncached_turns: list[Turn] = []
+    uncached_texts: list[str] = []
+    for t in missing:
+        cached = _cache_get(effective.model_version, t.text)
+        if cached is not None:
+            resolved[t.turn_id] = cached
+        else:
+            uncached_turns.append(t)
+            uncached_texts.append(t.text)
+
+    if uncached_texts:
+        try:
+            vectors = effective.embed(uncached_texts)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "substrate.backfill_episode_embed_failed",
+                session_id=session_id,
+                error=repr(exc)[:200],
+            )
+            return len(resolved)
+        for t, text, v in zip(uncached_turns, uncached_texts, vectors, strict=True):
+            _cache_put(effective.model_version, text, v)
+            resolved[t.turn_id] = v
+
+    now = int(time.time())
+    for turn_id, vec in resolved.items():
+        conn.execute(
+            "INSERT OR REPLACE INTO turn_embeddings "
+            "(turn_id, embedding, embedding_model_version, embedded_at_unix) "
+            "VALUES (?, ?, ?, ?)",
+            (turn_id, _encode_vector(vec), effective.model_version, now),
+        )
+    return len(resolved)
+
+
+def _episode_embedding_version(conn: sqlite3.Connection, turn_id: str) -> str | None:
+    row = conn.execute(
+        "SELECT embedding_model_version FROM turn_embeddings WHERE turn_id = ?",
+        (turn_id,),
+    ).fetchone()
+    return row["embedding_model_version"] if row is not None else None
+
+
 # --- retrieval API -----------------------------------------------------------
 
 
@@ -363,7 +532,7 @@ def retrieve_relevant_claims(
     if not question or not question.strip():
         return []
 
-    effective = client or EmbeddingClient()
+    effective = client or _default_embedding_client()
     model_version = effective.model_version
 
     active = list_active_claims(conn, session_id)
@@ -613,10 +782,20 @@ def _tokenize_for_bm25(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
-def _bm25_scores(query_tokens: list[str], claims: list[Claim], *, k1: float = 1.2, b: float = 0.75) -> list[float]:
-    if not query_tokens or not claims:
-        return [0.0] * len(claims)
-    docs = [_tokenize_for_bm25(claim_retrieval_text(c)) for c in claims]
+def _bm25_over_docs(
+    query_tokens: list[str],
+    docs: list[list[str]],
+    *,
+    k1: float = 1.2,
+    b: float = 0.75,
+) -> list[float]:
+    """BM25 over pre-tokenised documents. The single BM25 implementation.
+
+    Shared by `_bm25_scores` (claims) and `retrieve_episodes`/`search_raw_turns`
+    (episodes) so the scoring formula lives in exactly one place.
+    """
+    if not query_tokens or not docs:
+        return [0.0] * len(docs)
     n = len(docs)
     avgdl = sum(len(d) for d in docs) / max(n, 1)
     df: dict[str, int] = {}
@@ -637,6 +816,11 @@ def _bm25_scores(query_tokens: list[str], claims: list[Claim], *, k1: float = 1.
             score += idf * tf * (k1 + 1.0) / (tf + k1 * (1.0 - b + b * dl / max(avgdl, 1e-9)))
         scores.append(score)
     return scores
+
+
+def _bm25_scores(query_tokens: list[str], claims: list[Claim], *, k1: float = 1.2, b: float = 0.75) -> list[float]:
+    docs = [_tokenize_for_bm25(claim_retrieval_text(c)) for c in claims]
+    return _bm25_over_docs(query_tokens, docs, k1=k1, b=b)
 
 
 def retrieve_hybrid(
@@ -663,7 +847,7 @@ def retrieve_hybrid(
 
     weights = weights or _default_weights()
 
-    effective = embedding_client or EmbeddingClient()
+    effective = embedding_client or _default_embedding_client()
     model_version = effective.model_version
 
     if include_superseded:
@@ -830,6 +1014,115 @@ def retrieve_hybrid(
     return fused[:top_k]
 
 
+# --- Tier-1 episode retrieval ------------------------------------------------
+
+
+def retrieve_episodes(
+    conn: sqlite3.Connection,
+    *,
+    session_id: str,
+    query: str,
+    top_k: int = DEFAULT_TOP_K,
+    valid_at_ts: int | None = None,
+    embedding_client: EmbeddingClient | None = None,
+) -> list[tuple[Turn, float]]:
+    """Rank episodes (turns) for a query via RRF over NL-text signals.
+
+    Channels: semantic (``turn_embeddings`` cosine), BM25 over ``turn.text``,
+    entity overlap (deterministic, on-the-fly — no stored sidecar needed), and
+    temporal recency (``turn.ts``). This is the Tier-1 floor: it needs no
+    structured fields and works whether or not any facts have been extracted.
+    Degrades to BM25 + recency when no episode embeddings exist yet.
+    """
+    if not query or not query.strip():
+        return []
+
+    from memcontext.claims import row_to_turn
+
+    rows = conn.execute(
+        "SELECT * FROM turns WHERE session_id = ? ORDER BY ts ASC",
+        (session_id,),
+    ).fetchall()
+    episodes: list[Turn] = [row_to_turn(r) for r in rows]
+    if valid_at_ts is not None:
+        episodes = [t for t in episodes if t.ts <= valid_at_ts]
+    if not episodes:
+        return []
+
+    effective = embedding_client or _default_embedding_client()
+    model_version = effective.model_version
+
+    ids = tuple(t.turn_id for t in episodes)
+    placeholders = ",".join("?" for _ in ids)
+    emb_rows = conn.execute(
+        f"SELECT turn_id, embedding, embedding_model_version "
+        f"FROM turn_embeddings WHERE turn_id IN ({placeholders})",
+        ids,
+    ).fetchall()
+    embedding_by_id: dict[str, tuple[list[float], str]] = {}
+    for row in emb_rows:
+        try:
+            vec = _decode_vector(row["embedding"])
+        except ValueError:
+            continue
+        embedding_by_id[row["turn_id"]] = (vec, row["embedding_model_version"])
+
+    has_embeddings = bool(embedding_by_id)
+    q_vec = effective.embed([query])[0] if has_embeddings else None
+
+    sem_scores: list[float] = []
+    for t in episodes:
+        entry = embedding_by_id.get(t.turn_id)
+        if q_vec is None or entry is None or entry[1] != model_version:
+            sem_scores.append(0.0)
+            continue
+        score = _cosine_normalised(q_vec, entry[0])
+        if not (-1.01 <= score <= 1.01):
+            score = _cosine_fallback(q_vec, entry[0])
+        sem_scores.append(score)
+
+    bm25_raw = _bm25_over_docs(
+        _tokenize_for_bm25(query), [_tokenize_for_bm25(t.text) for t in episodes]
+    )
+
+    query_norm = query.strip().lower()
+    match_set = set(query_norm.split())
+    try:
+        from memcontext.entities import extract_entities
+        match_set |= {e.text.lower() for e in extract_entities(query)}
+    except Exception:  # noqa: BLE001
+        pass
+    ent_scores: list[float] = []
+    for t in episodes:
+        doc_tokens = set(_tokenize_for_bm25(t.text))
+        ent_scores.append(1.0 if doc_tokens & match_set else 0.0)
+
+    tmp_scores: list[float] = [float(t.ts) for t in episodes]
+
+    sem_ranks = _rrf_ranks(sem_scores)
+    bm25_ranks = _rrf_ranks(bm25_raw)
+    ent_ranks = _rrf_ranks(ent_scores)
+    tmp_ranks = _rrf_ranks(tmp_scores)
+
+    w_sem = 0.5 if has_embeddings else 0.0
+    w_bm25 = 0.25
+    w_ent = 0.15
+    w_tmp = 0.1
+
+    fused: list[tuple[Turn, float]] = []
+    for i, t in enumerate(episodes):
+        fused_score = (
+            w_sem / (RRF_K + sem_ranks[i])
+            + w_bm25 / (RRF_K + bm25_ranks[i])
+            + w_ent / (RRF_K + ent_ranks[i])
+            + w_tmp / (RRF_K + tmp_ranks[i])
+        )
+        fused.append((t, fused_score))
+
+    fused.sort(key=lambda x: (-x[1], x[0].turn_id))
+    return fused[:top_k]
+
+
 # --- deterministic query expansion -------------------------------------------
 
 
@@ -974,26 +1267,15 @@ def search_raw_turns(
     *,
     top_k: int = 15,
 ) -> list[tuple[Any, float]]:
-    """BM25 search over raw turn text as retrieval fallback."""
-    from memcontext.schema import Speaker, Turn
+    """BM25 search over raw turn (episode) text as retrieval fallback."""
+    from memcontext.claims import row_to_turn
 
     rows = conn.execute(
         "SELECT * FROM turns WHERE session_id = ? ORDER BY ts ASC",
         (session_id,),
     ).fetchall()
 
-    turns: list[Turn] = []
-    for row in rows:
-        t = Turn(
-            turn_id=row["turn_id"],
-            session_id=row["session_id"],
-            speaker=Speaker(row["speaker"]),
-            text=row["text"],
-            ts=row["ts"],
-            asr_confidence=row["asr_confidence"],
-        )
-        turns.append(t)
-
+    turns: list[Turn] = [row_to_turn(row) for row in rows]
     if not turns:
         return []
 
@@ -1001,36 +1283,116 @@ def search_raw_turns(
     if not query_tokens:
         return []
 
-    # BM25 scoring over turn texts (same formula as _bm25_scores)
-    doc_token_lists = [_tokenize_for_bm25(t.text) for t in turns]
-    n = len(doc_token_lists)
-    avgdl = sum(len(d) for d in doc_token_lists) / max(n, 1)
-
-    k1 = 1.2
-    b = 0.75
-
-    # Document frequency for each query token
-    df: dict[str, int] = {}
-    for qt in set(query_tokens):
-        df[qt] = sum(1 for d in doc_token_lists if qt in d)
-
-    scored: list[tuple[Turn, float]] = []
-    for turn, doc_tokens in zip(turns, doc_token_lists, strict=True):
-        score = 0.0
-        dl = len(doc_tokens)
-        tf_map: dict[str, int] = {}
-        for token in doc_tokens:
-            tf_map[token] = tf_map.get(token, 0) + 1
-        for qt in query_tokens:
-            if qt not in df or df[qt] == 0:
-                continue
-            idf = math.log((n - df[qt] + 0.5) / (df[qt] + 0.5) + 1.0)
-            tf = tf_map.get(qt, 0)
-            score += idf * tf * (k1 + 1.0) / (tf + k1 * (1.0 - b + b * dl / max(avgdl, 1e-9)))
-        scored.append((turn, score))
-
+    docs = [_tokenize_for_bm25(t.text) for t in turns]
+    scores = _bm25_over_docs(query_tokens, docs)
+    scored: list[tuple[Turn, float]] = list(zip(turns, scores, strict=True))
     scored.sort(key=lambda x: -x[1])
     return scored[:top_k]
+
+
+def retrieve_memory(
+    conn: sqlite3.Connection,
+    *,
+    session_id: str,
+    query: str,
+    top_k: int = DEFAULT_TOP_K,
+    embedding_client: EmbeddingClient | None = None,
+) -> list[tuple[MemoryHit, float]]:
+    """Unified Tier-1 + Tier-2 retrieval: facts AND episodes, source-tagged.
+
+    Ranks facts (`retrieve_hybrid`) and episodes (`retrieve_episodes`)
+    independently, then fuses them with a second-level RRF — facts get a slight
+    weight edge so a fact outranks the episode it came from on a tie. Needs no
+    structured field; when no facts exist (extraction disabled or still pending)
+    the episode hits carry retrieval entirely — the Tier-1 floor.
+    """
+    if not query or not query.strip():
+        return []
+
+    facts = retrieve_hybrid(
+        conn, session_id=session_id, query=query, top_k=top_k,
+        embedding_client=embedding_client,
+    )
+    episodes = retrieve_episodes(
+        conn, session_id=session_id, query=query, top_k=top_k,
+        embedding_client=embedding_client,
+    )
+    return _fuse_memory(facts, episodes, top_k)
+
+
+def retrieve_memory_across(
+    conn: sqlite3.Connection,
+    *,
+    session_ids: list[str],
+    query: str,
+    top_k: int = DEFAULT_TOP_K,
+    embedding_client: EmbeddingClient | None = None,
+) -> list[tuple[MemoryHit, float]]:
+    """Unified retrieval across MANY sessions — one global fusion, not a merge of
+    per-session fusions.
+
+    Collects every session's facts and episodes, ranks each *pool globally* by
+    its own hybrid score, then runs the second-level RRF once. Doing the fusion
+    once (rather than per-session then re-sorting by raw score) is what lets an
+    episode at global rank 1 outrank a fact at global rank ~8 — otherwise the
+    fact weight (1.0 vs 0.9) makes facts from every session crowd out all
+    episodes. Used by the cross-session serving door.
+    """
+    if not query or not query.strip() or not session_ids:
+        return []
+    facts: list[tuple[Claim, float]] = []
+    episodes: list[tuple[Turn, float]] = []
+    for sid in session_ids:
+        facts.extend(retrieve_hybrid(
+            conn, session_id=sid, query=query, top_k=top_k,
+            embedding_client=embedding_client,
+        ))
+        episodes.extend(retrieve_episodes(
+            conn, session_id=sid, query=query, top_k=top_k,
+            embedding_client=embedding_client,
+        ))
+    facts.sort(key=lambda x: (-x[1], x[0].claim_id))
+    episodes.sort(key=lambda x: (-x[1], x[0].turn_id))
+    return _fuse_memory(facts, episodes, top_k)
+
+
+def _fuse_memory(
+    facts: list[tuple[Claim, float]],
+    episodes: list[tuple[Turn, float]],
+    top_k: int,
+) -> list[tuple[MemoryHit, float]]:
+    """Second-level RRF over already-ranked fact and episode pools.
+
+    Each pool must arrive sorted best-first; fusion weights its *rank position*
+    (RRF), so the per-channel raw scores need not be comparable. Facts carry a
+    slight weight edge so a fact outranks the episode it was extracted from on a
+    tie — but episodes still interleave by rank (the Tier-1 floor).
+    """
+    w_fact, w_ep = 1.0, 0.9
+    fused: list[tuple[MemoryHit, float]] = []
+    for rank, (claim, _score) in enumerate(facts, start=1):
+        fused.append((
+            MemoryHit(
+                kind="fact",
+                id=claim.claim_id,
+                text=claim_retrieval_text(claim),
+                source_turn_id=claim.source_turn_id,
+            ),
+            w_fact / (RRF_K + rank),
+        ))
+    for rank, (turn, _score) in enumerate(episodes, start=1):
+        fused.append((
+            MemoryHit(
+                kind="episode",
+                id=turn.turn_id,
+                text=turn.text,
+                source_turn_id=turn.turn_id,
+            ),
+            w_ep / (RRF_K + rank),
+        ))
+    # -score, then facts before episodes on exact ties, then id for determinism.
+    fused.sort(key=lambda h: (-h[1], h[0].kind != "fact", h[0].id))
+    return fused[:top_k]
 
 
 def retrieve_with_fallback(
@@ -1122,7 +1484,7 @@ def retrieve_event_tuples(
     if not query or not query.strip():
         return []
 
-    effective = embedding_client or EmbeddingClient()
+    effective = embedding_client or _default_embedding_client()
     model_version = effective.model_version
 
     active = list_active_claims(conn, session_id)
@@ -1186,7 +1548,7 @@ def backfill_event_frame_embeddings(
     """Embed every event frame not already embedded. Returns count."""
     from memcontext.event_frames import list_event_frames
 
-    effective = client or EmbeddingClient()
+    effective = client or _default_embedding_client()
     frames = list_event_frames(conn, session_id)
     if not frames:
         return 0
@@ -1236,7 +1598,7 @@ def retrieve_event_frames(
     if not query or not query.strip():
         return []
 
-    effective = embedding_client or EmbeddingClient()
+    effective = embedding_client or _default_embedding_client()
     frames = list_event_frames(conn, session_id)
     if not frames:
         return []

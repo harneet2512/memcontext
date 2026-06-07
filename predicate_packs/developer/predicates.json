@@ -13,5 +13,11 @@
     "user_preference",
     "project_status"
   ],
+  "single_valued": [
+    "decision_made",
+    "convention_established",
+    "project_status",
+    "file_purpose"
+  ],
   "sub_slots": {}
 }

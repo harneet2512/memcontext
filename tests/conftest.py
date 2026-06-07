@@ -80,6 +80,9 @@ def _set_packs_dir(monkeypatch: pytest.MonkeyPatch):
     packs_dir = os.path.join(os.path.dirname(__file__), "..", "predicate_packs")
     monkeypatch.setenv("SUBSTRATE_PACKS_DIR", os.path.abspath(packs_dir))
     monkeypatch.setenv("ACTIVE_PACK", "general")
+    # Never load/download an embedding model via the production episode-embed path
+    # in CI; tests that exercise embedding inject an explicit stub client instead.
+    monkeypatch.setenv("MEMCONTEXT_EMBED_EPISODES", "0")
     from memcontext.predicate_packs import active_pack
     active_pack.cache_clear()
     yield

@@ -12,12 +12,14 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import structlog
 
 from memcontext import admission
 from memcontext.claims import (
     ClaimValidationError,
+    get_turn,
     insert_claim,
     insert_turn,
     new_turn_id,
@@ -31,9 +33,19 @@ from memcontext.event_bus import (
     EventBus,
 )
 from memcontext.projections import rebuild_active_projection
-from memcontext.schema import Claim, Speaker, SupersessionEdge, Turn
+from memcontext.schema import (
+    Claim,
+    ExtractionStatus,
+    Speaker,
+    SupersessionEdge,
+    Turn,
+)
 from memcontext.supersession import detect_pass1
 from memcontext.supersession_semantic import SemanticSupersession
+
+if TYPE_CHECKING:
+    from memcontext.extraction_queue import ExtractionQueue
+    from memcontext.retrieval import EmbeddingClient
 
 log = structlog.get_logger(__name__)
 
@@ -83,60 +95,47 @@ class TurnResult:
 # ----------------------------------------------------------- orchestrator ---
 
 
-def on_new_turn(
+@dataclass(frozen=True, slots=True)
+class ExtractionResult:
+    """What `run_extraction` produced for one episode."""
+
+    created_claims: tuple[Claim, ...]
+    supersession_edges: tuple[SupersessionEdge, ...]
+    dropped_claims: tuple[tuple[ExtractedClaim, str], ...]
+
+
+def _set_extraction_status(
+    conn: sqlite3.Connection, episode_id: str, status: ExtractionStatus
+) -> None:
+    conn.execute(
+        "UPDATE turns SET extraction_status = ? WHERE turn_id = ?",
+        (status.value, episode_id),
+    )
+
+
+def run_extraction(
     conn: sqlite3.Connection,
     *,
+    episode_id: str,
     session_id: str,
-    speaker: Speaker,
-    text: str,
     extractor: ExtractorFn,
-    bus: EventBus | None = None,
     semantic: SemanticSupersession | None = None,
-    asr_confidence: float | None = None,
-    turn_id: str | None = None,
-) -> TurnResult:
-    """Ingest one turn end-to-end.
+    bus: EventBus | None = None,
+    done_status: ExtractionStatus = ExtractionStatus.DONE,
+) -> ExtractionResult:
+    """Extract facts from a stored episode and supersede/project (Tier-2 tail).
 
-    Pipeline:
-      1. Admission filter (noise regex).
-      2. Persist Turn.
-      3. Run injected extractor.
-      4. For each extracted claim:
-           a. Validate + insert.
-           b. Pass-1 deterministic supersession.
-           c. Pass-2 semantic supersession (if provided).
-      5. Rebuild active projection.
-      6. Return TurnResult.
+    This is the extract -> insert-facts -> Pass-1 -> Pass-2 -> rebuild-projection
+    sequence, factored out of `on_new_turn` so it can run either inline (sync
+    extractors) or later on a queue worker (async LLM extraction). It reloads the
+    episode by id, so the caller need not hold the Turn. Marks the episode's
+    `extraction_status` (`done_status` if facts were produced, else SKIPPED).
     """
     bus = bus or EventBus()
-
-    adm = admission.admit(text)
-    if not adm.admitted:
-        log.info(
-            "substrate.turn_rejected",
-            session_id=session_id,
-            reason=adm.reason,
-            text_len=len(text),
-        )
-        return TurnResult(
-            turn=None,
-            admitted=False,
-            admission_reason=adm.reason,
-            created_claims=(),
-            supersession_edges=(),
-            dropped_claims=(),
-        )
-
-    turn = Turn(
-        turn_id=turn_id or new_turn_id(),
-        session_id=session_id,
-        speaker=speaker,
-        text=text,
-        ts=now_ns(),
-        asr_confidence=asr_confidence,
-    )
-    insert_turn(conn, turn)
-    bus.publish(TURN_ADDED, {"turn_id": turn.turn_id, "session_id": session_id})
+    turn = get_turn(conn, episode_id)
+    if turn is None:
+        log.warning("substrate.extraction_episode_missing", episode_id=episode_id)
+        return ExtractionResult((), (), ())
 
     if hasattr(extractor, "set_context"):
         prior_rows = conn.execute(
@@ -246,11 +245,102 @@ def on_new_turn(
     except Exception:  # noqa: BLE001
         pass
 
+    _set_extraction_status(
+        conn, episode_id, done_status if created else ExtractionStatus.SKIPPED
+    )
+    return ExtractionResult(tuple(created), tuple(edges), tuple(dropped))
+
+
+def on_new_turn(
+    conn: sqlite3.Connection,
+    *,
+    session_id: str,
+    speaker: Speaker,
+    text: str,
+    extractor: ExtractorFn,
+    bus: EventBus | None = None,
+    semantic: SemanticSupersession | None = None,
+    asr_confidence: float | None = None,
+    turn_id: str | None = None,
+    queue: ExtractionQueue | None = None,
+    embedder: EmbeddingClient | None = None,
+) -> TurnResult:
+    """Ingest one turn (episode) end-to-end.
+
+    Tier-1 (always, synchronous, zero-LLM): admit -> persist episode -> embed
+    episode (if an embedder is given). Tier-2 (facts):
+    - If the extractor is deferrable (an LLMExtractor) AND a `queue` is provided,
+      enqueue the episode and return immediately with no facts (status `pending`);
+      the facts are produced later by `queue.drain()` / the worker.
+    - Otherwise extraction runs inline via `run_extraction` (current behaviour),
+      and the returned TurnResult carries the created facts.
+    """
+    bus = bus or EventBus()
+
+    adm = admission.admit(text)
+    if not adm.admitted:
+        log.info(
+            "substrate.turn_rejected",
+            session_id=session_id,
+            reason=adm.reason,
+            text_len=len(text),
+        )
+        return TurnResult(
+            turn=None,
+            admitted=False,
+            admission_reason=adm.reason,
+            created_claims=(),
+            supersession_edges=(),
+            dropped_claims=(),
+        )
+
+    turn = Turn(
+        turn_id=turn_id or new_turn_id(),
+        session_id=session_id,
+        speaker=speaker,
+        text=text,
+        ts=now_ns(),
+        asr_confidence=asr_confidence,
+    )
+    insert_turn(conn, turn)
+    bus.publish(TURN_ADDED, {"turn_id": turn.turn_id, "session_id": session_id})
+
+    # Tier-1 floor: embed the episode synchronously (local model, never an LLM).
+    # Never block ingest on an embedding failure.
+    if embedder is not None:
+        try:
+            from memcontext.retrieval import embed_and_store_episode
+            embed_and_store_episode(conn, turn, client=embedder)
+        except Exception:  # noqa: BLE001
+            log.warning("substrate.episode_embed_failed", turn_id=turn.turn_id)
+
+    deferrable = bool(getattr(extractor, "is_deferrable", False))
+    if deferrable and queue is not None:
+        _set_extraction_status(conn, turn.turn_id, ExtractionStatus.PENDING)
+        queue.enqueue(turn.turn_id, session_id)
+        return TurnResult(
+            turn=turn,
+            admitted=True,
+            admission_reason=adm.reason,
+            created_claims=(),
+            supersession_edges=(),
+            dropped_claims=(),
+        )
+
+    result = run_extraction(
+        conn,
+        episode_id=turn.turn_id,
+        session_id=session_id,
+        extractor=extractor,
+        semantic=semantic,
+        bus=bus,
+        done_status=ExtractionStatus.STRUCTURED,
+    )
     return TurnResult(
         turn=turn,
         admitted=True,
         admission_reason=adm.reason,
-        created_claims=tuple(created),
-        supersession_edges=tuple(edges),
-        dropped_claims=tuple(dropped),
+        created_claims=result.created_claims,
+        supersession_edges=result.supersession_edges,
+        dropped_claims=result.dropped_claims,
     )
