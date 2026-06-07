@@ -82,3 +82,47 @@ def test_trust_status_cli(tmp_path):
     r = CliRunner().invoke(main, ["trust-status", "--db", db])
     assert r.exit_code == 0, r.output
     assert '"active_claims"' in r.output and '"source_trust"' in r.output
+
+
+_DAY_NS = 86_400 * 1_000_000_000
+
+
+def _age_active(conn, days):
+    import time
+    t = time.time_ns() - days * _DAY_NS
+    conn.execute(
+        "UPDATE claims SET created_ts=?, valid_from_ts=?, event_ts=NULL"
+        " WHERE status IN ('active','confirmed')", (t, t))
+
+
+def test_staleness_respects_stable_window():
+    conn = _conn()
+    _store(conn, "user", "hiking", "s1", "default")  # stable slot (no supersessions)
+
+    _age_active(conn, 100)  # 100d < 365d stable window -> fresh
+    assert handle_memory_trust_status(conn)["staleness"]["stale"] == 0
+
+    _age_active(conn, 400)  # 400d > 365d -> stale
+    st = handle_memory_trust_status(conn)
+    assert st["staleness"]["stale"] == 1 and st["staleness"]["stale_fraction"] == 1.0
+
+
+def test_staleness_window_is_shorter_for_volatile_slots():
+    conn = _conn()
+    _store(conn, "user", "current", "s1", "default")
+    active = conn.execute(
+        "SELECT claim_id, source_turn_id FROM claims WHERE status IN ('active','confirmed')"
+    ).fetchone()
+    # manufacture 3 supersessions on the (user, user_fact) slot -> volatile
+    for i in range(3):
+        conn.execute(
+            "INSERT INTO claims (claim_id, session_id, text, subject, predicate, value,"
+            " confidence, source_turn_id, status, created_ts)"
+            " VALUES (?, 's1', 'x', 'user', 'user_fact', ?, 0.9, ?, 'superseded', 1)",
+            (f"old{i}", f"v{i}", active["source_turn_id"]))
+        conn.execute(
+            "INSERT INTO supersession_edges (edge_id, old_claim_id, new_claim_id, edge_type, created_ts)"
+            " VALUES (?, ?, ?, 'semantic_replace', 1)", (f"e{i}", f"old{i}", active["claim_id"]))
+
+    _age_active(conn, 30)  # 30d > 14d volatile window -> stale (would be fresh if stable)
+    assert handle_memory_trust_status(conn)["staleness"]["stale"] == 1
