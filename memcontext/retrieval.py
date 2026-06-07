@@ -850,6 +850,7 @@ def retrieve_hybrid(
     include_superseded: bool = False,
     reranker: Callable[[str, list[str]], list[float]] | None = None,
     explain: dict[str, dict[str, float]] | None = None,
+    include_demoted: bool = False,
 ) -> list[tuple[Claim, float]]:
     """Multi-signal retrieval: semantic + entity + temporal + BM25 + importance via RRF.
 
@@ -919,7 +920,8 @@ def retrieve_hybrid(
 
     meta_rows = conn.execute(
         f"SELECT claim_id, entity_key, COALESCE(importance_score, 0.5) AS importance_score,"
-        f" COALESCE(access_count, 0) AS access_count"
+        f" COALESCE(access_count, 0) AS access_count,"
+        f" COALESCE(demoted, 0) AS demoted"
         f" FROM claim_metadata WHERE claim_id IN ({placeholders})", ids,
     ).fetchall()
     entity_by_id: dict[str, str] = {r["claim_id"]: r["entity_key"] for r in meta_rows}
@@ -929,6 +931,8 @@ def retrieve_hybrid(
     usage_by_id: dict[str, float] = {
         r["claim_id"]: float(r["access_count"]) for r in meta_rows
     }
+    # Utility-weighted retention: demoted claims leave active retrieval.
+    demoted_ids: set[str] = {r["claim_id"] for r in meta_rows if r["demoted"]}
 
     from memcontext.claims import _normalise_subject
     hint_norm = _normalise_subject(entity_hint) if entity_hint else ""
@@ -1026,6 +1030,8 @@ def retrieve_hybrid(
 
     fused: list[tuple[Claim, float]] = []
     for i, c in enumerate(active):
+        if c.claim_id in demoted_ids and not include_demoted:
+            continue
         contrib = {
             "semantic": w_sem / (RRF_K + sem_ranks[i]),
             "entity": w_ent / (RRF_K + ent_ranks[i]),

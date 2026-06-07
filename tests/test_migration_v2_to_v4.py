@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from memcontext.schema import open_database
+from memcontext.schema import SCHEMA_VERSION, open_database
 
 # A minimal v2-shaped database: legacy NOT NULL claims, no `text` column, plus
 # the five sidecars whose rows must survive the rebuild.
@@ -92,7 +92,7 @@ def test_v2_to_v4_upgrade_preserves_data_and_sidecars(tmp_path: Path):
     conn = open_database(path)
     try:
         # Reached v4.
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
 
         # Structured triple is now NULLABLE; the text column exists.
         info = {r[1]: r[3] for r in conn.execute("PRAGMA table_info(claims)")}
@@ -176,7 +176,7 @@ def test_fresh_db_is_born_at_v4_and_skips_rebuild(tmp_path: Path):
     path = str(tmp_path / "fresh.db")
     conn = open_database(path)
     try:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         info = {r[1]: r[3] for r in conn.execute("PRAGMA table_info(claims)")}
         assert info["subject"] == 0
         assert "text" in info

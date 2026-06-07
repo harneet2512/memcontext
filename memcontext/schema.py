@@ -391,7 +391,7 @@ CREATE INDEX IF NOT EXISTS idx_life_events_subject ON life_events(subject);
 
 # Bump when adding a migration step below. Existing databases upgrade forward
 # on open; fresh databases get every step applied once.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -537,6 +537,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 conn.execute(_col)
             except sqlite3.OperationalError:
                 pass  # column already present
+
+    if current < 6:
+        # v6: utility-weighted retention — a reversible 'demoted' flag. Low-utility,
+        # old claims are demoted OUT of active retrieval (provenance preserved, never
+        # hard-deleted), bounding the active set / token cost. A flag (not a status)
+        # avoids a claims-table rebuild against the status CHECK constraint.
+        try:
+            conn.execute(
+                "ALTER TABLE claim_metadata ADD COLUMN demoted INTEGER DEFAULT 0"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already present
 
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     log.debug("substrate.db_migrated", from_version=current, to_version=SCHEMA_VERSION)

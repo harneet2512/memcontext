@@ -584,6 +584,26 @@ def reindex_importance_cmd(db: str) -> None:
     conn.close()
 
 
+@main.command("prune-memory")
+@click.option("--db", default="memcontext.db", help="Database path")
+@click.option("--threshold", default=0.35, type=float,
+              help="Demote claims with utility below this (0-1)")
+@click.option("--min-age-days", default=30.0, type=float,
+              help="Only demote claims older than this many days")
+def prune_memory_cmd(db: str, threshold: float, min_age_days: float) -> None:
+    """Demote low-utility, old claims out of active retrieval (utility-weighted
+    retention). Reversible, never deletes — bounds the active set / token cost.
+    """
+    from memcontext.retention import demote_low_utility
+    from memcontext.schema import open_database
+
+    conn = open_database(db)
+    n = demote_low_utility(conn, threshold=threshold, min_age_days=min_age_days)
+    conn.commit()
+    click.echo(f"Demoted {n} low-utility claim(s) out of active retrieval.")
+    conn.close()
+
+
 def cli() -> None:
     """Console-script entry point: run the CLI, surfacing DB errors cleanly.
 

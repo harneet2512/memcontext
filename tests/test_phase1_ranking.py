@@ -10,7 +10,7 @@ import sqlite3
 from memcontext.extractors import PassthroughExtractor
 from memcontext.on_new_turn import on_new_turn
 from memcontext.retrieval import retrieve_hybrid
-from memcontext.schema import Speaker, open_database
+from memcontext.schema import SCHEMA_VERSION, Speaker, open_database
 
 
 def _conn():
@@ -73,7 +73,7 @@ def test_v5_usage_columns_exist():
     conn = _conn()
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(claim_metadata)").fetchall()}
     assert {"access_count", "last_accessed_ts"} <= cols
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
 
 
 def test_serving_a_fact_reinforces_usage_and_reports_tokens():
