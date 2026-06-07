@@ -315,7 +315,11 @@ turns ────┐
 
 ## Benchmark: LongMemEval-S
 
-**442/500 (88.4%)** on the predecessor system (RobbyMD).
+### Recorded — predecessor system (RobbyMD)
+
+The numbers below were measured on the **predecessor** system,
+[RobbyMD](https://github.com/harneet2512/RobbyMD), from which this substrate was
+extracted — **not** on the standalone `memcontext` package in this repo.
 
 Reader: GPT-5-mini | Judge: GPT-4o | Scoring: official [LongMemEval](https://github.com/xiaowu0162/LongMemEval) protocol
 
@@ -328,7 +332,17 @@ Reader: GPT-5-mini | Judge: GPT-4o | Scoring: official [LongMemEval](https://git
 | temporal-reasoning | 117/133 | 88.0% |
 | multi-session | 106/133 | 79.7% |
 | single-session-preference | 22/30 | 73.3% |
-| **Overall** | **442/500** | **88.4%** |
+| **Overall (RobbyMD)** | **442/500** | **88.4%** |
+
+### Reproduced — standalone MemContext (this repo)
+
+**Not yet independently benchmarked.** The extracted `memcontext` package is
+currently proven by a deterministic unit/behavioral test suite (zero model
+downloads in CI), not by a LongMemEval run. A faithful reproduction — extracting a
+LongMemEval slice through *this* engine and scoring it against simpler baselines —
+is pending, and will be reported here with the exact command, raw + task-averaged
+numbers, the subset, and the run artifact. **Until then, the 88.4% above is the
+predecessor's result, not this package's.**
 
 ---
 
