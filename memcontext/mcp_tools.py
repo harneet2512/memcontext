@@ -170,6 +170,20 @@ def handle_memory_query(
     # Usage reinforcement: the fact claims we served are now "accessed".
     bump_access(conn, [c["claim_id"] for c in claims_out])
 
+    # Surface the consolidation marker: a fact graduated from a cross-session
+    # recurring pattern is flagged durable, so the agent sees it isn't one-off.
+    if claims_out:
+        _cids = [c["claim_id"] for c in claims_out]
+        _ph = ",".join("?" for _ in _cids)
+        _consolidated = {
+            r[0] for r in conn.execute(
+                f"SELECT claim_id FROM claim_metadata"
+                f" WHERE consolidated = 1 AND claim_id IN ({_ph})", _cids,
+            ).fetchall()
+        }
+        for c in claims_out:
+            c["consolidated"] = c["claim_id"] in _consolidated
+
     # Token accounting (zero-LLM, ~chars/4) for what we serve, by source type.
     def _toks(text: str) -> int:
         return max(1, len(text or "") // 4)

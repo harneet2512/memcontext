@@ -26,7 +26,8 @@ def compute_utility(conn: sqlite3.Connection, claim_id: str) -> float:
     row = conn.execute(
         "SELECT c.confidence, c.created_ts,"
         " COALESCE(m.importance_score, 0.5) AS importance,"
-        " COALESCE(m.access_count, 0) AS access_count"
+        " COALESCE(m.access_count, 0) AS access_count,"
+        " m.last_accessed_ts AS last_accessed_ts"
         " FROM claims c LEFT JOIN claim_metadata m ON c.claim_id = m.claim_id"
         " WHERE c.claim_id = ?",
         (claim_id,),
@@ -37,7 +38,10 @@ def compute_utility(conn: sqlite3.Connection, claim_id: str) -> float:
     confidence = float(row["confidence"] or 0.0)
     access = float(row["access_count"])
     usage = access / (access + 3.0)  # saturating: 0 at 0, -> 1 as access grows
-    age_days = max(0.0, (time.time_ns() - int(row["created_ts"])) / _NS_PER_DAY)
+    # Recency from the most recent of creation / last access — a recently-served
+    # fact is "fresher" than its creation date alone (connects last_accessed_ts).
+    last_seen = max(int(row["created_ts"]), int(row["last_accessed_ts"] or 0))
+    age_days = max(0.0, (time.time_ns() - last_seen) / _NS_PER_DAY)
     recency = 1.0 / (1.0 + age_days / 90.0)  # decays over ~90 days
     return round(
         0.4 * importance + 0.3 * usage + 0.2 * recency + 0.1 * confidence, 4

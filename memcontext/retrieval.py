@@ -1407,6 +1407,11 @@ def retrieve_memory(
     if not query or not query.strip():
         return []
 
+    # Temporal truth, universally: a past-tense query ("what was X before") pulls in
+    # superseded facts for EVERY caller (cli query, MCP door), not just the door.
+    if not include_superseded:
+        include_superseded = detect_history_intent(query)
+
     facts = retrieve_hybrid(
         conn, session_id=session_id, query=query, top_k=top_k,
         embedding_client=embedding_client, explain=explain,
@@ -1743,6 +1748,18 @@ def retrieve_event_frames(
     return [(f, s) for s, f in scored[:top_k]]
 
 
+# --- Public reuse surface (Session 2 tool/activation track) ------------------
+# Generic, domain-agnostic IR primitives intentionally re-exported under public
+# names so the additive tool registry reuses the *exact* fusion arithmetic and
+# vector codec instead of forking a parallel retrieval stack. These are thin
+# aliases — no behavior, signatures, or memory internals change.
+rrf_ranks = _rrf_ranks
+bm25_over_docs = _bm25_over_docs
+tokenize_for_bm25 = _tokenize_for_bm25
+encode_vector = _encode_vector
+decode_vector = _decode_vector
+
+
 __all__ = [
     "BGE_M3_EMBED_DIM",
     "BGE_M3_MODEL_ID",
@@ -1754,12 +1771,17 @@ __all__ = [
     "RankedClaim",
     "backfill_embeddings",
     "backfill_event_frame_embeddings",
+    "bm25_over_docs",
     "claim_retrieval_text",
+    "decode_vector",
     "embed_and_store",
+    "encode_vector",
     "retrieve_event_frames",
     "retrieve_event_tuples",
     "retrieve_hybrid",
     "retrieve_relevant_claims",
     "retrieve_with_fallback",
+    "rrf_ranks",
     "search_raw_turns",
+    "tokenize_for_bm25",
 ]
