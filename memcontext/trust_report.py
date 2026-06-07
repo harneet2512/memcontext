@@ -8,6 +8,7 @@ tenant distribution (P5), and a cold-memory (staleness) proxy.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 
@@ -23,14 +24,22 @@ def trust_status(conn: sqlite3.Connection) -> dict:
     superseded = scalar("SELECT COUNT(*) FROM claims WHERE status = 'superseded'")
     total_claims = active + superseded
 
+    from memcontext.source_trust import QUARANTINE_THRESHOLD
+
     trusted = scalar("SELECT COUNT(*) FROM claim_metadata WHERE source_trust >= 0.7")
-    neutral = scalar("SELECT COUNT(*) FROM claim_metadata WHERE source_trust >= 0.4 AND source_trust < 0.7")
-    quarantined = scalar("SELECT COUNT(*) FROM claim_metadata WHERE source_trust < 0.4")
+    neutral = scalar(
+        "SELECT COUNT(*) FROM claim_metadata WHERE source_trust >= ? AND source_trust < 0.7",
+        QUARANTINE_THRESHOLD,
+    )
+    quarantined = scalar(
+        "SELECT COUNT(*) FROM claim_metadata WHERE source_trust < ?", QUARANTINE_THRESHOLD
+    )
     trust_total = trusted + neutral + quarantined
 
     total_edges = scalar("SELECT COUNT(*) FROM supersession_edges")
     contradictions = scalar(
-        "SELECT COUNT(*) FROM supersession_edges WHERE edge_type IN ('contradicts','dismissed_by_user')"
+        "SELECT COUNT(*) FROM supersession_edges"
+        " WHERE edge_type IN ('contradicts','dismissed_by_user')"
     )
 
     forget_actions = scalar("SELECT COUNT(*) FROM decisions WHERE kind = 'forget'")
@@ -39,10 +48,8 @@ def trust_status(conn: sqlite3.Connection) -> dict:
     for (snap,) in conn.execute(
         "SELECT claim_state_snapshot FROM decisions WHERE kind = 'forget'"
     ).fetchall():
-        try:
+        with contextlib.suppress(TypeError, json.JSONDecodeError):
             claims_erased += len(json.loads(snap))
-        except (TypeError, json.JSONDecodeError):
-            pass
 
     namespaces = {
         r[0]: int(r[1]) for r in conn.execute(

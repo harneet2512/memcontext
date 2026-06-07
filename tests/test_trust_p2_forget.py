@@ -140,3 +140,40 @@ def test_forget_redacts_shared_surviving_turn():
     assert "bob" in text and "tea" in text                # survivor intact
     assert "[redacted]" in text
     assert _count(conn, "SELECT COUNT(*) FROM claims WHERE subject='bob'") == 1
+
+
+def test_forget_drops_stale_episode_embedding_of_redacted_turn():
+    """LIPI: a redacted surviving turn's embedding still encoded the forgotten text."""
+    conn = _conn()
+    on_new_turn(
+        conn, session_id="s1", speaker=Speaker.USER,
+        text="alice likes coffee and bob likes tea",
+        extractor=PassthroughExtractor([
+            {"subject": "alice", "predicate": "user_fact", "value": "coffee", "confidence": 0.9},
+            {"subject": "bob", "predicate": "user_fact", "value": "tea", "confidence": 0.9},
+        ]),
+    )
+    tid = conn.execute("SELECT turn_id FROM turns").fetchone()["turn_id"]
+    # simulate the episode embedding of the ORIGINAL text (embeddings are off in CI)
+    conn.execute(
+        "INSERT INTO turn_embeddings (turn_id, embedding, embedding_model_version, embedded_at_unix)"
+        " VALUES (?, ?, 'test', 1)", (tid, b"\x00\x01"))
+
+    forget(conn, subject="alice")
+
+    assert _count(conn, "SELECT COUNT(*) FROM turns WHERE turn_id=?", tid) == 1  # turn survives
+    assert _count(conn, "SELECT COUNT(*) FROM turn_embeddings WHERE turn_id=?", tid) == 0  # stale vector gone
+
+
+def test_forget_invalidates_profile_cache():
+    """LIPI: the per-subject profile cache is a claim-derived summary that would
+    otherwise retain forgotten content."""
+    from memcontext.profiles import build_smart_profile, load_profile, store_profile
+
+    conn = _conn()
+    _ingest(conn, "alice", "coffee")
+    store_profile(conn, build_smart_profile(conn, "alice"))
+    assert load_profile(conn, "alice") is not None  # cached
+
+    forget(conn, subject="alice")
+    assert load_profile(conn, "alice") is None  # invalidated

@@ -52,10 +52,14 @@ def _resolve_targets(
         rows = conn.execute("SELECT claim_id FROM claims WHERE subject = ?", (subject,)).fetchall()
         return [r[0] for r in rows], ("subject", subject)
     if session_id:
-        rows = conn.execute("SELECT claim_id FROM claims WHERE session_id = ?", (session_id,)).fetchall()
+        rows = conn.execute(
+            "SELECT claim_id FROM claims WHERE session_id = ?", (session_id,)
+        ).fetchall()
         return [r[0] for r in rows], ("session", session_id)
     if predicate:
-        rows = conn.execute("SELECT claim_id FROM claims WHERE predicate = ?", (predicate,)).fetchall()
+        rows = conn.execute(
+            "SELECT claim_id FROM claims WHERE predicate = ?", (predicate,)
+        ).fetchall()
         return [r[0] for r in rows], ("predicate", predicate)
     return [], ("none", "")
 
@@ -159,6 +163,14 @@ def forget(
         for s in strings:
             text = re.sub(re.escape(s), "[redacted]", text, flags=re.IGNORECASE)
         conn.execute("UPDATE turns SET text = ? WHERE turn_id = ?", (text, tid))
+        # the stale episode embedding was computed from the ORIGINAL text and still
+        # encodes the forgotten content -> drop it (re-embedded on next backfill).
+        conn.execute("DELETE FROM turn_embeddings WHERE turn_id = ?", (tid,))
+
+    # invalidate the per-subject profile cache for every forgotten subject -- a built
+    # profile is a claim-derived summary that would otherwise retain forgotten content.
+    for _subj in {s.get("subject") for s in snapshot if s.get("subject")}:
+        conn.execute("DELETE FROM profiles WHERE subject = ?", (_subj,))
 
     log.info("substrate.forgotten", target_type=target_type, target_id=target_id,
              count=len(targets), decision_id=decision_id, reason=reason)
