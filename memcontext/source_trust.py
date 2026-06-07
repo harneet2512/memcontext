@@ -16,6 +16,10 @@ AGENT_INFERRED = 0.5    # the assistant inferred / derived it
 EXTERNAL_WEB = 0.35     # scraped from a browsed page (untrusted origin)
 DEFAULT = 0.5
 
+# Below this, a served claim is QUARANTINED — citable but not authoritative, so the
+# agent never silently acts on untrusted/poisoned memory (the spotlight defense).
+QUARANTINE_THRESHOLD = 0.4
+
 
 def trust_for_source(source_type: str | None, speaker: str | None) -> float:
     """Map an episode's origin (source_type + speaker) to a trust weight."""

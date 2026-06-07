@@ -170,19 +170,25 @@ def handle_memory_query(
     # Usage reinforcement: the fact claims we served are now "accessed".
     bump_access(conn, [c["claim_id"] for c in claims_out])
 
-    # Surface the consolidation marker: a fact graduated from a cross-session
-    # recurring pattern is flagged durable, so the agent sees it isn't one-off.
+    # Consolidation marker + source-trust spotlight: each served fact carries its
+    # trust and a 'quarantined' flag (low-trust origin -- citable, not authoritative),
+    # so the agent never silently acts on untrusted/poisoned memory.
     if claims_out:
+        from memcontext.source_trust import QUARANTINE_THRESHOLD
+
         _cids = [c["claim_id"] for c in claims_out]
         _ph = ",".join("?" for _ in _cids)
-        _consolidated = {
-            r[0] for r in conn.execute(
-                f"SELECT claim_id FROM claim_metadata"
-                f" WHERE consolidated = 1 AND claim_id IN ({_ph})", _cids,
+        _meta = {
+            r[0]: (bool(r[1]), float(r[2])) for r in conn.execute(
+                f"SELECT claim_id, consolidated, COALESCE(source_trust, 0.5)"
+                f" FROM claim_metadata WHERE claim_id IN ({_ph})", _cids,
             ).fetchall()
         }
         for c in claims_out:
-            c["consolidated"] = c["claim_id"] in _consolidated
+            cons, trust = _meta.get(c["claim_id"], (False, 0.5))
+            c["consolidated"] = cons
+            c["trust"] = round(trust, 3)
+            c["quarantined"] = trust < QUARANTINE_THRESHOLD
 
     # Token accounting (zero-LLM, ~chars/4) for what we serve, by source type.
     def _toks(text: str) -> int:

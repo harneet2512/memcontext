@@ -74,6 +74,33 @@ def _claim_trust(conn: sqlite3.Connection, claim_id: str) -> float:
     return float(row[0]) if row else 0.5
 
 
+def _record_drift_blocked(
+    conn: sqlite3.Connection, new_claim: Claim, old_claim: Claim, edge_type: EdgeType
+) -> None:
+    """Audit a blocked low-trust override (a belief-drift attempt) to `decisions`,
+    so it is countable for trust observability (P6)."""
+    import json
+    import time
+    import uuid
+
+    try:
+        conn.execute(
+            "INSERT INTO decisions (decision_id, session_id, kind, target_type,"
+            " target_id, claim_state_snapshot, ts)"
+            " VALUES (?, ?, 'drift_blocked', 'claim', ?, ?, ?)",
+            (f"dec_{uuid.uuid4().hex[:12]}", new_claim.session_id, old_claim.claim_id,
+             json.dumps({"attempted_claim_id": new_claim.claim_id,
+                         "new_value": new_claim.value, "old_value": old_claim.value,
+                         "edge_type": edge_type.value}),
+             time.time_ns()),
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    log.info("substrate.supersession_blocked_low_trust",
+             new_claim_id=new_claim.claim_id, old_claim_id=old_claim.claim_id,
+             edge_type=edge_type.value)
+
+
 def detect_pass1(
     conn: sqlite3.Connection,
     new_claim: Claim,
@@ -161,9 +188,7 @@ def detect_pass1(
     if edge_type in (EdgeType.USER_CORRECTION, EdgeType.CONTRADICTS) and (
         _claim_trust(conn, new_claim.claim_id) + 0.2 < _claim_trust(conn, old_claim.claim_id)
     ):
-        log.info("substrate.supersession_blocked_low_trust",
-                 new_claim_id=new_claim.claim_id, old_claim_id=old_claim.claim_id,
-                 edge_type=edge_type.value)
+        _record_drift_blocked(conn, new_claim, old_claim, edge_type)
         return None
 
     edge = write_supersession_edge(
