@@ -835,8 +835,12 @@ def retrieve_hybrid(
     embedding_client: EmbeddingClient | None = None,
     include_superseded: bool = False,
     reranker: Callable[[str, list[str]], list[float]] | None = None,
+    explain: dict[str, dict[str, float]] | None = None,
 ) -> list[tuple[Claim, float]]:
-    """Multi-signal retrieval: semantic + entity + temporal + BM25 via RRF.
+    """Multi-signal retrieval: semantic + entity + temporal + BM25 + importance via RRF.
+
+    Pass an empty ``explain`` dict to capture the per-signal RRF contribution for
+    every ranked claim (ranking observability); it is filled in place.
 
     If ``reranker`` is provided, the top results from RRF are re-scored by
     the reranker and re-sorted.  The callable signature is
@@ -900,9 +904,13 @@ def retrieve_hybrid(
         sem_scores.append(score)
 
     meta_rows = conn.execute(
-        f"SELECT claim_id, entity_key FROM claim_metadata WHERE claim_id IN ({placeholders})", ids,
+        f"SELECT claim_id, entity_key, COALESCE(importance_score, 0.5) AS importance_score"
+        f" FROM claim_metadata WHERE claim_id IN ({placeholders})", ids,
     ).fetchall()
     entity_by_id: dict[str, str] = {r["claim_id"]: r["entity_key"] for r in meta_rows}
+    importance_by_id: dict[str, float] = {
+        r["claim_id"]: float(r["importance_score"]) for r in meta_rows
+    }
 
     from memcontext.claims import _normalise_subject
     hint_norm = _normalise_subject(entity_hint) if entity_hint else ""
@@ -957,11 +965,15 @@ def retrieve_hybrid(
 
     conf_scores: list[float] = [c.confidence for c in active]
 
-    freq_counts: dict[tuple[str, str], int] = {}
+    freq_counts: dict[tuple[str | None, str | None], int] = {}
     for c in active:
         key = (c.subject, c.predicate)
         freq_counts[key] = freq_counts.get(key, 0) + 1
     freq_scores: list[float] = [float(freq_counts[(c.subject, c.predicate)]) for c in active]
+
+    # Importance: computed at ingest (importance.py) + stored in claim_metadata.
+    # Now a first-class ranking signal (previously read only by digests/profiles).
+    imp_scores: list[float] = [importance_by_id.get(c.claim_id, 0.5) for c in active]
 
     sem_ranks = _rrf_ranks(sem_scores)
     ent_ranks = _rrf_ranks(ent_scores)
@@ -971,6 +983,7 @@ def retrieve_hybrid(
     pred_ranks = _rrf_ranks(pred_scores)
     conf_ranks = _rrf_ranks(conf_scores)
     freq_ranks = _rrf_ranks(freq_scores)
+    imp_ranks = _rrf_ranks(imp_scores)
 
     w_sem = weights[0] if len(weights) > 0 else 1.0
     w_ent = weights[1] if len(weights) > 1 else 1.0
@@ -978,22 +991,28 @@ def retrieve_hybrid(
     w_bm25 = weights[3] if len(weights) > 3 else 0.0
     w_conf = 0.1
     w_freq = 0.1
+    w_imp = 0.15
 
     if not has_embeddings:
         w_sem = 0.0
 
     fused: list[tuple[Claim, float]] = []
     for i, c in enumerate(active):
-        fused_score = (
-            w_sem / (RRF_K + sem_ranks[i])
-            + w_ent / (RRF_K + ent_ranks[i])
-            + w_tmp / (RRF_K + tmp_ranks[i])
-            + w_bm25 / (RRF_K + bm25_ranks[i])
-            + w_scope / (RRF_K + scope_ranks[i])
-            + w_pred / (RRF_K + pred_ranks[i])
-            + w_conf / (RRF_K + conf_ranks[i])
-            + w_freq / (RRF_K + freq_ranks[i])
-        )
+        contrib = {
+            "semantic": w_sem / (RRF_K + sem_ranks[i]),
+            "entity": w_ent / (RRF_K + ent_ranks[i]),
+            "temporal": w_tmp / (RRF_K + tmp_ranks[i]),
+            "bm25": w_bm25 / (RRF_K + bm25_ranks[i]),
+            "scope": w_scope / (RRF_K + scope_ranks[i]),
+            "predicate": w_pred / (RRF_K + pred_ranks[i]),
+            "confidence": w_conf / (RRF_K + conf_ranks[i]),
+            "frequency": w_freq / (RRF_K + freq_ranks[i]),
+            "importance": w_imp / (RRF_K + imp_ranks[i]),
+        }
+        fused_score = sum(contrib.values())
+        if explain is not None:
+            contrib["final"] = fused_score
+            explain[c.claim_id] = contrib
         fused.append((c, fused_score))
 
     fused.sort(key=lambda x: (-x[1], x[0].claim_id))
