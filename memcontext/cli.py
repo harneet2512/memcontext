@@ -650,6 +650,22 @@ def working_context_cmd(db: str, session: str, token_budget: int) -> None:
     conn.close()
 
 
+@main.command("procedures")
+@click.option("--db", default="memcontext.db", help="Database path")
+@click.option("--min-sessions", default=2, type=int,
+              help="Minimum distinct sessions for a sequence to count as a procedure")
+def procedures_cmd(db: str, min_sessions: int) -> None:
+    """Detect recurring procedures across sessions (EXPERIMENTAL; enable with
+    MEMCONTEXT_EXPERIMENTAL_PROCEDURAL=1).
+    """
+    from memcontext.mcp_tools import handle_memory_procedures
+    from memcontext.schema import open_database
+
+    conn = open_database(db)
+    click.echo(json.dumps(handle_memory_procedures(conn, min_sessions=min_sessions)))
+    conn.close()
+
+
 def cli() -> None:
     """Console-script entry point: run the CLI, surfacing DB errors cleanly.
 

@@ -245,6 +245,33 @@ def handle_memory_working_context(
     }
 
 
+def handle_memory_procedures(
+    conn: sqlite3.Connection,
+    *,
+    min_sessions: int = 2,
+) -> dict:
+    """Recurring procedures across sessions (EXPERIMENTAL; off unless the flag is
+    set). Surfaces detected ordered action sequences + their provenance."""
+    from memcontext.procedural import (
+        EXPERIMENTAL_FLAG,
+        detect_procedures,
+        procedural_enabled,
+    )
+
+    if not procedural_enabled():
+        return {"enabled": False, "procedures": [],
+                "note": f"experimental; set {EXPERIMENTAL_FLAG}=1 to enable"}
+    procs = detect_procedures(conn, min_sessions=min_sessions)
+    return {
+        "enabled": True,
+        "procedures": [
+            {"trigger": p.trigger, "steps": list(p.steps), "recurrence": p.recurrence,
+             "sessions": p.sessions, "source_claim_ids": p.source_claim_ids}
+            for p in procs
+        ],
+    }
+
+
 def handle_memory_profile(
     conn: sqlite3.Connection,
     *,
