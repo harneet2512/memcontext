@@ -25,7 +25,6 @@ def test_open_database_memory():
         "turns",
         "claims",
         "supersession_edges",
-        "decisions",
         "output_sentences",
         "claim_embeddings",
         "turn_embeddings",
