@@ -730,6 +730,20 @@ _QUERY_PREDICATE_MAP: list[tuple[tuple[str, ...], set[str], str]] = [
 ]
 
 
+_HISTORY_INTENT = _re.compile(
+    r"\b(before|previously|used to|use to|formerly|former|earlier|prior|"
+    r"originally|in the past|history of|no longer)\b"
+)
+
+
+def detect_history_intent(query: str) -> bool:
+    """True when a query asks about PAST/superseded state rather than the current
+    value, so retrieval should include superseded facts (temporal history mode).
+    Deterministic, zero-LLM.
+    """
+    return bool(_HISTORY_INTENT.search(query.lower()))
+
+
 def classify_query_predicates(query: str) -> tuple[set[str], str]:
     """Map a query to target predicate families and a query type label.
 
@@ -1001,6 +1015,11 @@ def retrieve_hybrid(
     w_freq = 0.1
     w_imp = 0.15
     w_usage = 0.1
+
+    # Freshness: knowledge-update / temporal queries ask for the CURRENT value, so
+    # weight recency (the temporal channel) higher — the latest active fact wins.
+    if _query_type in ("knowledge_update", "temporal"):
+        w_tmp *= 3.0
 
     if not has_embeddings:
         w_sem = 0.0
@@ -1352,6 +1371,7 @@ def retrieve_memory(
     top_k: int = DEFAULT_TOP_K,
     embedding_client: EmbeddingClient | None = None,
     explain: dict[str, dict[str, float]] | None = None,
+    include_superseded: bool = False,
 ) -> list[tuple[MemoryHit, float]]:
     """Unified Tier-1 + Tier-2 retrieval: facts AND episodes, source-tagged.
 
@@ -1367,6 +1387,7 @@ def retrieve_memory(
     facts = retrieve_hybrid(
         conn, session_id=session_id, query=query, top_k=top_k,
         embedding_client=embedding_client, explain=explain,
+        include_superseded=include_superseded,
     )
     episodes = retrieve_episodes(
         conn, session_id=session_id, query=query, top_k=top_k,
@@ -1383,6 +1404,7 @@ def retrieve_memory_across(
     top_k: int = DEFAULT_TOP_K,
     embedding_client: EmbeddingClient | None = None,
     explain: dict[str, dict[str, float]] | None = None,
+    include_superseded: bool = False,
 ) -> list[tuple[MemoryHit, float]]:
     """Unified retrieval across MANY sessions — fuse per-session rankings by RANK.
 
@@ -1412,6 +1434,7 @@ def retrieve_memory_across(
         fused.extend(retrieve_memory(
             conn, session_id=sid, query=query, top_k=top_k,
             embedding_client=embedding_client, explain=explain,
+            include_superseded=include_superseded,
         ))
     # Same tie-break as the within-session fusion: score desc, facts before
     # episodes on an exact tie, then id for determinism.

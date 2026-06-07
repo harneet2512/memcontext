@@ -99,11 +99,15 @@ def handle_memory_query(
         bump_access,
         classify_query_depth,
         classify_query_predicates,
+        detect_history_intent,
         retrieve_memory,
         retrieve_memory_across,
     )
 
     explain: dict[str, dict[str, float]] | None = {} if debug else None
+    # Temporal truth: a query about the PAST ("what was X before") surfaces
+    # superseded facts; otherwise only current (active) facts are served.
+    history = detect_history_intent(query)
     _, query_type = classify_query_predicates(query)
     if top_k == 10:
         _, top_k = classify_query_depth(query)
@@ -112,6 +116,7 @@ def handle_memory_query(
     if session_id:
         hits = retrieve_memory(
             conn, session_id=session_id, query=query, top_k=top_k, explain=explain,
+            include_superseded=history,
         )
         total = len(list_active_claims(conn, session_id))
     else:
@@ -123,6 +128,7 @@ def handle_memory_query(
             return {"claims": [], "episodes": [], "total": 0}
         hits = retrieve_memory_across(
             conn, session_ids=sids, query=query, top_k=top_k, explain=explain,
+            include_superseded=history,
         )
         total = conn.execute(
             "SELECT COUNT(*) FROM claims"
