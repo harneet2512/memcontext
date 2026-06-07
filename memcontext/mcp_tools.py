@@ -56,10 +56,10 @@ def handle_memory_store(
         ext = extractor or auto_extractor()
         q = queue
 
-    from memcontext.retrieval import episode_embedder
+    from memcontext.retrieval import episode_embedder, semantic_supersession
     result = on_new_turn(
         conn, session_id=sid, speaker=sp, text=text, extractor=ext,
-        queue=q, embedder=episode_embedder(),
+        queue=q, embedder=episode_embedder(), semantic=semantic_supersession(),
     )
 
     if entities and result.created_claims:

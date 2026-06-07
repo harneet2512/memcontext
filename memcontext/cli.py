@@ -76,14 +76,14 @@ def ingest(text: str, db: str, session: str, speaker: str) -> None:
     conn = open_database(db)
 
     from memcontext.extractors import auto_extractor
-    from memcontext.retrieval import episode_embedder
+    from memcontext.retrieval import episode_embedder, semantic_supersession
 
     extractor = auto_extractor()
 
     sp = Speaker.USER if speaker == "user" else Speaker.ASSISTANT
     result = on_new_turn(
         conn, session_id=session, speaker=sp, text=text, extractor=extractor,
-        embedder=episode_embedder(),
+        embedder=episode_embedder(), semantic=semantic_supersession(),
     )
 
     if not result.admitted:

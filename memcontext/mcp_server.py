@@ -65,7 +65,10 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
     store_queue = None
     if db_path != ":memory:" and getattr(store_extractor, "is_deferrable", False):
         from memcontext.extraction_queue import ThreadedQueue
-        store_queue = ThreadedQueue(db_path, extractor=store_extractor)
+        from memcontext.retrieval import semantic_supersession
+        store_queue = ThreadedQueue(
+            db_path, extractor=store_extractor, semantic=semantic_supersession()
+        )
 
     server = Server("memcontext")
 
@@ -462,7 +465,10 @@ def create_http_app(db_path: str = "memcontext.db"):
     store_queue = None
     if db_path != ":memory:" and getattr(store_extractor, "is_deferrable", False):
         from memcontext.extraction_queue import ThreadedQueue
-        store_queue = ThreadedQueue(db_path, extractor=store_extractor)
+        from memcontext.retrieval import semantic_supersession
+        store_queue = ThreadedQueue(
+            db_path, extractor=store_extractor, semantic=semantic_supersession()
+        )
 
     def _build_server():
         """Create a fresh MCP Server instance with all tools registered."""

@@ -205,6 +205,19 @@ def episode_embedder() -> EmbeddingClient | None:
     return _default_embedding_client()
 
 
+def semantic_supersession():
+    """Pass-2 semantic supersession for the production ingest path, reusing the
+    episode embedder. Returns None when no real embedder is configured —
+    NullEmbedder's cosine is always 1.0, so wiring it would supersede everything.
+    Active only when episode embeddings are on (a real model is loaded).
+    """
+    emb = episode_embedder()
+    if emb is None:
+        return None
+    from memcontext.supersession_semantic import SemanticSupersession
+    return SemanticSupersession(emb)
+
+
 # --- blob encoding -----------------------------------------------------------
 
 
