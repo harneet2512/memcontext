@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "memcontext"
-version = "0.1.0"
-description = "Domain-agnostic memory and context substrate — claim lifecycle, supersession, projections, retrieval"
+version = "0.2.0"
+description = "Domain-agnostic memory and context substrate — claim lifecycle, supersession, projections, retrieval, trust & governance"
 requires-python = ">=3.11"
-license = "MIT"
+license = "AGPL-3.0-or-later"
 dependencies = [
     "structlog>=24.0",
     "click>=8.0",
