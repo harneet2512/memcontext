@@ -741,6 +741,20 @@ def forget_cmd(db, claim_id, subject, session, predicate, reason):
     conn.close()
 
 
+@main.command("trust-status")
+@click.option("--db", default="memcontext.db", help="Database path")
+def trust_status_cmd(db):
+    """Trust/governance observability: source-trust distribution, contradiction
+    rate, forgetting + drift audit, tenant distribution, and a staleness proxy.
+    Measures whether the trust layer is working, not just recall."""
+    from memcontext.schema import open_database
+    from memcontext.trust_report import trust_status
+
+    conn = open_database(db)
+    click.echo(json.dumps(trust_status(conn), indent=2))
+    conn.close()
+
+
 def cli() -> None:
     """Console-script entry point: run the CLI, surfacing DB errors cleanly.
 

@@ -361,6 +361,15 @@ def handle_memory_forget(
                   session_id=session_id, predicate=predicate, reason=reason)
 
 
+def handle_memory_trust_status(conn: sqlite3.Connection) -> dict:
+    """Trust observability: source-trust distribution, contradiction rate, forgetting
+    + drift audit, tenant distribution, and a staleness proxy. Measures whether the
+    trust/governance layer is working, not just recall."""
+    from memcontext.trust_report import trust_status
+
+    return trust_status(conn)
+
+
 def handle_memory_profile(
     conn: sqlite3.Connection,
     *,

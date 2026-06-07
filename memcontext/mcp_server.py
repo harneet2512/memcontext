@@ -55,6 +55,7 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
         handle_memory_procedures,
         handle_memory_output_provenance,
         handle_memory_forget,
+        handle_memory_trust_status,
     )
 
     conn = open_database(db_path)
@@ -360,6 +361,11 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
                 },
             ),
             Tool(
+                name="memory_trust_status",
+                description="Trust observability: source-trust distribution, contradiction rate, forgetting + drift audit, tenant distribution, staleness proxy. Measures the trust layer, not recall.",
+                inputSchema={"type": "object", "properties": {}},
+            ),
+            Tool(
                 name="memory_tuples",
                 description="Project a session's active facts into event tuples (subject, action, object, validity window). Pure read projection, zero-LLM.",
                 inputSchema={
@@ -426,6 +432,8 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
                 result = handle_memory_output_provenance(conn, **arguments)
             elif name == "memory_forget":
                 result = handle_memory_forget(conn, **arguments)
+            elif name == "memory_trust_status":
+                result = handle_memory_trust_status(conn, **arguments)
             elif name == "memory_tuples":
                 result = handle_memory_tuples(conn, **arguments)
             elif name == "memory_entity_graph":
@@ -490,6 +498,7 @@ def create_http_app(db_path: str = "memcontext.db"):
         handle_memory_procedures,
         handle_memory_output_provenance,
         handle_memory_forget,
+        handle_memory_trust_status,
     )
     from memcontext.schema import open_database
 
@@ -545,6 +554,8 @@ def create_http_app(db_path: str = "memcontext.db"):
                      inputSchema={"type":"object","properties":{"session_id":{"type":"string"},"record":{"type":"array"},"claim_id":{"type":"string"},"turn_id":{"type":"string"},"sentence_id":{"type":"string"}}}),
                 Tool(name="memory_forget", description="Right-to-be-forgotten: hard-delete memory + cascade (no residual), audited. One of claim_id/subject/session_id/predicate.",
                      inputSchema={"type":"object","properties":{"claim_id":{"type":"string"},"subject":{"type":"string"},"session_id":{"type":"string"},"predicate":{"type":"string"},"reason":{"type":"string"}}}),
+                Tool(name="memory_trust_status", description="Trust observability: source-trust distribution, contradiction rate, forgetting + drift audit, tenant distribution, staleness proxy.",
+                     inputSchema={"type":"object","properties":{}}),
                 Tool(name="memory_tuples", description="Project a session's active facts into event tuples (subject, action, object, validity).",
                      inputSchema={"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"]}),
                 Tool(name="memory_entity_graph", description="Co-occurrence neighbors of an entity within a session's claim graph.",
@@ -590,6 +601,8 @@ def create_http_app(db_path: str = "memcontext.db"):
                     result = handle_memory_output_provenance(conn, **arguments)
                 elif name == "memory_forget":
                     result = handle_memory_forget(conn, **arguments)
+                elif name == "memory_trust_status":
+                    result = handle_memory_trust_status(conn, **arguments)
                 elif name == "memory_tuples":
                     result = handle_memory_tuples(conn, **arguments)
                 elif name == "memory_entity_graph":
