@@ -387,30 +387,6 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
                     "required": ["session_id", "entity"],
                 },
             ),
-            Tool(
-                name="tool_discover",
-                description=(
-                    "Curate the agent's tool set: return the top-K most relevant tools "
-                    "from the registry for a query, instead of exposing the whole "
-                    "toolset (cuts prompt bloat, sharpens selection). Query-only by "
-                    "default; set use_memory=true to also condition on the user's "
-                    "memory. The agent still chooses the tool."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "The task/query to find tools for"},
-                        "session_ids": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Memory sessions to condition on (use_memory only)",
-                        },
-                        "top_k": {"type": "integer", "default": 10},
-                        "use_memory": {"type": "boolean", "default": False},
-                    },
-                    "required": ["query"],
-                },
-            ),
         ]
 
     @server.call_tool()
@@ -462,10 +438,6 @@ def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> N
                 result = handle_memory_tuples(conn, **arguments)
             elif name == "memory_entity_graph":
                 result = handle_memory_entity_graph(conn, **arguments)
-            elif name == "tool_discover":
-                from memcontext.mcp_tools import handle_tool_discover
-
-                result = handle_tool_discover(conn, **arguments)
             else:
                 result = {"error": f"Unknown tool: {name}"}
         except Exception as exc:  # malformed/hostile input or handler error
