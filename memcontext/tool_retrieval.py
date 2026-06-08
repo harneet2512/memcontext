@@ -143,6 +143,122 @@ def build_memory_conditioning(
     )
 
 
+def build_structured_conditioning(
+    conn: sqlite3.Connection,
+    *,
+    session_id: str,
+    embedder: EmbeddingClient | Embedder | None = None,
+    max_terms: int = _MAX_MEMORY_TERMS,
+    weight: float = 1.0,
+) -> MemoryConditioning:
+    """Condition on the substrate's STRUCTURED world-state — not retrieved text.
+
+    This is the real memory<->tool integration. It reads the user's *current*
+    claims (``list_active_claims`` — supersession-aware, deduped), their extracted
+    entities (``claim_entities``), and importance weights (``claim_metadata``),
+    and distils importance-ranked terms from claim **values + entities** (the
+    substrate's curated model of who the user is and what domains/tools they
+    work with). It deliberately does NOT use raw conversational/episode text and
+    is independent of lexical similarity to the current query — so it biases the
+    tool set toward the user's actual domains, not toward query-similar noise.
+    Zero LLM.
+    """
+    from memcontext.claims import list_active_claims
+
+    claims = list_active_claims(conn, session_id)
+    if not claims:
+        return MemoryConditioning((), (), "", None, weight, ())
+    ids = [c.claim_id for c in claims]
+    ph = ",".join("?" * len(ids))
+    importance: dict[str, float] = {
+        r["claim_id"]: float(r["imp"])
+        for r in conn.execute(
+            f"SELECT claim_id, COALESCE(importance_score, 0.5) AS imp"
+            f" FROM claim_metadata WHERE claim_id IN ({ph})",
+            ids,
+        ).fetchall()
+    }
+    entities: dict[str, list[str]] = {}
+    for r in conn.execute(
+        f"SELECT claim_id, entity_text FROM claim_entities WHERE claim_id IN ({ph})", ids
+    ).fetchall():
+        entities.setdefault(r["claim_id"], []).append(r["entity_text"])
+
+    # term -> max importance across the claims that produced it (current truth only).
+    scored: dict[str, float] = {}
+    summary: list[str] = []
+    for c in claims:
+        w = importance.get(c.claim_id, 0.5)
+        struct_text = " ".join(
+            x for x in (c.value, c.value_normalised, *entities.get(c.claim_id, [])) if x
+        )
+        summary.append(struct_text or (c.text or ""))
+        for tok in tokenize_for_bm25(struct_text):
+            if tok in _STOPWORDS or len(tok) <= 1:
+                continue
+            scored[tok] = max(scored.get(tok, 0.0), w)
+    terms = tuple(t for t, _ in sorted(scored.items(), key=lambda kv: (-kv[1], kv[0]))[:max_terms])
+    memory_text = " ".join(summary)
+    memory_embedding = (
+        embedder.embed([memory_text])[0] if embedder is not None and memory_text.strip() else None
+    )
+    return MemoryConditioning(
+        query_terms=terms,
+        boost_terms=terms,
+        memory_text=memory_text,
+        memory_embedding=memory_embedding,
+        weight=weight,
+        provenance=tuple(ids),
+    )
+
+
+def build_memory_instruction(
+    conn: sqlite3.Connection, *, session_id: str, max_chars: int = 600
+) -> str:
+    """Deterministically synthesize an instruction from the user's structured memory.
+
+    The research-backed lever for tool retrieval is the *instruction-augmented
+    query* (ToolRet): prepend contextual guidance and let the retriever use it.
+    ToolRet generates that instruction with GPT-4o; MemContext generates it
+    **deterministically and provenance-backed** from the substrate's current
+    claims (``list_active_claims`` — supersession-aware) — zero LLM. Preferences
+    are surfaced first, then facts, importance-ordered, deduped.
+
+    Returns "" when there is no memory (caller falls back to query-only).
+    """
+    from memcontext.claims import list_active_claims
+
+    claims = list_active_claims(conn, session_id)
+    if not claims:
+        return ""
+    ids = [c.claim_id for c in claims]
+    ph = ",".join("?" * len(ids))
+    importance: dict[str, float] = {
+        r["claim_id"]: float(r["imp"])
+        for r in conn.execute(
+            f"SELECT claim_id, COALESCE(importance_score, 0.5) AS imp"
+            f" FROM claim_metadata WHERE claim_id IN ({ph})",
+            ids,
+        ).fetchall()
+    }
+    # Preferences before facts; then by importance desc; dedupe values.
+    def _key(c: object) -> tuple[int, float]:
+        pred = getattr(c, "predicate", "") or ""
+        return (0 if "preference" in pred else 1, -importance.get(getattr(c, "claim_id", ""), 0.5))
+
+    seen: set[str] = set()
+    parts: list[str] = []
+    for c in sorted(claims, key=_key):
+        val = (c.value or c.text or "").strip()
+        if val and val.lower() not in seen:
+            seen.add(val.lower())
+            parts.append(val)
+    if not parts:
+        return ""
+    instruction = "User context: " + "; ".join(parts) + "."
+    return instruction[:max_chars]
+
+
 def conditioning_from_facts(
     facts: Sequence[str],
     *,

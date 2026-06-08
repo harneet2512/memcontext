@@ -26,7 +26,12 @@ from dataclasses import dataclass
 from memcontext.retrieval import EmbeddingClient
 from memcontext.supersession_semantic import Embedder
 from memcontext.tool_registry import build_tool_index, load_candidates
-from memcontext.tool_retrieval import build_memory_conditioning, retrieve_tools
+from memcontext.tool_retrieval import (
+    build_memory_conditioning,
+    build_memory_instruction,
+    build_structured_conditioning,
+    retrieve_tools,
+)
 
 EmbedderLike = EmbeddingClient | Embedder
 
@@ -49,6 +54,7 @@ def discover_tools(
     session_ids: Sequence[str] = (),
     top_k: int = 10,
     use_memory: bool = False,
+    memory_mode: str = "instruction",
     embedder: EmbedderLike | None = None,
     memory_top_k: int = 10,
     source: str | None = None,
@@ -56,32 +62,47 @@ def discover_tools(
 ) -> list[DiscoveredTool]:
     """Return the top-K registry tools for ``query``, ranked.
 
-    ``use_memory=True`` conditions ranking on the user's memory via the Session-1
-    public surface (``retrieve_memory_across``) — the substrate is exercised, not
-    bypassed. ``embedder=None`` runs BM25-only (no model load); pass the substrate
-    embedder for the semantic channel.
+    ``use_memory=True`` conditions ranking on the user's memory. Modes:
+    * ``"instruction"`` (default, research-backed) — prepend a **deterministic
+      instruction** synthesized from the substrate's structured memory
+      (``build_memory_instruction``) to the query, then retrieve query-only over
+      the augmented query. This is ToolRet's proven instruction-augmentation lever,
+      with a zero-LLM, provenance-backed instruction. Benefits most from an
+      instruction-tuned retriever (set ``MEMCONTEXT_EMBED_MODEL``).
+    * ``"structured"`` — additive RRF channels from structured claims.
+    * ``"text"`` — legacy: query-retrieved memory text channels (weakest).
+    ``embedder=None`` runs BM25-only; pass the substrate embedder for semantics.
     """
     candidates = load_candidates(conn, source=source, source_dataset=source_dataset)
     if not candidates:
         return []
     index = build_tool_index(candidates)
-    query_embedding = embedder.embed([query])[0] if embedder is not None else None
 
+    effective_query = query
     conditioning = None
     memory_used = False
     if use_memory and session_ids:
-        conditioning = build_memory_conditioning(
-            conn,
-            session_ids=list(session_ids),
-            query=query,
-            embedder=embedder,
-            top_k=memory_top_k,
-        )
-        memory_used = not conditioning.is_empty
+        if memory_mode == "instruction":
+            instruction = build_memory_instruction(conn, session_id=session_ids[0])
+            if instruction:
+                effective_query = f"{instruction}\n{query}"
+                memory_used = True
+        elif memory_mode == "structured":
+            conditioning = build_structured_conditioning(
+                conn, session_id=session_ids[0], embedder=embedder
+            )
+            memory_used = not conditioning.is_empty
+        else:
+            conditioning = build_memory_conditioning(
+                conn, session_ids=list(session_ids), query=query,
+                embedder=embedder, top_k=memory_top_k,
+            )
+            memory_used = not conditioning.is_empty
 
+    query_embedding = embedder.embed([effective_query])[0] if embedder is not None else None
     results = retrieve_tools(
         candidates,
-        query=query,
+        query=effective_query,
         query_embedding=query_embedding,
         conditioning=conditioning,
         top_k=top_k,
