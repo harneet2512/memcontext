@@ -24,17 +24,19 @@ log = structlog.get_logger(__name__)
 
 
 def session_briefing(
-    conn: sqlite3.Connection, *, subject: str = "user", max_tokens: int = 400
+    conn: sqlite3.Connection, *, subject: str = "user", max_tokens: int = 400,
+    namespace: str | None = None,
 ) -> str | None:
     """A compact, CURRENT profile briefing for a subject (fresh build).
 
     Returns the formatted profile text, or None if there's nothing to brief or the
-    build fails — a briefing must never break the query that asked for it.
+    build fails — a briefing must never break the query that asked for it. When
+    ``namespace`` is given the profile is scoped to that tenant (no cross-namespace leak).
     """
     try:
         from memcontext.profiles import build_smart_profile, format_profile
 
-        profile = build_smart_profile(conn, subject, max_tokens=max_tokens)
+        profile = build_smart_profile(conn, subject, max_tokens=max_tokens, namespace=namespace)
         text = format_profile(profile)
         return text or None
     except Exception:  # noqa: BLE001 — briefing is best-effort, never fatal
@@ -85,6 +87,10 @@ class ContextBriefing:
     # with the MCP query door: a library caller must get the same safety surface so it
     # never acts on low-trust / poisoned memory unknowingly.
     fact_trust: dict
+    # episodic layer: assembled multi-slot event frames (purchases/trips/...) ranked by
+    # query when embeddings exist, else most-recent; and detected life-event bursts.
+    events: tuple[Any, ...]
+    life_events: tuple[Any, ...]
 
 
 def _load_digest_dict(conn: sqlite3.Connection, session_id: str) -> dict | None:
@@ -124,6 +130,65 @@ def _trust_map(conn: sqlite3.Connection, claim_ids: list[str]) -> dict:
     return out
 
 
+def _frame_to_dict(f: Any) -> dict:
+    return {"event_type": f.event_type, "item": f.item, "location": f.location,
+            "time": f.time_expr, "amount": f.amount, "participants": list(f.participants),
+            "missing_slots": list(f.missing_slots), "confidence": f.confidence,
+            "supporting_claim_ids": list(f.supporting_claim_ids)}
+
+
+def serve_event_frames(
+    conn: sqlite3.Connection, *, session_id: str, query: str = "",
+    embedding_client: Any | None = None, top_k: int = 8,
+) -> list[dict]:
+    """Event frames for the session — ranked by query when embeddings exist, else all.
+
+    Gives the dead `retrieve_event_frames` a real caller; falls back to the full list
+    in lexical-only mode (no frame embeddings). Best-effort.
+    """
+    try:
+        from memcontext.event_frames import list_event_frames
+        from memcontext.retrieval import retrieve_event_frames
+
+        if query and query.strip():
+            ranked = retrieve_event_frames(conn, session_id=session_id, query=query,
+                                           top_k=top_k, embedding_client=embedding_client)
+            if ranked:
+                return [_frame_to_dict(f) for f, _ in ranked]
+        return [_frame_to_dict(f) for f in list_event_frames(conn, session_id)[:top_k]]
+    except Exception:  # noqa: BLE001 — episodic layer is additive, never fatal
+        return []
+
+
+def serve_life_events(
+    conn: sqlite3.Connection, *, subject: str = "user", limit: int = 5,
+    namespace: str | None = None,
+) -> list[dict]:
+    """Detected life-event bursts for a subject, most significant first. Best-effort.
+
+    When ``namespace`` is given, RE-DETECT scoped to that tenant rather than reading
+    the global ``life_events`` cache (which is subject-keyed, not namespace-keyed) —
+    so one tenant's briefing never surfaces another tenant's life events.
+    """
+    try:
+        if namespace is not None:
+            from memcontext.life_events import detect_life_events
+
+            evs = detect_life_events(conn, subject, namespace=namespace)
+            evs.sort(key=lambda e: (-e.significance, -e.timestamp_start))
+            return [{"summary": e.summary_text, "significance": e.significance,
+                     "predicates": list(e.predicates_affected)} for e in evs[:limit]]
+        rows = conn.execute(
+            "SELECT summary_text, significance, predicates_affected FROM life_events"
+            " WHERE subject = ? ORDER BY significance DESC, timestamp_start DESC LIMIT ?",
+            (subject, limit),
+        ).fetchall()
+        return [{"summary": r[0], "significance": r[1],
+                 "predicates": (r[2] or "").split(",") if r[2] else []} for r in rows]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def build_context_briefing(
     conn: sqlite3.Connection,
     *,
@@ -132,6 +197,7 @@ def build_context_briefing(
     subject: str = "user",
     top_k: int = 10,
     embedding_client: Any | None = None,
+    namespace: str | None = None,
 ) -> ContextBriefing:
     """One call → resolved world-state + briefing + digest + hits + provenance + trust.
 
@@ -139,12 +205,16 @@ def build_context_briefing(
     that used to be reachable only via separate tools (brain, profile, digest,
     retrieve_memory, provenance, trust) so a caller gets resolved current memory —
     WITH its safety surface — in one shot. Deterministic, zero-LLM.
+
+    Pass ``namespace`` in a multi-tenant deployment so the subject-keyed profile and
+    life-events are scoped to that tenant (world-state/hits/events are already
+    session-scoped). Leave it None for a single-tenant personal brain.
     """
     from memcontext.provenance import explain_claim
     from memcontext.retrieval import retrieve_memory
 
     world_state = brain(conn, session_id=session_id)
-    briefing = session_briefing(conn, subject=subject)
+    briefing = session_briefing(conn, subject=subject, namespace=namespace)
     entity_links = resolved_entity_links(conn, session_id)
     digest = _load_digest_dict(conn, session_id)
 
@@ -165,6 +235,10 @@ def build_context_briefing(
                 if ex is not None:
                     why[hit.id] = ex
 
+    events = tuple(serve_event_frames(
+        conn, session_id=session_id, query=query, embedding_client=embedding_client))
+    life_events = tuple(serve_life_events(conn, subject=subject, namespace=namespace))
+
     return ContextBriefing(
         session_id=session_id,
         world_state=world_state,
@@ -174,4 +248,6 @@ def build_context_briefing(
         entity_links=entity_links,
         digest=digest,
         fact_trust=fact_trust,
+        events=events,
+        life_events=life_events,
     )

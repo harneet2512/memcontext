@@ -253,6 +253,23 @@ def run_extraction(
             from memcontext.digests import build_session_digest, store_digest
             store_digest(conn, build_session_digest(conn, session_id))
 
+            # Episodic layer: assemble multi-slot event frames (purchases, trips,
+            # appointments, named artifacts...) and detect life-event bursts. Both are
+            # deterministic and were previously ONLY built via their MCP tools, so the
+            # episodic memory layer was dormant in any live deployment. assemble is
+            # idempotent (clears the session first); life_events are cleared by subject
+            # before re-detect (random ids). Frame embeddings backfill only when a real
+            # embedder is configured — lexical-only mode still assembles + serves frames.
+            from memcontext.event_frames import assemble_event_frames
+            from memcontext.life_events import detect_life_events, store_life_events
+            assemble_event_frames(conn, session_id)
+            conn.execute("DELETE FROM life_events WHERE subject = ?", ("user",))
+            store_life_events(conn, detect_life_events(conn, "user"))
+            from memcontext.retrieval import backfill_event_frame_embeddings, episode_embedder
+            _emb = episode_embedder()
+            if _emb is not None:
+                backfill_event_frame_embeddings(conn, session_id, client=_emb)
+
         # Cross-session consolidation — graduate facts that recur across >= 3 distinct
         # sessions into durable 'consolidated' facts. Previously this ran ONLY via the
         # manual `memcontext consolidate` CLI, so it never happened in a live deployment;

@@ -256,15 +256,29 @@ def handle_memory_query(
     if include_resolved and session_id:
         try:
             from memcontext.brain import brain
-            from memcontext.serving import resolved_entity_links, session_briefing
+            from memcontext.serving import (
+                resolved_entity_links,
+                serve_event_frames,
+                serve_life_events,
+                session_briefing,
+            )
 
             result["world_state"] = brain(conn, session_id=session_id)
-            briefing = session_briefing(conn)
+            # namespace-scope the subject-keyed profile + life-events so a tenant's
+            # query never aggregates another tenant's facts (world_state/events are
+            # already session-scoped). namespace is None for single-tenant brains.
+            briefing = session_briefing(conn, namespace=namespace)
             if briefing:
                 result["briefing"] = briefing
             links = resolved_entity_links(conn, session_id)
             if links:
                 result["entity_links"] = links
+            events = serve_event_frames(conn, session_id=session_id, query=query)
+            if events:
+                result["events"] = events
+            life = serve_life_events(conn, namespace=namespace)
+            if life:
+                result["life_events"] = life
         except Exception:  # noqa: BLE001 — resolved view is additive, never fatal
             pass
 

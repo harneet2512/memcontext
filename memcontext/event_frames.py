@@ -250,7 +250,21 @@ def _turns_corefer(
 def assemble_event_frames(
     conn: sqlite3.Connection, session_id: str,
 ) -> list[EventFrame]:
-    """Group co-referent claims into event frames."""
+    """Group co-referent claims into event frames (idempotent per session).
+
+    Frames carry freshly-minted random ids, so this clears the session's prior
+    frames first — making periodic re-assembly at ingest safe (no duplicate pile-up).
+    """
+    conn.execute(
+        "DELETE FROM event_frame_embeddings WHERE event_id IN"
+        " (SELECT event_id FROM event_frames WHERE session_id = ?)", (session_id,)
+    )
+    conn.execute(
+        "DELETE FROM event_frame_claims WHERE event_id IN"
+        " (SELECT event_id FROM event_frames WHERE session_id = ?)", (session_id,)
+    )
+    conn.execute("DELETE FROM event_frames WHERE session_id = ?", (session_id,))
+
     claims = list_active_claims(conn, session_id)
     if not claims:
         return []

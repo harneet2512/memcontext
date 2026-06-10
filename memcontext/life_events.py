@@ -38,6 +38,7 @@ def detect_life_events(
     *,
     window_hours: int = 24,
     min_predicates: int = 3,
+    namespace: str | None = None,
 ) -> list[LifeEvent]:
     """Detect life events for a subject by clustering temporally close claims.
 
@@ -46,26 +47,37 @@ def detect_life_events(
     inside a ``window_hours``-wide window, the cluster is surfaced as a
     ``LifeEvent``.
 
+    When ``namespace`` is given, only claims whose source turn is in that namespace
+    are clustered — so life-event detection never mixes tenants (claims are not
+    namespace-keyed; isolation is applied here).
+
     All computation is deterministic; no LLM calls.
     """
+    ns_clause = ""
+    params: tuple = (subject,)
+    if namespace is not None:
+        ns_clause = " AND source_turn_id IN (SELECT turn_id FROM turns WHERE namespace = ?)"
+        params = (subject, namespace)
     rows = conn.execute(
         "SELECT claim_id, predicate, value, created_ts FROM claims"
         " WHERE subject = ?"
         " AND status IN ('active', 'confirmed', 'audited')"
+        f"{ns_clause}"
         " ORDER BY created_ts ASC",
-        (subject,),
+        params,
     ).fetchall()
 
     if not rows:
         return []
 
     # Total distinct predicate families for this subject (denominator for
-    # significance).
+    # significance) — same namespace scope.
     total_families_row = conn.execute(
         "SELECT COUNT(DISTINCT predicate) AS n FROM claims"
         " WHERE subject = ?"
-        " AND status IN ('active', 'confirmed', 'audited')",
-        (subject,),
+        " AND status IN ('active', 'confirmed', 'audited')"
+        f"{ns_clause}",
+        params,
     ).fetchone()
     total_families = total_families_row["n"] if total_families_row else 1
     total_families = max(total_families, 1)  # avoid division by zero

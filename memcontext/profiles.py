@@ -92,6 +92,7 @@ def build_smart_profile(
     subject: str,
     *,
     max_tokens: int = 500,
+    namespace: str | None = None,
 ) -> SmartProfile:
     """Build a tiered profile for *subject* under a token budget.
 
@@ -101,21 +102,28 @@ def build_smart_profile(
       3. User-preference claims
       4. Life events
       5. Volatile claims with change counts
+
+    When ``namespace`` is given, only claims whose source turn belongs to that
+    namespace are considered — so a profile served for one tenant never aggregates
+    another tenant's facts (claims/profiles are subject-keyed, not namespace-keyed,
+    so isolation is applied here at build time).
     """
     profile = SmartProfile(subject=subject)
     used_tokens = 0
 
-    # ---- Gather active claims with metadata ----
+    # ---- Gather active claims with metadata (namespace-scoped when requested) ----
+    ns_clause = ""
+    params: tuple = (subject,)
+    if namespace is not None:
+        ns_clause = " AND c.source_turn_id IN (SELECT turn_id FROM turns WHERE namespace = ?)"
+        params = (subject, namespace)
     rows = conn.execute(
-        """
-        SELECT c.*, COALESCE(m.importance_score, 0.5) AS importance_score
-        FROM claims c
-        LEFT JOIN claim_metadata m ON c.claim_id = m.claim_id
-        WHERE c.subject = ?
-          AND c.status IN ('active', 'confirmed', 'audited')
-        ORDER BY COALESCE(m.importance_score, 0.5) DESC, c.created_ts ASC
-        """,
-        (subject,),
+        "SELECT c.*, COALESCE(m.importance_score, 0.5) AS importance_score"
+        " FROM claims c LEFT JOIN claim_metadata m ON c.claim_id = m.claim_id"
+        " WHERE c.subject = ? AND c.status IN ('active', 'confirmed', 'audited')"
+        f"{ns_clause}"
+        " ORDER BY COALESCE(m.importance_score, 0.5) DESC, c.created_ts ASC",
+        params,
     ).fetchall()
 
     if not rows:
