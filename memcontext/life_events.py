@@ -160,12 +160,17 @@ def detect_life_events(
 
 
 def store_life_events(conn: sqlite3.Connection, events: list[LifeEvent]) -> int:
-    """Persist life events into the ``life_events`` table.
+    """Persist life events into the ``life_events`` table — idempotent per subject.
 
-    Uses INSERT OR REPLACE so re-detection is idempotent.
+    Event ids are freshly minted each detection, so INSERT OR REPLACE alone would
+    pile up duplicates on re-detection. We clear each subject's prior rows first, so
+    re-detecting a subject replaces (not appends) its events regardless of the caller.
 
     Returns the number of events stored.
     """
+    for subject in {ev.subject for ev in events}:
+        conn.execute("DELETE FROM life_events WHERE subject = ?", (subject,))
+
     count = 0
     for ev in events:
         conn.execute(

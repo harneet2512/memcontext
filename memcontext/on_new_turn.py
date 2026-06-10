@@ -290,8 +290,10 @@ def run_extraction(
             # personal brain; batch by age if the corpus ever gets very large.
             from memcontext.importance import recompute_all_importance
             recompute_all_importance(conn)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 — enrichment must never break ingest...
+        # ...but it must not fail SILENTLY either: a swallowed error here leaves
+        # partially-rebuilt profile/digest/episodic state with no trace. Log it.
+        log.warning("substrate.ingest_enrichment_failed", session_id=session_id, exc_info=True)
 
     _set_extraction_status(
         conn, episode_id, done_status if created else ExtractionStatus.SKIPPED

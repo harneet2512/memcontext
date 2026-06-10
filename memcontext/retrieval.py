@@ -11,10 +11,6 @@ Design:
 Multi-signal retrieval (retrieve_hybrid):
 - Combines semantic (cosine), entity (match on entity_key), temporal
   (recency), and BM25 signals via Reciprocal Rank Fusion (k=60).
-
-Temporal-window event-tuple retrieval (retrieve_event_tuples):
-- Projects claims onto EventTuples with temporal validity windows.
-- Optional valid_at_ts filter for point-in-time queries.
 """
 from __future__ import annotations
 
@@ -32,7 +28,6 @@ from typing import Any, Literal
 import structlog
 
 from memcontext.claims import list_active_claims
-from memcontext.event_tuples import EventTuple, claim_to_event
 from memcontext.schema import Claim, Turn
 
 log = structlog.get_logger(__name__)
@@ -1634,71 +1629,6 @@ def _claim_valid_at(claim: Claim, valid_at_ts: int) -> bool:
     return True
 
 
-def retrieve_event_tuples(
-    conn: sqlite3.Connection,
-    *,
-    session_id: str,
-    query: str,
-    top_k: int = 16,
-    valid_at_ts: int | None = None,
-    embedding_client: EmbeddingClient | None = None,
-) -> list[tuple[EventTuple, float]]:
-    """Retrieve event tuples ranked by query-claim cosine similarity."""
-    if not query or not query.strip():
-        return []
-
-    effective = embedding_client or _default_embedding_client()
-    model_version = effective.model_version
-
-    active = list_active_claims(conn, session_id)
-    if valid_at_ts is not None:
-        active = [c for c in active if _claim_valid_at(c, valid_at_ts)]
-    if not active:
-        return []
-
-    ids = tuple(c.claim_id for c in active)
-    placeholders = ",".join("?" for _ in ids)
-    rows = conn.execute(
-        f"SELECT claim_id, embedding, embedding_model_version "
-        f"FROM claim_embeddings WHERE claim_id IN ({placeholders})",
-        ids,
-    ).fetchall()
-    embedding_by_id: dict[str, tuple[list[float], str]] = {}
-    for row in rows:
-        try:
-            vec = _decode_vector(row["embedding"])
-        except ValueError:
-            log.warning("substrate.retrieve_event_tuples_decode_failed", claim_id=row["claim_id"])
-            continue
-        embedding_by_id[row["claim_id"]] = (vec, row["embedding_model_version"])
-
-    q_vec = effective.embed([query])[0]
-
-    scored: list[tuple[float, EventTuple]] = []
-    for c in active:
-        entry = embedding_by_id.get(c.claim_id)
-        if entry is None:
-            log.debug("substrate.retrieve_event_tuples_skip_unembedded", claim_id=c.claim_id)
-            continue
-        vec, version = entry
-        if version != model_version:
-            log.debug(
-                "substrate.retrieve_event_tuples_version_mismatch",
-                claim_id=c.claim_id,
-                claim_version=version,
-                query_version=model_version,
-            )
-            continue
-        score = _cosine_normalised(q_vec, vec)
-        if not (-1.01 <= score <= 1.01):
-            score = _cosine_fallback(q_vec, vec)
-        scored.append((score, claim_to_event(c)))
-
-    scored.sort(key=lambda x: (-x[0], x[1].claim_id))
-    top = scored[:top_k]
-    return [(et, s) for s, et in top]
-
-
 # --- event-frame retrieval ---------------------------------------------------
 
 
@@ -1826,7 +1756,6 @@ __all__ = [
     "embed_and_store",
     "encode_vector",
     "retrieve_event_frames",
-    "retrieve_event_tuples",
     "retrieve_hybrid",
     "retrieve_relevant_claims",
     "retrieve_with_fallback",

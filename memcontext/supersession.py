@@ -142,6 +142,22 @@ def _attribute_of(value: str) -> str | None:
     return None
 
 
+# A value carrying a CLOSED time range ("from 2010 to 2015", "between X and Y",
+# "until 2018", or two explicit years) is a HISTORICAL record, not a current value —
+# so it must NOT clobber, nor be clobbered by, another value for the same attribute
+# slot. Attribute-cardinality supersession resolves the CURRENT value only.
+_CLOSED_WINDOW_RE = __import__("re").compile(
+    r"\bfrom\b.+?\bto\b|\bbetween\b.+?\band\b|\b(?:until|till|up to)\b"
+    r"|\b(?:19|20)\d\d\b.*?\b(?:19|20)\d\d\b",
+    __import__("re").IGNORECASE | __import__("re").DOTALL,
+)
+
+
+def _has_closed_window(value: str) -> bool:
+    """True if the value states a closed (historical) time range. Deterministic."""
+    return _CLOSED_WINDOW_RE.search(value) is not None
+
+
 def detect_pass1(
     conn: sqlite3.Connection,
     new_claim: Claim,
@@ -195,11 +211,19 @@ def detect_pass1(
         # with a different value is superseded — even across surface phrasing
         # ("lives in NYC" -> "moved to Boston"). This resolves the slot to one
         # current truth where the coarse predicate alone cannot. Deterministic.
+        #
+        # History guard: if the NEW value names a closed time range it is a historical
+        # record, not a current update — don't let it clobber anything. Likewise skip
+        # any CANDIDATE that names a closed range: "lived in NYC from 2010 to 2015" and
+        # "lives in Boston" are both true and must coexist. (CLAUDE.md: over-supersession
+        # silently deletes valid memory.)
         new_attr = _attribute_of(new_claim.value)
-        if new_attr is not None:
+        if new_attr is not None and not _has_closed_window(new_claim.value):
             for row in rows:
                 candidate = row_to_claim(row)
                 if candidate.value.strip().lower() == new_value_norm:
+                    continue
+                if _has_closed_window(candidate.value):
                     continue
                 if _attribute_of(candidate.value) == new_attr:
                     best_match = candidate

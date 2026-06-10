@@ -1,6 +1,10 @@
-"""Simple synchronous in-memory pub/sub.
+"""Simple synchronous in-memory pub/sub — a public INTEGRATION SEAM.
 
-The UI (and tests) subscribe to named events; the orchestrator publishes.
+`on_new_turn` publishes lifecycle events (claim created/superseded, projection
+updated, ...). MemContext ships NO internal subscriber by design — this is an
+extension point for the *host* (a UI, an async refinement worker, an audit log) to
+`subscribe()` and react to memory changes without polling. It is intentionally
+"unconsumed" in the package itself; that is not dead code, it is the hook.
 
 Event names and payload shapes:
 - turn.added                     {turn_id, session_id}
