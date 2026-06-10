@@ -246,6 +246,18 @@ def run_extraction(
             from memcontext.profiles import build_smart_profile, store_profile
             profile = build_smart_profile(conn, "user")
             store_profile(conn, profile)
+
+        # Cross-session consolidation — graduate facts that recur across >= 3 distinct
+        # sessions into durable 'consolidated' facts. Previously this ran ONLY via the
+        # manual `memcontext consolidate` CLI, so it never happened in a live deployment;
+        # wiring it here closes that "never auto-runs" gap. Triggered on a GLOBAL turn
+        # cadence (not per-session): the recurrence it detects spans many — often short —
+        # sessions, so a per-session counter would rarely fire. Deterministic, zero-LLM,
+        # and self-guarded (contested slots are skipped), so it is safe to run inline.
+        global_turns = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
+        if global_turns % 25 == 0 and global_turns > 0:
+            from memcontext.consolidate import consolidate_facts
+            consolidate_facts(conn)
     except Exception:  # noqa: BLE001
         pass
 

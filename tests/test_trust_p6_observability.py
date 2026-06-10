@@ -47,17 +47,21 @@ def test_trust_status_distribution_and_tenants():
 
 def test_trust_status_forget_and_drift_audit():
     conn = _conn()
+    # Low-trust web source tries to override the user's stated residence (a single-
+    # valued attribute → deterministic supersession). See the note in
+    # test_trust_p4_antipoisoning: the old "dark mode"/"dark theme" vehicle relied on
+    # an over-loose Jaccard since tightened; the trust-guard block+audit path is intact.
     on_new_turn(
-        conn, session_id="s1", speaker=Speaker.USER, text="I prefer dark mode",
+        conn, session_id="s1", speaker=Speaker.USER, text="I live in Portland",
         extractor=PassthroughExtractor(
-            [{"subject": "user", "predicate": "user_fact", "value": "dark mode", "confidence": 0.9}]),
+            [{"subject": "user", "predicate": "user_fact", "value": "lives in Portland", "confidence": 0.9}]),
     )
     conn.execute(
         "INSERT INTO turns (turn_id, session_id, speaker, text, ts, source_type, extraction_status)"
-        " VALUES ('tu_web','s1','user','a web page said dark theme',2000,'browser','done')"
+        " VALUES ('tu_web','s1','user','a web page claims the user lives in Denver',2000,'browser','done')"
     )
     low = insert_claim(conn, session_id="s1", subject="user", predicate="user_fact",
-                       value="dark theme", confidence=0.9, source_turn_id="tu_web")
+                       value="lives in Denver", confidence=0.9, source_turn_id="tu_web")
     detect_pass1(conn, low)  # blocked low-trust override -> drift event
 
     forget(conn, subject="user")  # erase + audit

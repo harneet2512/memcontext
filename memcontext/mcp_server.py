@@ -12,8 +12,33 @@ import structlog
 log = structlog.get_logger(__name__)
 
 
-def run_server(*, db_path: str = "memcontext.db", transport: str = "stdio") -> None:
-    """Start the MCP server. Called by `memcontext serve`."""
+def run_server(
+    *,
+    db_path: str = "memcontext.db",
+    transport: str = "stdio",
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    token: str | None = None,
+    oauth: bool = False,
+    public_url: str | None = None,
+    oauth_password: str | None = None,
+) -> None:
+    """Start the MCP server. Called by `memcontext serve`.
+
+    transport="stdio" (default) for local clients (Claude Code / Desktop, one config
+    line). transport="http" serves Streamable HTTP so a REMOTE client (claude.ai web,
+    via a tunnel) can connect by URL — the shape Membase/GBrain use. HTTP auth is either
+    a bearer ``token`` (simple) or, with ``oauth=True``, the full OAuth 2.1 flow
+    (metadata + dynamic client registration + PKCE + a password login gate) that
+    claude.ai's "add custom connector → log in" expects.
+    """
+    if transport == "http":
+        if oauth:
+            _run_http_oauth(db_path=db_path, host=host, port=port,
+                            public_url=public_url, password=oauth_password)
+        else:
+            _run_http(db_path=db_path, host=host, port=port, token=token)
+        return
     try:
         import mcp.server.stdio
         from mcp.server import Server
@@ -682,6 +707,99 @@ def create_http_app(db_path: str = "memcontext.db"):
     return _app
 
 
+def _with_bearer_auth(app, token: str | None):
+    """Wrap an ASGI app with a bearer-token gate. No token → pass-through (unauth).
+
+    Accepts the token either as ``Authorization: Bearer <token>`` (preferred) or a
+    ``?token=<token>`` query param (some connector UIs only allow a URL). Lifespan and
+    non-HTTP scopes pass through untouched.
+    """
+    if not token:
+        return app
+    import json as _json
+
+    expected = f"Bearer {token}"
+
+    async def _guarded(scope, receive, send):
+        if scope.get("type") == "http":
+            headers = dict(scope.get("headers") or [])
+            authz = headers.get(b"authorization", b"").decode()
+            qs = scope.get("query_string", b"").decode()
+            if authz != expected and f"token={token}" not in qs:
+                body = _json.dumps({"error": "unauthorized"}).encode()
+                await send({
+                    "type": "http.response.start", "status": 401,
+                    "headers": [(b"content-type", b"application/json"),
+                                (b"content-length", str(len(body)).encode())],
+                })
+                await send({"type": "http.response.body", "body": body})
+                return
+        await app(scope, receive, send)
+
+    return _guarded
+
+
+def _run_http(*, db_path: str, host: str, port: int, token: str | None) -> None:
+    """Serve MCP over Streamable HTTP for remote clients (claude.ai web via a tunnel)."""
+    import sys
+
+    try:
+        import uvicorn
+    except ImportError:
+        raise ImportError(
+            "HTTP transport needs uvicorn + starlette: pip install 'memcontext[mcp]'"
+            " (or: pip install uvicorn starlette)"
+        ) from None
+
+    app = _with_bearer_auth(create_http_app(db_path), token)
+    auth_note = "bearer token required" if token else "NO AUTH"
+    print(
+        f"[memcontext] MCP Streamable HTTP → http://{host}:{port}/mcp  (auth: {auth_note})",
+        file=sys.stderr,
+    )
+    if not token:
+        print(
+            "[memcontext] WARNING: no --token / MEMCONTEXT_MCP_TOKEN set — this endpoint is"
+            " UNAUTHENTICATED. Do not expose it on a public tunnel.",
+            file=sys.stderr,
+        )
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+def _run_http_oauth(
+    *, db_path: str, host: str, port: int, public_url: str | None, password: str | None
+) -> None:
+    """Serve MCP over Streamable HTTP behind OAuth 2.1 (the claude.ai connector flow)."""
+    import sys
+
+    if not public_url:
+        raise SystemExit(
+            "[memcontext] --public-url is required for OAuth: it's the https URL the"
+            " client sees (your tunnel/domain), e.g. https://xxx.trycloudflare.com."
+        )
+    if not password:
+        raise SystemExit(
+            "[memcontext] OAuth needs a login gate: pass --oauth-password or set"
+            " MEMCONTEXT_OAUTH_PASSWORD. Without it the public endpoint is open."
+        )
+    try:
+        import uvicorn
+
+        from memcontext.mcp_oauth import build_oauth_http_app
+    except ImportError:
+        raise ImportError(
+            "OAuth/HTTP needs uvicorn + starlette + mcp auth: pip install 'memcontext[mcp]'"
+        ) from None
+
+    app = build_oauth_http_app(db_path=db_path, public_url=public_url, password=password)
+    base = public_url.rstrip("/")
+    print(
+        f"[memcontext] MCP + OAuth 2.1 → connector URL: {base}/mcp  (login gate ON)",
+        file=sys.stderr,
+    )
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
 def main(argv: list[str] | None = None) -> None:
     """Entry point for `python -m memcontext.mcp_server` — starts the stdio server.
 
@@ -698,7 +816,26 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--db", default="memcontext.db", help="SQLite database path.")
     parser.add_argument(
-        "--transport", default="stdio", choices=["stdio"], help="Transport (stdio only)."
+        "--transport", default="stdio", choices=["stdio", "http"],
+        help="stdio (local clients) or http (Streamable HTTP for remote / claude.ai-web).",
+    )
+    parser.add_argument("--host", default="127.0.0.1", help="HTTP bind host (transport=http).")
+    parser.add_argument("--port", default=8765, type=int, help="HTTP port (transport=http).")
+    parser.add_argument(
+        "--token", default=None,
+        help="Bearer token required on http (or set MEMCONTEXT_MCP_TOKEN).",
+    )
+    parser.add_argument(
+        "--oauth", action="store_true",
+        help="Serve OAuth 2.1 on http (claude.ai connector flow) instead of a bearer token.",
+    )
+    parser.add_argument(
+        "--public-url", default=None,
+        help="OAuth issuer = the https URL the client sees (tunnel/domain).",
+    )
+    parser.add_argument(
+        "--oauth-password", default=None,
+        help="Login-gate password for OAuth (or set MEMCONTEXT_OAUTH_PASSWORD).",
     )
     parser.add_argument(
         "--pack", default=None, help="Predicate pack(s) to activate (sets ACTIVE_PACK)."
@@ -706,11 +843,16 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.pack:
         os.environ["ACTIVE_PACK"] = args.pack
+    token = args.token or os.environ.get("MEMCONTEXT_MCP_TOKEN")
+    oauth_password = args.oauth_password or os.environ.get("MEMCONTEXT_OAUTH_PASSWORD")
 
     from memcontext.schema import DatabaseUnavailableError
 
     try:
-        run_server(db_path=args.db, transport=args.transport)
+        run_server(db_path=args.db, transport=args.transport,
+                   host=args.host, port=args.port, token=token,
+                   oauth=args.oauth, public_url=args.public_url,
+                   oauth_password=oauth_password)
     except DatabaseUnavailableError as exc:
         import sys
         print(f"[memcontext] {exc}", file=sys.stderr)

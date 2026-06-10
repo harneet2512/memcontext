@@ -26,11 +26,40 @@ _WORD_RE = re.compile(r"[A-Za-z']+")
 
 MIN_CONTENT_WORDS = 3
 
+# Durability signals (deterministic, zero-LLM). An admitted turn is not just
+# content-vs-noise: a standing INSTRUCTION ("always run tests before commit") or a
+# stable PREFERENCE ("I prefer aisle seats") is durable guidance the agent should
+# keep weighting, whereas plain content is EPHEMERAL chatter. This is the L3 marker
+# that lets the serve path tell durable guidance from a passing remark.
+_INSTRUCTION_RE = re.compile(
+    r"\b(always|never|must|should|don'?t|do not|make sure|be sure|"
+    r"remember to|from now on|going forward|every time|whenever|"
+    r"before you|after you)\b",
+    re.I,
+)
+_PREFERENCE_RE = re.compile(
+    r"\b(prefer(?:s|red)?|favou?rite|i like|i love|i hate|i enjoy|"
+    r"i usually|i tend to)\b",
+    re.I,
+)
+
+
+def detect_durability(text: str) -> str:
+    """Classify text as 'instruction', 'preference', or 'ephemeral'. Deterministic."""
+    if not text:
+        return "ephemeral"
+    if _INSTRUCTION_RE.search(text):
+        return "instruction"
+    if _PREFERENCE_RE.search(text):
+        return "preference"
+    return "ephemeral"
+
 
 @dataclass(frozen=True, slots=True)
 class AdmissionResult:
     admitted: bool
     reason: str
+    durability: str = "ephemeral"
 
 
 def admit(text: str) -> AdmissionResult:
@@ -46,4 +75,4 @@ def admit(text: str) -> AdmissionResult:
     content = [t for t in tokens if t not in _FILLER_WORDS]
     if len(content) < MIN_CONTENT_WORDS:
         return AdmissionResult(False, f"only_{len(content)}_content_words")
-    return AdmissionResult(True, "admitted")
+    return AdmissionResult(True, "admitted", durability=detect_durability(text))

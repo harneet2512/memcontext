@@ -63,17 +63,23 @@ def test_serving_writes_no_content_minja_loop_closed():
 
 def test_blocked_low_trust_override_is_recorded_as_drift():
     conn = _conn()
+    # Anti-poisoning vehicle: a low-trust WEB source tries to override the user's
+    # stated residence (a single-valued attribute that supersedes deterministically).
+    # Previously this used a "dark mode"/"dark theme" synonym pair that only matched
+    # under an over-loose Jaccard since tightened to stop additive facts ("likes pizza"
+    # vs "likes sushi") being silently clobbered. The trust-guard code is unchanged —
+    # this exercises the same block+audit path with a deterministic, realistic match.
     on_new_turn(
-        conn, session_id="s1", speaker=Speaker.USER, text="I prefer dark mode",
+        conn, session_id="s1", speaker=Speaker.USER, text="I live in Portland",
         extractor=PassthroughExtractor(
-            [{"subject": "user", "predicate": "user_fact", "value": "dark mode", "confidence": 0.9}]),
+            [{"subject": "user", "predicate": "user_fact", "value": "lives in Portland", "confidence": 0.9}]),
     )
     conn.execute(
         "INSERT INTO turns (turn_id, session_id, speaker, text, ts, source_type, extraction_status)"
-        " VALUES ('tu_web','s1','user','a web page said dark theme',2000,'browser','done')"
+        " VALUES ('tu_web','s1','user','a web page claims the user lives in Denver',2000,'browser','done')"
     )
     low = insert_claim(conn, session_id="s1", subject="user", predicate="user_fact",
-                       value="dark theme", confidence=0.9, source_turn_id="tu_web")
+                       value="lives in Denver", confidence=0.9, source_turn_id="tu_web")
 
     assert detect_pass1(conn, low) is None  # blocked by the trust guard
     n = conn.execute("SELECT COUNT(*) FROM decisions WHERE kind='drift_blocked'").fetchone()[0]

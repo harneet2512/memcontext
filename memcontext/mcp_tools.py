@@ -108,6 +108,7 @@ def handle_memory_query(
     top_k: int = 10,
     debug: bool = False,
     namespace: str | None = None,
+    include_resolved: bool = True,
 ) -> dict:
     from memcontext.claims import get_claim, get_turn
     from memcontext.retrieval import (
@@ -173,6 +174,7 @@ def handle_memory_query(
             c = get_claim(conn, hit.id)
             if c is None:
                 continue
+            from memcontext.admission import detect_durability
             claims_out.append({
                 "claim_id": c.claim_id,
                 "subject": c.subject,
@@ -181,6 +183,9 @@ def handle_memory_query(
                 "confidence": c.confidence,
                 "status": c.status.value,
                 "score": norm,
+                # L3: durable instruction / standing preference / ephemeral chatter,
+                # so the agent can weight standing guidance over a passing remark.
+                "durability": detect_durability(c.value),
             })
         else:
             t = get_turn(conn, hit.id)
@@ -244,6 +249,25 @@ def handle_memory_query(
         "reader_hint": _READER_HINTS.get(query_type, _READER_HINTS["fact_recall"]),
         "token_report": token_report,
     }
+    # Resolved view + briefing on the MAIN query path (not tool-only): alongside the
+    # raw ranked hits, the agent gets the current world-state — one value per slot
+    # with provenance + typed supersession lineage — and a compact session briefing.
+    # Built fresh so it is always current; best-effort so it never breaks a query.
+    if include_resolved and session_id:
+        try:
+            from memcontext.brain import brain
+            from memcontext.serving import resolved_entity_links, session_briefing
+
+            result["world_state"] = brain(conn, session_id=session_id)
+            briefing = session_briefing(conn)
+            if briefing:
+                result["briefing"] = briefing
+            links = resolved_entity_links(conn, session_id)
+            if links:
+                result["entity_links"] = links
+        except Exception:  # noqa: BLE001 — resolved view is additive, never fatal
+            pass
+
     if debug and explain is not None:
         served = [c["claim_id"] for c in claims_out]
         result["ranking"] = {cid: explain[cid] for cid in served if cid in explain}

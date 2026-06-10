@@ -284,25 +284,120 @@ def observe(url: str, db: str, session: str, login_email: str | None, login_url:
 @main.command()
 @click.option("--db", default="memcontext.db", help="Database file path.")
 @click.option(
-    "--transport", type=click.Choice(["stdio"]), default="stdio", help="MCP transport."
+    "--transport", type=click.Choice(["stdio", "http"]), default="stdio",
+    help="MCP transport: stdio (local: Claude Code/Cursor) or http (Streamable HTTP for"
+    " a remote client like the claude.ai web app, via a tunnel).",
 )
-def serve(db: str, transport: str) -> None:
-    """Start the MCP server (for Claude Code, Cursor)."""
+@click.option("--host", default="127.0.0.1", help="HTTP bind host (transport=http).")
+@click.option("--port", default=8765, help="HTTP port (transport=http).")
+@click.option(
+    "--token", default=None,
+    help="Bearer token required on http (or set env MEMCONTEXT_MCP_TOKEN). Set this"
+    " before exposing the endpoint on a public tunnel.",
+)
+@click.option(
+    "--oauth", is_flag=True, default=False,
+    help="Serve OAuth 2.1 on http (the claude.ai 'add connector -> log in' flow)"
+    " instead of a bearer token. Requires --public-url and --oauth-password.",
+)
+@click.option(
+    "--public-url", default=None,
+    help="OAuth issuer: the https URL the client sees (your tunnel/domain).",
+)
+@click.option(
+    "--oauth-password", default=None,
+    help="Login-gate password for OAuth (or set env MEMCONTEXT_OAUTH_PASSWORD).",
+)
+def serve(db: str, transport: str, host: str, port: int, token: str | None,
+          oauth: bool, public_url: str | None, oauth_password: str | None) -> None:
+    """Start the MCP server (stdio for Claude Code/Cursor; http[+oauth] for claude.ai-web)."""
+    import os
+
     from memcontext.retrieval import enforce_semantic_policy, semantic_enabled
 
     click.echo(
         f"[memcontext] Semantic memory: {'ON' if semantic_enabled() else 'OFF (degraded lexical-only)'}"
     )
     enforce_semantic_policy()  # loud warning, or raises under MEMCONTEXT_REQUIRE_EMBEDDINGS=1
+    token = token or os.environ.get("MEMCONTEXT_MCP_TOKEN")
+    oauth_password = oauth_password or os.environ.get("MEMCONTEXT_OAUTH_PASSWORD")
     try:
         from memcontext.mcp_server import run_server
 
-        run_server(db_path=db, transport=transport)
+        run_server(db_path=db, transport=transport, host=host, port=port, token=token,
+                   oauth=oauth, public_url=public_url, oauth_password=oauth_password)
     except ImportError:
         click.echo(
             "MCP server not available. Install with: pip install memcontext[mcp]", err=True
         )
         raise SystemExit(1)
+
+
+@main.command()
+@click.option("--db", default="memcontext.db", help="Database file path.")
+@click.option("--port", default=8765, help="Local port behind the tunnel.")
+@click.option(
+    "--password", default=None,
+    help="Login password for the OAuth gate. First run generates one and saves it"
+    " next to the DB; later runs reuse it.",
+)
+def share(db: str, port: int, password: str | None) -> None:
+    """Connect your LOCAL brain to web apps (claude.ai, ChatGPT) — one command.
+
+    Your memory stays in the local SQLite file on this machine. This command dials
+    an OUTBOUND tunnel (nothing inbound is opened, nothing is hosted anywhere) and
+    serves MCP + an OAuth login at the printed URL. Paste that URL into
+    claude.ai -> Settings -> Connectors, log in with the printed password, done.
+    Stop the process and your brain is offline again.
+    """
+    import json as _json
+    import secrets as _secrets
+    from pathlib import Path
+
+    from memcontext.retrieval import enforce_semantic_policy, semantic_enabled
+
+    click.echo(
+        f"[memcontext] Semantic memory: {'ON' if semantic_enabled() else 'OFF (degraded lexical-only)'}"
+    )
+    enforce_semantic_policy()
+
+    # Stable per-brain password: generate once, reuse forever (sits next to the DB).
+    cfg_path = Path(db).expanduser().resolve().with_suffix(".share.json")
+    if password is None:
+        if cfg_path.exists():
+            password = _json.loads(cfg_path.read_text(encoding="utf-8"))["password"]
+        else:
+            password = _secrets.token_urlsafe(9)
+            cfg_path.write_text(_json.dumps({"password": password}), encoding="utf-8")
+            click.echo(f"[memcontext] Generated login password (saved to {cfg_path.name})")
+
+    try:
+        from pycloudflared import try_cloudflare
+    except ImportError:
+        click.echo("[memcontext] share requires pycloudflared:"
+                   " python -m pip install pycloudflared", err=True)
+        raise SystemExit(1)
+
+    # Tunnel FIRST: the OAuth issuer must be the public URL, so resolve it before
+    # the server starts. The tunnel is outbound-only; data stays in the local DB.
+    click.echo("[memcontext] Opening tunnel (outbound only) ...")
+    public_url = try_cloudflare(port=port, verbose=False).tunnel
+
+    click.echo("")
+    click.echo("=" * 62)
+    click.echo("  Your brain is connected. In claude.ai / ChatGPT add:")
+    click.echo(f"    Connector URL : {public_url}/mcp")
+    click.echo(f"    Login password: {password}")
+    click.echo("  Memory stays local in: " + str(Path(db).expanduser().resolve()))
+    click.echo("  NOTE: this URL changes on restart (quick tunnel); re-add the")
+    click.echo("  connector after a restart. Ctrl+C disconnects your brain.")
+    click.echo("=" * 62)
+    click.echo("")
+
+    from memcontext.mcp_server import run_server
+
+    run_server(db_path=db, transport="http", host="127.0.0.1", port=port,
+               oauth=True, public_url=public_url, oauth_password=password)
 
 
 @main.command("serve-http")

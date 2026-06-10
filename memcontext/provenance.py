@@ -100,6 +100,70 @@ def span_for_claim(conn: sqlite3.Connection, claim_id: str) -> ClaimSpan | None:
     )
 
 
+# --------------------------------------------------- provenance "why" answer ---
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimExplanation:
+    """A single assembled "why is this the current value?" answer for one claim (L6).
+
+    Combines the claim's value + status, its source turn (who said it, when, the
+    exact span), and the correction chain it sits on (what prior values it retired
+    and by what edge type). Deterministic, zero-LLM — pure SELECTs. This is what
+    lets an agent justify a served fact in one call instead of stitching edges and
+    turns itself.
+    """
+
+    claim_id: str
+    value: str
+    status: str
+    source_turn_id: str | None
+    source_text: str | None
+    source_speaker: str | None
+    source_ts: int | None
+    char_start: int | None
+    char_end: int | None
+    # (old_value, edge_type) for each retired predecessor, oldest first.
+    superseded: tuple[tuple[str, str], ...]
+
+
+def explain_claim(conn: sqlite3.Connection, claim_id: str) -> ClaimExplanation | None:
+    """Assemble the provenance "why" for a claim: value + source turn + correction chain.
+
+    One call returns everything needed to justify "why is this the current value":
+    the claim, who/when it came from (with the exact source span), and the prior
+    values it superseded with their typed edges. Returns None if the claim is gone.
+    Deterministic, zero-LLM.
+    """
+    from memcontext.claims import get_claim, get_supersession_chain, get_turn
+
+    claim = get_claim(conn, claim_id)
+    if claim is None:
+        return None
+    turn = get_turn(conn, claim.source_turn_id) if claim.source_turn_id else None
+    span = span_for_claim(conn, claim_id)
+    chain = get_supersession_chain(conn, claim_id)
+    superseded = tuple((old.value, edge_type) for old, edge_type in chain)
+
+    def _spk(t: Any) -> str | None:
+        if t is None:
+            return None
+        return t.speaker.value if hasattr(t.speaker, "value") else str(t.speaker)
+
+    return ClaimExplanation(
+        claim_id=claim.claim_id,
+        value=claim.value,
+        status=claim.status.value if hasattr(claim.status, "value") else str(claim.status),
+        source_turn_id=claim.source_turn_id,
+        source_text=turn.text if turn is not None else None,
+        source_speaker=_spk(turn),
+        source_ts=turn.ts if turn is not None else None,
+        char_start=span.char_start if span is not None else None,
+        char_end=span.char_end if span is not None else None,
+        superseded=superseded,
+    )
+
+
 # -------------------------------------------------- output sentence insertion ---
 
 
