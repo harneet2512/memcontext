@@ -66,18 +66,12 @@ def run_server(
         handle_memory_entity_graph,
         handle_memory_events,
         handle_memory_life_events,
-        handle_memory_observe,
-        handle_memory_observe_url,
-        handle_memory_payload,
         handle_memory_profile,
         handle_memory_query,
         handle_memory_stats,
         handle_memory_store,
         handle_memory_trace,
-        handle_memory_tuples,
-        handle_memory_volatility,
         handle_memory_working_context,
-        handle_memory_procedures,
         handle_memory_output_provenance,
         handle_memory_forget,
         handle_memory_trust_status,
@@ -179,26 +173,6 @@ def run_server(
                 },
             ),
             Tool(
-                name="memory_payload",
-                description=(
-                    "Return the memory payload for a question in one of three "
-                    "modes, to compare what different memories hand the same "
-                    "reader: 'summary' (raw transcript blob), 'vector' (top-k "
-                    "statements by similarity), or 'memcontext' (structured "
-                    "projection with current value, provenance, and typed "
-                    "supersession). Used by the differentiator demo."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "question": {"type": "string", "description": "The question to answer."},
-                        "mode": {"type": "string", "enum": ["summary", "vector", "memcontext"]},
-                        "session_id": {"type": "string", "default": "default"},
-                    },
-                    "required": ["question", "mode"],
-                },
-            ),
-            Tool(
                 name="memory_correct",
                 description="Correct or dismiss an existing claim.",
                 inputSchema={
@@ -209,74 +183,6 @@ def run_server(
                         "new_value": {"type": "string", "description": "Required when action is 'correct'"},
                     },
                     "required": ["claim_id", "action"],
-                },
-            ),
-            Tool(
-                name="memory_observe",
-                description="Store browser observation claims from a page accessibility snapshot.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "url": {"type": "string", "description": "Page URL"},
-                        "title": {"type": "string", "description": "Page title"},
-                        "accessibility_tree": {"type": "object", "description": "Playwright accessibility tree snapshot"},
-                        "session_id": {"type": "string"},
-                    },
-                    "required": ["url"],
-                },
-            ),
-            Tool(
-                name="memory_observe_url",
-                description=(
-                    "Observe a live URL — capture its accessibility tree, extract "
-                    "structured claims, store with provenance. PREFERRED auth: set "
-                    "connect_browser=true to read from the user's running Chrome "
-                    "(inherits all auth — SSO, 2FA, OAuth — and never handles raw "
-                    "passwords). Raw login_email/password is a security hazard and is "
-                    "DISABLED unless allow_password_login=true; prefer connect_browser. "
-                    "Works on any page the user can see. Re-observing detects changes."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "url": {"type": "string", "description": "The URL to observe"},
-                        "session_id": {
-                            "type": "string",
-                            "description": "Session ID. Omit to use shared default session for cross-app queries.",
-                        },
-                        "login_email": {
-                            "type": "string",
-                            "description": "Email/username for form login. Prefer connect_browser instead.",
-                        },
-                        "login_password": {
-                            "type": "string",
-                            "description": (
-                                "Raw password for form login — SECURITY HAZARD. Ignored "
-                                "unless allow_password_login=true. Prefer connect_browser."
-                            ),
-                        },
-                        "login_url": {
-                            "type": "string",
-                            "description": "Login page URL if different from the target URL.",
-                        },
-                        "connect_browser": {
-                            "type": "boolean",
-                            "description": (
-                                "PREFERRED. Attach to the user's running Chrome (port 9222) instead of "
-                                "launching headless. Inherits all auth sessions — no credentials needed."
-                            ),
-                            "default": False,
-                        },
-                        "allow_password_login": {
-                            "type": "boolean",
-                            "description": (
-                                "Explicit opt-in required to use login_email/login_password. "
-                                "Leave false and use connect_browser unless you truly must."
-                            ),
-                            "default": False,
-                        },
-                    },
-                    "required": ["url"],
                 },
             ),
             Tool(
@@ -326,18 +232,6 @@ def run_server(
                 },
             ),
             Tool(
-                name="memory_volatility",
-                description="Classify how volatile a (subject, predicate) slot is from its supersession history: stable / evolving / volatile. Deterministic, zero-LLM.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "subject": {"type": "string", "default": "user"},
-                        "predicate": {"type": "string"},
-                    },
-                    "required": ["predicate"],
-                },
-            ),
-            Tool(
                 name="memory_working_context",
                 description="Assemble the task-relevant memory for a session within a token budget, cued by recent turns (query-free) instead of all active memory. Deterministic, zero-LLM.",
                 inputSchema={
@@ -347,14 +241,6 @@ def run_server(
                         "token_budget": {"type": "integer", "default": 2000},
                     },
                     "required": ["session_id"],
-                },
-            ),
-            Tool(
-                name="memory_procedures",
-                description="Detect recurring procedures (ordered action sequences) across sessions. EXPERIMENTAL: returns disabled unless MEMCONTEXT_EXPERIMENTAL_PROCEDURAL=1. Deterministic, zero-LLM.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {"min_sessions": {"type": "integer", "default": 2}},
                 },
             ),
             Tool(
@@ -389,15 +275,6 @@ def run_server(
                 name="memory_trust_status",
                 description="Trust observability: source-trust distribution, contradiction rate, forgetting + drift audit, tenant distribution, staleness proxy. Measures the trust layer, not recall.",
                 inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="memory_tuples",
-                description="Project a session's active facts into event tuples (subject, action, object, validity window). Pure read projection, zero-LLM.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {"session_id": {"type": "string"}},
-                    "required": ["session_id"],
-                },
             ),
             Tool(
                 name="memory_entity_graph",
@@ -449,18 +326,10 @@ def run_server(
                 result = handle_memory_query(conn, **arguments)
             elif name == "brain":
                 result = handle_brain(conn, **arguments)
-            elif name == "memory_payload":
-                result = handle_memory_payload(conn, **arguments)
             elif name == "memory_trace":
                 result = handle_memory_trace(conn, **arguments)
             elif name == "memory_correct":
                 result = handle_memory_correct(conn, **arguments)
-            elif name == "memory_observe":
-                result = handle_memory_observe(conn, **arguments)
-            elif name == "memory_observe_url":
-                result = await asyncio.get_event_loop().run_in_executor(
-                    None, lambda: handle_memory_observe_url(conn, **arguments)
-                )
             elif name == "memory_profile":
                 result = handle_memory_profile(conn, **arguments)
             elif name == "memory_stats":
@@ -471,20 +340,14 @@ def run_server(
                 result = handle_memory_life_events(conn, **arguments)
             elif name == "memory_events":
                 result = handle_memory_events(conn, **arguments)
-            elif name == "memory_volatility":
-                result = handle_memory_volatility(conn, **arguments)
             elif name == "memory_working_context":
                 result = handle_memory_working_context(conn, **arguments)
-            elif name == "memory_procedures":
-                result = handle_memory_procedures(conn, **arguments)
             elif name == "memory_output_provenance":
                 result = handle_memory_output_provenance(conn, **arguments)
             elif name == "memory_forget":
                 result = handle_memory_forget(conn, **arguments)
             elif name == "memory_trust_status":
                 result = handle_memory_trust_status(conn, **arguments)
-            elif name == "memory_tuples":
-                result = handle_memory_tuples(conn, **arguments)
             elif name == "memory_entity_graph":
                 result = handle_memory_entity_graph(conn, **arguments)
             elif name == "tool_discover":
@@ -537,18 +400,12 @@ def create_http_app(db_path: str = "memcontext.db"):
         handle_memory_entity_graph,
         handle_memory_events,
         handle_memory_life_events,
-        handle_memory_observe,
-        handle_memory_observe_url,
-        handle_memory_payload,
         handle_memory_profile,
         handle_memory_query,
         handle_memory_stats,
         handle_memory_store,
         handle_memory_trace,
-        handle_memory_tuples,
-        handle_memory_volatility,
         handle_memory_working_context,
-        handle_memory_procedures,
         handle_memory_output_provenance,
         handle_memory_forget,
         handle_memory_trust_status,
@@ -583,8 +440,6 @@ def create_http_app(db_path: str = "memcontext.db"):
                      inputSchema={"type":"object","properties":{"claim_id":{"type":"string"},"subject":{"type":"string"},"predicate":{"type":"string"},"session_id":{"type":"string"}}}),
                 Tool(name="brain", description="Deterministic world-state grouped by subject -- value, status, confidence, provenance span, and per-subject gaps (no LLM).",
                      inputSchema={"type":"object","properties":{"session_id":{"type":"string","default":"default"}}}),
-                Tool(name="memory_payload", description="Return the memory payload for a question in mode 'summary', 'vector', or 'memcontext' (the differentiator demo).",
-                     inputSchema={"type":"object","properties":{"question":{"type":"string"},"mode":{"type":"string","enum":["summary","vector","memcontext"]},"session_id":{"type":"string"}},"required":["question","mode"]}),
                 Tool(name="memory_correct", description="Correct or dismiss an existing claim.",
                      inputSchema={"type":"object","properties":{"claim_id":{"type":"string"},"action":{"type":"string","enum":["dismiss","correct"]},"new_value":{"type":"string"}},"required":["claim_id","action"]}),
                 Tool(name="memory_profile", description="Get the smart profile for a subject.",
@@ -597,20 +452,14 @@ def create_http_app(db_path: str = "memcontext.db"):
                      inputSchema={"type":"object","properties":{"subject":{"type":"string","default":"user"},"window_hours":{"type":"integer","default":24},"min_predicates":{"type":"integer","default":3}}}),
                 Tool(name="memory_events", description="Assemble event frames for a session: co-referent claims grouped into multi-slot event records.",
                      inputSchema={"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"]}),
-                Tool(name="memory_volatility", description="Classify a (subject, predicate) slot's volatility from supersession history: stable/evolving/volatile.",
-                     inputSchema={"type":"object","properties":{"subject":{"type":"string","default":"user"},"predicate":{"type":"string"}},"required":["predicate"]}),
                 Tool(name="memory_working_context", description="Assemble task-relevant memory for a session within a token budget, cued by recent turns (query-free) not all active memory.",
                      inputSchema={"type":"object","properties":{"session_id":{"type":"string"},"token_budget":{"type":"integer","default":2000}},"required":["session_id"]}),
-                Tool(name="memory_procedures", description="Detect recurring procedures (ordered action sequences) across sessions. EXPERIMENTAL: disabled unless MEMCONTEXT_EXPERIMENTAL_PROCEDURAL=1.",
-                     inputSchema={"type":"object","properties":{"min_sessions":{"type":"integer","default":2}}}),
                 Tool(name="memory_output_provenance", description="Output-sentence provenance (audit): record which sentences cite which claims; trace claim<->sentence<->turn links.",
                      inputSchema={"type":"object","properties":{"session_id":{"type":"string"},"record":{"type":"array"},"claim_id":{"type":"string"},"turn_id":{"type":"string"},"sentence_id":{"type":"string"}}}),
                 Tool(name="memory_forget", description="Right-to-be-forgotten: hard-delete memory + cascade (no residual), audited. One of claim_id/subject/session_id/predicate.",
                      inputSchema={"type":"object","properties":{"claim_id":{"type":"string"},"subject":{"type":"string"},"session_id":{"type":"string"},"predicate":{"type":"string"},"reason":{"type":"string"}}}),
                 Tool(name="memory_trust_status", description="Trust observability: source-trust distribution, contradiction rate, forgetting + drift audit, tenant distribution, staleness proxy.",
                      inputSchema={"type":"object","properties":{}}),
-                Tool(name="memory_tuples", description="Project a session's active facts into event tuples (subject, action, object, validity).",
-                     inputSchema={"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"]}),
                 Tool(name="memory_entity_graph", description="Co-occurrence neighbors of an entity within a session's claim graph.",
                      inputSchema={"type":"object","properties":{"session_id":{"type":"string"},"entity":{"type":"string"},"max_hops":{"type":"integer","default":1}},"required":["session_id","entity"]}),
             ]
@@ -628,8 +477,6 @@ def create_http_app(db_path: str = "memcontext.db"):
                     result = handle_memory_query(conn, **arguments)
                 elif name == "brain":
                     result = handle_brain(conn, **arguments)
-                elif name == "memory_payload":
-                    result = handle_memory_payload(conn, **arguments)
                 elif name == "memory_trace":
                     result = handle_memory_trace(conn, **arguments)
                 elif name == "memory_correct":
@@ -644,20 +491,14 @@ def create_http_app(db_path: str = "memcontext.db"):
                     result = handle_memory_life_events(conn, **arguments)
                 elif name == "memory_events":
                     result = handle_memory_events(conn, **arguments)
-                elif name == "memory_volatility":
-                    result = handle_memory_volatility(conn, **arguments)
                 elif name == "memory_working_context":
                     result = handle_memory_working_context(conn, **arguments)
-                elif name == "memory_procedures":
-                    result = handle_memory_procedures(conn, **arguments)
                 elif name == "memory_output_provenance":
                     result = handle_memory_output_provenance(conn, **arguments)
                 elif name == "memory_forget":
                     result = handle_memory_forget(conn, **arguments)
                 elif name == "memory_trust_status":
                     result = handle_memory_trust_status(conn, **arguments)
-                elif name == "memory_tuples":
-                    result = handle_memory_tuples(conn, **arguments)
                 elif name == "memory_entity_graph":
                     result = handle_memory_entity_graph(conn, **arguments)
                 else:

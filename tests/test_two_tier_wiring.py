@@ -170,36 +170,6 @@ def test_event_frames_tool_assembles_and_persists():
     assert out["count"] >= 1, "co-referent claims should assemble >=1 event frame"
 
 
-def test_volatility_tool_classifies():
-    """volatility tool is reachable + classifies a slot from supersession history.
-
-    RED before: classify_predicate had no serving door.
-    """
-    from memcontext.mcp_tools import handle_memory_volatility
-
-    conn = _fresh()
-    _ingest(conn, "s1", "I prefer tea", "user", "user_preference", "tea")
-    out = handle_memory_volatility(conn, subject="user", predicate="user_preference")
-    assert out["classification"] in {"stable", "evolving", "volatile"}
-    assert out["classification"] == "stable"  # single fact, no supersession yet
-    assert "change_count" in out and out["change_count"] == 0
-
-
-def test_tuples_tool_projects_active_facts():
-    """event-tuple tool projects active facts into (subject, action, object) rows.
-
-    RED before: claims_to_events had no serving door.
-    """
-    from memcontext.mcp_tools import handle_memory_tuples
-
-    conn = _fresh()
-    _ingest(conn, "s1", "I started a job", "user", "user_event", "started a job")
-    _ingest(conn, "s1", "My goal is German", "user", "user_goal", "learn German")
-    out = handle_memory_tuples(conn, session_id="s1")
-    assert out["count"] >= 2
-    assert all({"subject", "action", "obj", "claim_id"} <= set(t) for t in out["tuples"])
-
-
 def test_entity_graph_tool_returns_shape():
     """entity-graph tool builds the co-occurrence graph + returns neighbors shape.
 

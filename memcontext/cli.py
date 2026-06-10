@@ -211,77 +211,6 @@ def demo(db: str, pack: str) -> None:
 
 
 @main.command()
-@click.argument("url")
-@click.option("--db", default="memcontext.db", help="Database file path.")
-@click.option("--session", default="observe_default", help="Session ID.")
-@click.option("--login-email", default=None, help="Email/username for form login. Prefer --connect-browser.")
-@click.option("--login-url", default=None, help="Login page URL if different from target.")
-@click.option("--connect-browser", is_flag=True, default=False, help="PREFERRED: attach to running Chrome on port 9222. Inherits all auth sessions, no credentials.")
-@click.option("--allow-password-login", is_flag=True, default=False, help="Opt in to password login. Password is read from MEMCONTEXT_OBSERVE_PASSWORD or prompted (never a CLI arg).")
-def observe(url: str, db: str, session: str, login_email: str | None, login_url: str | None, connect_browser: bool, allow_password_login: bool) -> None:
-    """Observe a live URL — open browser, capture accessibility tree, extract claims."""
-    import logging
-
-    import structlog
-    structlog.configure(
-        wrapper_class=structlog.make_filtering_bound_logger(logging.WARNING),
-    )
-
-    from memcontext.mcp_tools import handle_memory_observe_url
-    from memcontext.schema import open_database
-
-    # Password is never a CLI arg (would leak in the process list / shell history).
-    # Read it from the environment, or prompt without echo when opted in.
-    login_password: str | None = None
-    if allow_password_login:
-        login_password = os.environ.get("MEMCONTEXT_OBSERVE_PASSWORD") or None
-        if login_password is None and login_email:
-            import getpass
-            login_password = getpass.getpass("Login password (hidden): ") or None
-
-    conn = open_database(db)
-    click.echo(f"[memcontext] Observing: {url}")
-
-    try:
-        result = handle_memory_observe_url(
-            conn, url=url, session_id=session,
-            login_email=login_email, login_password=login_password,
-            login_url=login_url, connect_browser=connect_browser,
-            allow_password_login=allow_password_login,
-        )
-    except Exception as exc:
-        click.echo(f"[memcontext] Error: {exc}", err=True)
-        conn.close()
-        raise SystemExit(1) from exc
-
-    click.echo(f"[memcontext] Page title: {result['title']}")
-    click.echo(f"[memcontext] Accessibility tree: {result['a11y_nodes']} nodes")
-    click.echo(f"[memcontext] DOM hash: {result['dom_hash']}")
-    click.echo(f"[memcontext] {result['claims_stored']} claims stored:")
-
-    for c in result["claims"]:
-        click.echo(f"  ({c['subject']}, {c['predicate']}, \"{c['value']}\")")
-
-    if result.get("is_revisit"):
-        changes = result.get("changes_detected", [])
-        if changes:
-            click.echo(f"[memcontext] Changes detected: {len(changes)}")
-            for ch in changes:
-                click.echo(
-                    f"  CHANGED: \"{ch['old_value']}\" -> \"{ch['new_value']}\""
-                    f"  edge: {ch['edge_type']}"
-                )
-        else:
-            click.echo("[memcontext] Re-visit: no changes detected")
-
-    click.echo(
-        f"[memcontext] Provenance: url={url} dom_hash={result['dom_hash']} "
-        f"session={result['session_id']}"
-    )
-    conn.close()
-
-
-@main.command()
 @click.option("--db", default="memcontext.db", help="Database file path.")
 @click.option(
     "--transport", type=click.Choice(["stdio", "http"]), default="stdio",
@@ -765,22 +694,6 @@ def working_context_cmd(db: str, session: str, token_budget: int) -> None:
         "facts": [{"kind": h.kind, "text": h.text, "score": round(s, 3)}
                   for h, s in ctx.facts],
     }))
-    conn.close()
-
-
-@main.command("procedures")
-@click.option("--db", default="memcontext.db", help="Database path")
-@click.option("--min-sessions", default=2, type=int,
-              help="Minimum distinct sessions for a sequence to count as a procedure")
-def procedures_cmd(db: str, min_sessions: int) -> None:
-    """Detect recurring procedures across sessions (EXPERIMENTAL; enable with
-    MEMCONTEXT_EXPERIMENTAL_PROCEDURAL=1).
-    """
-    from memcontext.mcp_tools import handle_memory_procedures
-    from memcontext.schema import open_database
-
-    conn = open_database(db)
-    click.echo(json.dumps(handle_memory_procedures(conn, min_sessions=min_sessions)))
     conn.close()
 
 

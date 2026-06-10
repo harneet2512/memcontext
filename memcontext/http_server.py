@@ -148,12 +148,6 @@ class TraceRequest(BaseModel):
     claim_id: str
 
 
-class ObserveRequest(BaseModel):
-    url: str
-    session_id: str | None = None
-    connect_browser: bool = False
-
-
 # ── Endpoints ────────────────────────────────────────────
 
 @app.post("/api/memory/store")
@@ -185,15 +179,6 @@ def memory_query(req: QueryRequest, request: Request):
 def memory_trace(req: TraceRequest):
     from memcontext.mcp_tools import handle_memory_trace
     return handle_memory_trace(get_conn(), claim_id=req.claim_id)
-
-
-@app.post("/api/memory/observe")
-def memory_observe(req: ObserveRequest):
-    from memcontext.mcp_tools import handle_memory_observe_url
-    return handle_memory_observe_url(
-        get_conn(), url=req.url,
-        session_id=req.session_id, connect_browser=req.connect_browser,
-    )
 
 
 @app.get("/api/memory/status")

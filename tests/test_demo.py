@@ -17,7 +17,7 @@ import pytest
 pytest.importorskip("demo.scenario")
 from demo.scenario import seed_demo
 from memcontext.brain import brain
-from memcontext.mcp_tools import handle_memory_payload, handle_memory_trace
+from memcontext.mcp_tools import handle_memory_trace
 
 
 @pytest.fixture()
@@ -66,34 +66,3 @@ def test_postgres_superseded_via_typed_correction(seeded):
     assert postgres["quote"] == "Postgres"
 
 
-def test_memcontext_payload_beats_summary_structurally(seeded):
-    conn, manifest = seeded
-    question = manifest["question"]
-    session_id = manifest["session_id"]
-
-    summary = handle_memory_payload(
-        conn, question=question, mode="summary", session_id=session_id
-    )
-    # Both values are present in the prose, but there is no current-value field.
-    assert "Postgres" in summary["payload"]
-    assert "DynamoDB" in summary["payload"]
-    assert "current_value" in summary["fields_absent"]
-
-    mc = handle_memory_payload(
-        conn, question=question, mode="memcontext", session_id=session_id
-    )
-    support = mc["answer_support"]
-    assert support["subject"] == "main_database"
-    assert support["current_value"] == "DynamoDB"
-    assert support["status"] == "active"
-    assert support["provenance"]["quote"] == "DynamoDB"
-    assert support["superseded"][0]["value"] == "Postgres"
-    assert support["superseded"][0]["edge_type"] == "user_correction"
-
-
-def test_unknown_payload_mode_errors(seeded):
-    conn, manifest = seeded
-    result = handle_memory_payload(
-        conn, question="q", mode="bogus", session_id=manifest["session_id"]
-    )
-    assert "error" in result

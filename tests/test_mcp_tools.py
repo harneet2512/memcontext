@@ -134,25 +134,6 @@ def test_correct_nonexistent(conn):
     assert "error" in result
 
 
-def test_memory_observe(conn):
-    from memcontext.mcp_tools import handle_memory_observe
-
-    result = handle_memory_observe(
-        conn,
-        url="https://example.com/dashboard",
-        title="Dashboard",
-        accessibility_tree={
-            "role": "heading",
-            "name": "Project Status",
-            "children": [],
-        },
-        session_id="obs_test",
-    )
-    assert result["claims_stored"] >= 1
-    assert result["turn_id"] is not None
-    assert result["session_id"] == "obs_test"
-
-
 def test_memory_query_serves_episodes_when_session_has_no_facts(
     conn: sqlite3.Connection,
 ):
