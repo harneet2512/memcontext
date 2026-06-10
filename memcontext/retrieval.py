@@ -784,6 +784,25 @@ def detect_history_intent(query: str) -> bool:
     return bool(_HISTORY_INTENT.search(query.lower()))
 
 
+_SYNTHESIS_INTENT = _re.compile(
+    r"\b(suggest|suggestion|recommend|recommendation|advise|advice|"
+    r"what do you think|any (ideas|suggestions|recommendations)|"
+    r"should i|help me (decide|choose|pick)|ideas for|"
+    r"what (kind|type|sort) of)\b"
+)
+
+
+def detect_synthesis_intent(query: str) -> bool:
+    """True when a query asks the system to SYNTHESIZE/advise from the user's
+    preferences (recommend, suggest, "what do you think") rather than look up a
+    discrete fact. Such queries want the user's distilled preference *facts*, not
+    raw conversational episodes — so retrieval biases toward the fact tier.
+    Deterministic, zero-LLM, generalizes to any preference/advice query (no
+    dependency on dataset labels).
+    """
+    return bool(_SYNTHESIS_INTENT.search(query.lower()))
+
+
 def classify_query_predicates(query: str) -> tuple[set[str], str]:
     """Map a query to target predicate families and a query type label.
 
@@ -1470,7 +1489,10 @@ def retrieve_memory(
         conn, session_id=session_id, query=query, top_k=top_k,
         embedding_client=embedding_client,
     )
-    return _fuse_memory(facts, episodes, top_k)
+    # Preference/advice queries want the user's distilled preference *facts*, not
+    # raw episodes (which crowd the facts out and derail synthesis). Bias the
+    # fusion toward the fact tier for such queries. Deterministic, zero-LLM.
+    return _fuse_memory(facts, episodes, top_k, fact_bias=detect_synthesis_intent(query))
 
 
 def retrieve_memory_across(
@@ -1523,15 +1545,19 @@ def _fuse_memory(
     facts: list[tuple[Claim, float]],
     episodes: list[tuple[Turn, float]],
     top_k: int,
+    *,
+    fact_bias: bool = False,
 ) -> list[tuple[MemoryHit, float]]:
     """Second-level RRF over already-ranked fact and episode pools.
 
     Each pool must arrive sorted best-first; fusion weights its *rank position*
     (RRF), so the per-channel raw scores need not be comparable. Facts carry a
-    slight weight edge so a fact outranks the episode it was extracted from on a
-    tie — but episodes still interleave by rank (the Tier-1 floor).
+    slight weight edge so a fact outranks the episode it came from on a tie — but
+    episodes still interleave by rank (the Tier-1 floor). ``fact_bias`` strongly
+    down-weights the episode tier for synthesis/preference queries, where raw
+    episodes crowd out the distilled preference facts the answer needs.
     """
-    w_fact, w_ep = 1.0, 0.9
+    w_fact, w_ep = 1.0, (0.25 if fact_bias else 0.9)
     fused: list[tuple[MemoryHit, float]] = []
     for rank, (claim, _score) in enumerate(facts, start=1):
         fused.append((

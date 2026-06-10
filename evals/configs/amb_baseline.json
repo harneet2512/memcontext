@@ -1,0 +1,14 @@
+{
+  "suite": "amb",
+  "description": "AMB baseline configuration",
+  "retrieval_weights": [0.5, 0.2, 0.1, 0.2],
+  "top_k": 20,
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "reader_model": "openai/gpt-5-mini",
+  "judge_model": "openai/gpt-4o-mini",
+  "extractor_model": "qwen3:8b",
+  "active_pack": "general",
+  "dataset_version": "PersonaMem32K",
+  "date_recorded": "2026-05-23",
+  "score": null
+}

@@ -101,6 +101,43 @@ def _record_drift_blocked(
              edge_type=edge_type.value)
 
 
+# Single-valued life attributes: a new value for the SAME attribute supersedes the
+# prior one even when surface phrasing differs ("lives in NYC" -> "moved to Boston").
+# This connects claims by the attribute slot they describe, not by exact tokens —
+# the head of the entity/attribute-identity problem. Deterministic, zero-LLM,
+# high-precision (conservative trigger phrases to avoid false supersession);
+# extensible via predicate packs.
+_SINGLE_VALUED_ATTRIBUTES: dict[str, tuple[str, ...]] = {
+    "residence": (
+        "lives in", "live in", "living in", "moved to", "relocated to",
+        "relocating to", "resides in", "reside in",
+    ),
+    "employer": (
+        "works at", "work at", "working at", "employed at", "employed by",
+    ),
+}
+
+
+def _attribute_of(value: str) -> str | None:
+    """Map a claim value to a single-valued attribute slot, or None.
+
+    Matches trigger phrases on WORD-TOKEN boundaries (a contiguous token
+    subsequence), NOT raw substrings — so "works at" does not match inside
+    "frameworks at" and "lives in" does not match inside "olives in".
+    Deterministic, zero-LLM.
+    """
+    import re as _re
+
+    vtoks = _re.findall(r"[a-z0-9]+", value.lower())
+    for attr, triggers in _SINGLE_VALUED_ATTRIBUTES.items():
+        for trigger in triggers:
+            ptoks = trigger.split()
+            n = len(ptoks)
+            if any(vtoks[i : i + n] == ptoks for i in range(len(vtoks) - n + 1)):
+                return attr
+    return None
+
+
 def detect_pass1(
     conn: sqlite3.Connection,
     new_claim: Claim,
@@ -147,7 +184,23 @@ def detect_pass1(
             if candidate.value.strip().lower() != new_value_norm:
                 best_match = candidate
                 break
-    else:
+    if best_match is None:
+        # Attribute-cardinality: the new value names a single-valued life attribute
+        # (residence, employer). A prior active claim describing the SAME attribute
+        # with a different value is superseded — even across surface phrasing
+        # ("lives in NYC" -> "moved to Boston"). This resolves the slot to one
+        # current truth where the coarse predicate alone cannot.
+        new_attr = _attribute_of(new_claim.value)
+        if new_attr is not None:
+            for row in rows:
+                candidate = row_to_claim(row)
+                if candidate.value.strip().lower() == new_value_norm:
+                    continue
+                if _attribute_of(candidate.value) == new_attr:
+                    best_match = candidate
+                    break
+
+    if best_match is None and new_claim.predicate not in active_pack().single_valued:
         # Multi-valued / undeclared: keep the token-overlap gate so additive,
         # distinct facts on a shared (subject, predicate) are not clobbered.
         import re as _re
@@ -163,8 +216,14 @@ def detect_pass1(
                 continue
             old_content = set(_re.findall(r"[a-z0-9]+", candidate.value.lower())) - _noise
             if old_content and new_content:
-                jaccard = len(old_content & new_content) / len(old_content | new_content)
-                if jaccard >= 0.3 and jaccard > best_jaccard:
+                shared = old_content & new_content
+                jaccard = len(shared) / len(old_content | new_content)
+                # Require >= 2 shared content tokens. A single shared token is
+                # usually just the relation verb — "likes" pizza vs sushi,
+                # "allergic to" peanuts vs shellfish, "owns" a tesla vs a honda —
+                # which are ADDITIVE facts, not replacements. Over-supersession
+                # silently deletes valid memory, so default to keeping both.
+                if len(shared) >= 2 and jaccard >= 0.3 and jaccard > best_jaccard:
                     best_jaccard = jaccard
                     best_match = candidate
 
