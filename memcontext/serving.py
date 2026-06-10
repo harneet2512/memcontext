@@ -79,6 +79,49 @@ class ContextBriefing:
     # exposes the connective spine in the serve path; it is NOT a retrieval/ranking
     # channel (CLAUDE.md keeps graph traversal out of ranking).
     entity_links: dict
+    # cached session digest (top facts + supersession updates) for a quick summary, or None.
+    digest: dict | None
+    # claim_id -> {trust, quarantined, consolidated} for each served FACT hit. Parity
+    # with the MCP query door: a library caller must get the same safety surface so it
+    # never acts on low-trust / poisoned memory unknowingly.
+    fact_trust: dict
+
+
+def _load_digest_dict(conn: sqlite3.Connection, session_id: str) -> dict | None:
+    """Cached session digest as a plain dict, or None. Best-effort."""
+    try:
+        from memcontext.digests import load_digest
+
+        d = load_digest(conn, session_id)
+        if d is None:
+            return None
+        return {"key_facts": d.key_facts, "updates": d.updates,
+                "remaining_count": d.remaining_count, "total_claims": d.total_claims}
+    except Exception:  # noqa: BLE001 — summary is best-effort
+        return None
+
+
+def _trust_map(conn: sqlite3.Connection, claim_ids: list[str]) -> dict:
+    """claim_id -> {trust, quarantined, consolidated}, mirroring handle_memory_query."""
+    if not claim_ids:
+        return {}
+    try:
+        from memcontext.source_trust import QUARANTINE_THRESHOLD
+    except Exception:  # noqa: BLE001
+        QUARANTINE_THRESHOLD = 0.4
+    ph = ",".join("?" for _ in claim_ids)
+    rows = conn.execute(
+        f"SELECT claim_id, COALESCE(consolidated, 0), COALESCE(source_trust, 0.5)"
+        f" FROM claim_metadata WHERE claim_id IN ({ph})",
+        claim_ids,
+    ).fetchall()
+    out: dict = {}
+    for r in rows:
+        trust = float(r[2])
+        out[r[0]] = {"trust": round(trust, 3),
+                     "quarantined": trust < QUARANTINE_THRESHOLD,
+                     "consolidated": bool(r[1])}
+    return out
 
 
 def build_context_briefing(
@@ -90,12 +133,12 @@ def build_context_briefing(
     top_k: int = 10,
     embedding_client: Any | None = None,
 ) -> ContextBriefing:
-    """One call → resolved world-state + briefing + query hits + provenance.
+    """One call → resolved world-state + briefing + digest + hits + provenance + trust.
 
-    This is the connective spine of the serve path: it pulls together the four
-    pieces that used to be reachable only via separate tools (brain, profile,
-    retrieve_memory, provenance) so a caller gets resolved current memory in one
-    shot. Deterministic, zero-LLM.
+    This is the connective spine of the serve path: it pulls together the pieces
+    that used to be reachable only via separate tools (brain, profile, digest,
+    retrieve_memory, provenance, trust) so a caller gets resolved current memory —
+    WITH its safety surface — in one shot. Deterministic, zero-LLM.
     """
     from memcontext.provenance import explain_claim
     from memcontext.retrieval import retrieve_memory
@@ -103,9 +146,11 @@ def build_context_briefing(
     world_state = brain(conn, session_id=session_id)
     briefing = session_briefing(conn, subject=subject)
     entity_links = resolved_entity_links(conn, session_id)
+    digest = _load_digest_dict(conn, session_id)
 
     hits: tuple[Any, ...] = ()
     why: dict = {}
+    fact_trust: dict = {}
     if query and query.strip():
         hits = tuple(
             retrieve_memory(
@@ -113,6 +158,7 @@ def build_context_briefing(
                 embedding_client=embedding_client,
             )
         )
+        fact_trust = _trust_map(conn, [h.id for h, _ in hits if h.kind == "fact"])
         for hit, _score in hits:
             if hit.kind == "fact":
                 ex = explain_claim(conn, hit.id)
@@ -126,4 +172,6 @@ def build_context_briefing(
         hits=hits,
         why=why,
         entity_links=entity_links,
+        digest=digest,
+        fact_trust=fact_trust,
     )

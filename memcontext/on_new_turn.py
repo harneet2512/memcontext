@@ -246,6 +246,12 @@ def run_extraction(
             from memcontext.profiles import build_smart_profile, store_profile
             profile = build_smart_profile(conn, "user")
             store_profile(conn, profile)
+            # Session digest alongside the profile (same per-session cadence): top facts
+            # by importance + supersession updates, cached so the serve path
+            # (build_context_briefing) can return a session summary without rebuilding it
+            # per query. Previously digests were only ever built via the memory_digest tool.
+            from memcontext.digests import build_session_digest, store_digest
+            store_digest(conn, build_session_digest(conn, session_id))
 
         # Cross-session consolidation — graduate facts that recur across >= 3 distinct
         # sessions into durable 'consolidated' facts. Previously this ran ONLY via the
@@ -258,6 +264,15 @@ def run_extraction(
         if global_turns % 25 == 0 and global_turns > 0:
             from memcontext.consolidate import consolidate_facts
             consolidate_facts(conn)
+            # Importance DECAY over time: recency + stability are time-dependent signals,
+            # but importance was only evaluated at INSERT — so a fact's stored importance
+            # never re-decayed and long-stable facts never accrued stability. (Live
+            # recency still ranks via retrieval's temporal channel; this fixes the STORED
+            # signal that digests/profiles read.) Recompute the active set on this coarse
+            # cadence so decay actually runs. O(active claims) per tick — fine for a
+            # personal brain; batch by age if the corpus ever gets very large.
+            from memcontext.importance import recompute_all_importance
+            recompute_all_importance(conn)
     except Exception:  # noqa: BLE001
         pass
 
