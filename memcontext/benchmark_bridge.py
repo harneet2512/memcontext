@@ -54,8 +54,11 @@ def git_tree(repo_root: Path, ref_path: str) -> str:
     return _git(repo_root, "rev-parse", ref_path, text=True).stdout.strip()
 
 
-def git_status(repo_root: Path) -> str:
-    return _git(repo_root, "status", "--porcelain=v2", text=True).stdout
+def git_status(repo_root: Path, paths: list[str] | None = None) -> str:
+    args = ["status", "--porcelain=v2"]
+    if paths:
+        args.extend(["--", *paths])
+    return _git(repo_root, *args, text=True).stdout
 
 
 def git_diff_hash(repo_root: Path, paths: list[str]) -> str:
@@ -133,6 +136,7 @@ def make_run_manifest(
 ) -> dict[str, Any]:
     product_paths = ["memcontext", "predicate_packs", "pyproject.toml"]
     status = git_status(repo_root)
+    product_status = git_status(repo_root, product_paths)
     return {
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "raw_harness": {
@@ -148,10 +152,12 @@ def make_run_manifest(
             "repo_root": str(repo_root),
             "branch": _git(repo_root, "branch", "--show-current", text=True).stdout.strip(),
             "head_commit": git_rev(repo_root, "HEAD"),
-            "status_porcelain_v2": status,
-            "working_tree_dirty": bool(status.strip()),
+            "product_status_porcelain_v2": product_status,
+            "product_working_tree_dirty": bool(product_status.strip()),
             "product_diff_sha256": git_diff_hash(repo_root, product_paths),
             "product_paths_hashed": product_paths,
+            "workspace_status_porcelain_v2": status,
+            "workspace_dirty": bool(status.strip()),
         },
         "execution": {
             "python": sys.executable,

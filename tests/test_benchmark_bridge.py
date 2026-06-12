@@ -75,4 +75,6 @@ def test_run_manifest_records_raw_harness_and_product_identity(tmp_path: Path):
     assert "evals/amb_runner.py" in manifest["raw_harness"]["exported_file_sha256"]
     assert manifest["product_under_test"]["head_commit"]
     assert manifest["product_under_test"]["product_diff_sha256"]
+    assert "product_status_porcelain_v2" in manifest["product_under_test"]
+    assert "workspace_status_porcelain_v2" in manifest["product_under_test"]
     assert manifest["execution"]["exit_code"] == 0
