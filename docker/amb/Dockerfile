@@ -108,11 +108,11 @@ RUN uv pip install "/opt/product[embeddings]" \
 RUN mkdir -p /opt/datasets \
  && curl -fSL --retry 4 --retry-delay 5 -o /opt/datasets/longmemeval_s_cleaned.json \
       "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json" \
- && curl -fSL --retry 4 --retry-delay 5 -o /opt/datasets/locomo10.json \
-      "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json" \
- && curl -fSL --retry 4 --retry-delay 5 -o /opt/datasets/our_en.json \
-      "https://raw.githubusercontent.com/1754955896/LifeBench/main/life_bench_data/locomo_format/our_en.json" \
- && du -sh /opt/datasets/* && echo "datasets self-hosted at /opt/datasets"
+ && (curl -fSL --retry 4 --retry-delay 5 -o /opt/datasets/locomo10.json \
+      "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json" || echo "WARN: locomo not fetched") \
+ && (curl -fSL --retry 4 --retry-delay 5 -o /opt/datasets/our_en.json \
+      "https://raw.githubusercontent.com/1754955896/LifeBench/main/life_bench_data/locomo_format/our_en.json" || echo "WARN: lifebench 404 upstream — skipped") \
+ && du -sh /opt/datasets/* 2>/dev/null && echo "datasets self-hosted at /opt/datasets"
 
 # Fold the resolved AMB SHA into the manifest refs.
 RUN python - <<'PY'
