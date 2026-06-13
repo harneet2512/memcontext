@@ -50,7 +50,7 @@ ARG AMB_REPO=https://github.com/vectorize-io/agent-memory-benchmark.git
 # Pinned to vectorize-io/agent-memory-benchmark HEAD @ 2026-05-08 for a
 # reproducible build. Override --build-arg AMB_REF=<sha> to track a different rev.
 ARG AMB_REF=45fa380523afab9b1acd667a03de51c5ea63f4d2
-ENV PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8
+ENV PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 HF_HOME=/opt/hf_cache
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git build-essential curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -99,6 +99,14 @@ RUN uv pip install "/opt/product[embeddings]" \
  && python /opt/patch_amb_llm.py /opt/amb/src/memory_bench/llm \
  && python /opt/revert_json_schema.py /opt/amb/src/memory_bench/llm/openai.py \
  && python /opt/fix_extractor_fence.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/extractors.py
+
+# Bake the embedding model into the image (HF_HOME=/opt/hf_cache) so retrieval
+# NEVER downloads it from HuggingFace at runtime. N parallel shards each pulling
+# the same weights from HF = the OSError that crashed single-session-preference
+# and silently degraded the rest (substrate.embed_episode_failed). With the
+# weights cached in the image, the runtime loads locally; the entrypoint forces
+# HF offline for the HF-free datasets so no network call is even attempted.
+RUN cd /opt/amb && uv run python -c "from sentence_transformers import SentenceTransformer; m=SentenceTransformer('Snowflake/snowflake-arctic-embed-s'); print('baked arctic-embed-s dim=', m.get_sentence_embedding_dimension())"
 
 # Self-host the single-file datasets — one sequential curl each at BUILD time, so
 # runtime shards read a local copy via *_DATA_PATH and NEVER call the source.

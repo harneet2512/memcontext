@@ -78,6 +78,22 @@ export LIFEBENCH_DATA_PATH="${LIFEBENCH_DATA_PATH:-/opt/datasets/our_en.json}"
 export HF_TOKEN="${HF_TOKEN:-}"
 export HUGGINGFACE_HUB_TOKEN="${HF_TOKEN:-}"
 
+# ---- baked embedding model (no HuggingFace at runtime) ----------------------
+# arctic-embed-s is baked into the image at /opt/hf_cache during build. Point the
+# runtime at that cache so retrieval loads the model locally. For HF-free datasets
+# (everything except personamem/beam, which still pull via the HF datasets lib),
+# force offline so N parallel shards never even HEAD-check HF for the model — the
+# exact network call that 429'd/refused and crashed a shard. personamem/beam keep
+# HF online for their dataset; the embedder there still loads from the baked cache.
+export HF_HOME="${HF_HOME:-/opt/hf_cache}"
+case "${1:-}" in
+  personamem|beam) : ;;
+  *)
+    export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
+    export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
+    ;;
+esac
+
 # ---- reproducibility manifest ----------------------------------------------
 OUT_DIR="${OUTPUT_DIR:-/opt/amb/outputs}"
 mkdir -p "$OUT_DIR"
