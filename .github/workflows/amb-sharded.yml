@@ -1,0 +1,160 @@
+name: AMB sharded run (whole suite)
+
+# Runs the WHOLE Agent Memory Benchmark (every dataset in DATASET_REGISTRY —
+# LongMemEval, LoCoMo, PersonaMem, BEAM, LifeBench, …) in PARALLEL shards.
+# omb has no offset/shard flag, but every dataset exposes splits + categories,
+# so we shard by (dataset, split, category) via --category — NO benchmark touch.
+#
+# build-once -> GHCR  ->  discover all shards  ->  parallel matrix  ->  aggregate.
+# Each GHA runner is a clean ~16GB box (vs the local 2GB-free OOM wall).
+# Required repo secrets: ANSWER_KEY, JUDGE_KEY, EXTRACTOR_KEY.
+
+on:
+  workflow_dispatch:
+    inputs:
+      only_dataset:
+        description: "limit to one dataset (blank = whole AMB)"
+        default: ""
+      max_parallel:
+        description: "concurrent shards"
+        default: "12"
+      extraction_workers:
+        default: "64"
+      query_limit:
+        description: "max queries PER shard/category (blank = all; set small for a cheap trial)"
+        default: ""
+
+concurrency:
+  group: amb-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # full history: the build git-archives master@PRODUCT_REF
+      - name: Free disk space (image ~17GB w/ torch)
+        uses: jlumbroso/free-disk-space@main
+        with: { tool-cache: true, android: true, dotnet: true, haskell: true, large-packages: true, swap-storage: true }
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        run: echo "image=$(echo ghcr.io/${{ github.repository }}/amb:${{ github.sha }} | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/amb/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  discover:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: read }
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: gen
+        run: |
+          # Enumerate (dataset, split, category) for the whole AMB from inside the image.
+          docker run --rm -e ONLY='${{ inputs.only_dataset }}' \
+            --entrypoint sh '${{ needs.build.outputs.image }}' \
+            -c 'cd /opt/amb && uv run python /opt/discover_shards.py' | tee disc.txt
+          line=$(grep '^MATRIX=' disc.txt | sed 's/^MATRIX=//')
+          [ -n "$line" ] || { echo "no shards discovered"; exit 1; }
+          echo "shard count: $(echo "$line" | jq 'length')"
+          echo "matrix=$line" >> "$GITHUB_OUTPUT"
+
+  shard:
+    needs: [build, discover]
+    runs-on: ubuntu-latest
+    timeout-minutes: 350      # under GitHub's 6h hosted-runner hard cap
+    permissions: { contents: read, packages: read }
+    strategy:
+      fail-fast: false        # a slow/failed shard must not kill the rest
+      max-parallel: ${{ fromJSON(inputs.max_parallel) }}
+      matrix:
+        shard: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run shard
+        env:
+          DS: ${{ matrix.shard.dataset }}
+          SP: ${{ matrix.shard.split }}
+          CAT: ${{ matrix.shard.category }}
+        run: |
+          mkdir -p out
+          ARGS="$DS $SP"
+          [ -n "$CAT" ] && ARGS="$ARGS --category $CAT"
+          [ -n "${{ inputs.query_limit }}" ] && ARGS="$ARGS --query-limit ${{ inputs.query_limit }}"
+          echo "shard: $ARGS"
+          docker run --rm \
+            -e ANSWER_KEY='${{ secrets.ANSWER_KEY }}' \
+            -e JUDGE_KEY='${{ secrets.JUDGE_KEY }}' \
+            -e EXTRACTOR_KEY='${{ secrets.EXTRACTOR_KEY }}' \
+            -e MEMCONTEXT_EXTRACTION_WORKERS='${{ inputs.extraction_workers }}' \
+            -v "$PWD/out:/opt/amb/outputs" \
+            '${{ needs.build.outputs.image }}' $ARGS
+      - name: Tag results
+        env:
+          DS: ${{ matrix.shard.dataset }}
+          SP: ${{ matrix.shard.split }}
+          CAT: ${{ matrix.shard.category }}
+        run: d="shard-${DS}-${SP}-${CAT:-all}"; mkdir -p "$d"; cp -r out/* "$d"/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.shard.dataset }}-${{ matrix.shard.split }}-${{ matrix.shard.category || 'all' }}
+          path: shard-*/
+          if-no-files-found: warn
+
+  aggregate:
+    needs: shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: all }
+      - name: Merge + total score
+        run: |
+          python - <<'PY'
+          import json, pathlib, collections
+          per = collections.defaultdict(lambda: [0,0])   # key -> [correct,total]
+          for f in pathlib.Path("all").rglob("*.json"):
+              if f.name == "run_manifest.json": continue
+              try: data = json.loads(f.read_text())
+              except Exception: continue
+              rows = data if isinstance(data, list) else (data.get("results") or data.get("queries") or [])
+              if not isinstance(rows, list): continue
+              c = sum(1 for r in rows if isinstance(r, dict) and (r.get("correct") is True or r.get("score") in (1,1.0,True)))
+              # f.parent like shard-<dataset>-<split>-<cat>
+              key = f.parent.name
+              per[key][0]+=c; per[key][1]+=len(rows)
+          tot_c=sum(v[0] for v in per.values()); tot_t=sum(v[1] for v in per.values())
+          print("=== per shard ===")
+          for k in sorted(per): c,t=per[k]; print(f"  {k:48s} {c}/{t}  {100*c/t if t else 0:.1f}%")
+          acc = 100*tot_c/tot_t if tot_t else 0
+          print(f"=== AMB TOTAL: {tot_c}/{tot_t} = {acc:.2f}% ===")
+          pathlib.Path("amb_total.json").write_text(json.dumps(
+            {"correct":tot_c,"total":tot_t,"accuracy_pct":round(acc,2),
+             "per_shard":{k:{'correct':v[0],'total':v[1]} for k,v in per.items()}}, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with: { name: amb-FINAL-score, path: amb_total.json }

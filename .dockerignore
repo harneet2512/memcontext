@@ -1,0 +1,17 @@
+# Build context = repo root (the AMB image archives product/instrument trees
+# out of .git, so .git MUST be kept). Drop only heavy, irrelevant paths.
+**/__pycache__/
+**/*.pyc
+.venv/
+venv/
+node_modules/
+results/
+*.db
+*.sqlite
+*.sqlite3
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/

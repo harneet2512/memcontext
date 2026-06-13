@@ -1,0 +1,8 @@
+# Container assets must keep LF — a CR in the shebang/heredoc breaks bash in
+# the Linux image regardless of the host checkout's autocrlf setting.
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+.env.example text eol=lf
+# patch_*.py do byte-exact anchor matching against LF-only AMB/provider source
+# inside the Linux image — a CR would break every anchor. Force LF.
+*.py        text eol=lf
