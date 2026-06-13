@@ -43,6 +43,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # full history: the build git-archives master@PRODUCT_REF
+      - name: Fetch product branch (PRODUCT_REF lives on master)
+        run: git fetch --no-tags origin master c1efbec44cf0389f9a4c5e98d60555e70e2a9414 2>/dev/null || git fetch --no-tags origin master
       - name: Free disk space (image ~17GB w/ torch)
         uses: jlumbroso/free-disk-space@main
         with: { tool-cache: true, android: true, dotnet: true, haskell: true, large-packages: true, swap-storage: true }
