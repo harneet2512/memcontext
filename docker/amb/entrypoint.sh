@@ -66,6 +66,18 @@ export ACTIVE_PACK="${ACTIVE_PACK:-personal_assistant}"
 # AMB probes for this at startup even when routed via OpenRouter; any value works.
 export GEMINI_API_KEY="${GEMINI_API_KEY:-not-used-routing-via-openrouter}"
 
+# ---- self-hosted datasets (no HuggingFace/GitHub at runtime) ----------------
+# Point omb at the files curl'd into the image at build time. With these set, omb
+# SKIPS the download entirely — so N parallel shards can't 429 the source (which
+# killed multi-session). longmemeval(HF), locomo+lifebench(GitHub) are baked in.
+export LONGMEMEVAL_DATA_PATH="${LONGMEMEVAL_DATA_PATH:-/opt/datasets/longmemeval_s_cleaned.json}"
+export LOCOMO_DATA_PATH="${LOCOMO_DATA_PATH:-/opt/datasets/locomo10.json}"
+export LIFEBENCH_DATA_PATH="${LIFEBENCH_DATA_PATH:-/opt/datasets/our_en.json}"
+# personamem/beam use the HF datasets library; an HF token raises the rate limit
+# so parallel downloads don't 429 (optional — pass via the HF_TOKEN secret).
+export HF_TOKEN="${HF_TOKEN:-}"
+export HUGGINGFACE_HUB_TOKEN="${HF_TOKEN:-}"
+
 # ---- reproducibility manifest ----------------------------------------------
 OUT_DIR="${OUTPUT_DIR:-/opt/amb/outputs}"
 mkdir -p "$OUT_DIR"

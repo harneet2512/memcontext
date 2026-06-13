@@ -100,14 +100,19 @@ RUN uv pip install "/opt/product[embeddings]" \
  && python /opt/revert_json_schema.py /opt/amb/src/memory_bench/llm/openai.py \
  && python /opt/fix_extractor_fence.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/extractors.py
 
-# Prefetch + BAKE the AMB datasets into the image (.datasets/) — a single
-# sequential download at build time. Otherwise every shard downloads the dataset
-# from HuggingFace at runtime, and N parallel shards hammer HF -> HTTP 429 ->
-# shard failure (this is what killed multi-session). With them baked in, runtime
-# shards read the local copy and never hit HF. `|| true`: datasets needing an
-# external data path (membench/memsim) are skipped, not fatal.
-RUN cd /opt/amb && (uv run python /opt/discover_shards.py || true) \
- && (du -sh /opt/amb/.datasets 2>/dev/null || echo "no .datasets baked")
+# Self-host the single-file datasets — one sequential curl each at BUILD time, so
+# runtime shards read a local copy via *_DATA_PATH and NEVER call the source.
+# (Parallel shards downloading the same dataset = HTTP 429, which killed
+# multi-session.) longmemeval is on HF; locomo/lifebench are on GitHub raw.
+# personamem/beam use the HF datasets library (handled via HF_TOKEN at runtime).
+RUN mkdir -p /opt/datasets \
+ && curl -fSL --retry 4 --retry-delay 5 -o /opt/datasets/longmemeval_s_cleaned.json \
+      "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json" \
+ && curl -fSL --retry 4 --retry-delay 5 -o /opt/datasets/locomo10.json \
+      "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json" \
+ && curl -fSL --retry 4 --retry-delay 5 -o /opt/datasets/our_en.json \
+      "https://raw.githubusercontent.com/1754955896/LifeBench/main/life_bench_data/locomo_format/our_en.json" \
+ && du -sh /opt/datasets/* && echo "datasets self-hosted at /opt/datasets"
 
 # Fold the resolved AMB SHA into the manifest refs.
 RUN python - <<'PY'
