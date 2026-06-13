@@ -53,6 +53,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
         run: echo "image=$(echo ghcr.io/${{ github.repository }}/amb:${{ github.sha }} | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3   # docker-container driver (gha cache export needs it)
       - uses: docker/build-push-action@v6
         with:
           context: .
