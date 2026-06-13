@@ -106,7 +106,16 @@ RUN uv pip install "/opt/product[embeddings]" \
 # and silently degraded the rest (substrate.embed_episode_failed). With the
 # weights cached in the image, the runtime loads locally; the entrypoint forces
 # HF offline for the HF-free datasets so no network call is even attempted.
-RUN cd /opt/amb && uv run python -c "from sentence_transformers import SentenceTransformer; m=SentenceTransformer('Snowflake/snowflake-arctic-embed-s'); print('baked arctic-embed-s dim=', m.get_sentence_embedding_dimension())"
+# Retry the bake: the build-time HF download is the one remaining network step,
+# and a transient huggingface.co blip/rate-limit must not kill a 20-min build
+# (it did once: LocalEntryNotFoundError mid-build). 6 attempts w/ backoff + a
+# longer HF timeout; only a sustained outage fails the build.
+ENV HF_HUB_DOWNLOAD_TIMEOUT=60
+RUN cd /opt/amb && for i in 1 2 3 4 5 6; do \
+      uv run python -c "from sentence_transformers import SentenceTransformer; m=SentenceTransformer('Snowflake/snowflake-arctic-embed-s'); print('baked arctic-embed-s dim=', m.get_sentence_embedding_dimension())" && exit 0; \
+      echo "embedder bake attempt $i failed (HF unreachable) — retrying in 20s"; sleep 20; \
+    done; \
+    echo "embedder bake failed after 6 attempts" >&2; exit 1
 
 # Self-host the single-file datasets — one sequential curl each at BUILD time, so
 # runtime shards read a local copy via *_DATA_PATH and NEVER call the source.
