@@ -23,6 +23,9 @@ on:
       query_limit:
         description: "max queries PER shard/category (blank = all; set small for a cheap trial)"
         default: ""
+      force_build:
+        description: "rebuild the image even if :built exists (set after changing docker/amb)"
+        default: "false"
   # Tag trigger: run from the TRIAL branch without putting the workflow on master
   # (workflow_dispatch needs the default branch). Config comes from repo variables
   # vars.AMB_*. Run with:  git tag amb-run-N && git push origin amb-run-N
@@ -41,22 +44,40 @@ jobs:
     outputs:
       image: ${{ steps.meta.outputs.image }}
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }   # full history: the build git-archives master@PRODUCT_REF
-      - name: Fetch product branch (PRODUCT_REF lives on master)
-        run: git fetch --no-tags origin master c1efbec44cf0389f9a4c5e98d60555e70e2a9414 2>/dev/null || git fetch --no-tags origin master
-      - name: Free disk space (image ~17GB w/ torch)
-        uses: jlumbroso/free-disk-space@main
-        with: { tool-cache: true, android: true, dotnet: true, haskell: true, large-packages: true, swap-storage: true }
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        run: echo "image=$(echo ghcr.io/${{ github.repository }}/amb:${{ github.sha }} | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@v3   # docker-container driver (gha cache export needs it)
-      - uses: docker/build-push-action@v6
+        # Stable tag — the image only depends on docker/amb + the pinned product, not
+        # on the commit/tag. So var-only or workflow-only re-runs REUSE it (no rebuild).
+        run: echo "image=$(echo ghcr.io/${{ github.repository }}/amb:built | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      # Skip the ~17GB torch rebuild entirely if the image is already in GHCR.
+      # Force a rebuild after changing docker/amb by setting input force_build=true.
+      - id: check
+        run: |
+          if [ "${{ inputs.force_build || vars.AMB_FORCE_BUILD }}" = "true" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"; echo "force_build set -> rebuilding"
+          elif docker manifest inspect "${{ steps.meta.outputs.image }}" >/dev/null 2>&1; then
+            echo "build=false" >> "$GITHUB_OUTPUT"; echo "image already in GHCR -> skipping the 17GB rebuild"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"; echo "image not found -> building once"
+          fi
+      - if: steps.check.outputs.build == 'true'
+        uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # full history: the build git-archives master@PRODUCT_REF
+      - if: steps.check.outputs.build == 'true'
+        name: Fetch product branch (PRODUCT_REF lives on master)
+        run: git fetch --no-tags origin master c1efbec44cf0389f9a4c5e98d60555e70e2a9414 2>/dev/null || git fetch --no-tags origin master
+      - if: steps.check.outputs.build == 'true'
+        name: Free disk space (image ~17GB w/ torch)
+        uses: jlumbroso/free-disk-space@main
+        with: { tool-cache: true, android: true, dotnet: true, haskell: true, large-packages: true, swap-storage: true }
+      - if: steps.check.outputs.build == 'true'
+        uses: docker/setup-buildx-action@v3   # docker-container driver (gha cache export needs it)
+      - if: steps.check.outputs.build == 'true'
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/amb/Dockerfile
