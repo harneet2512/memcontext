@@ -35,13 +35,43 @@ log = structlog.get_logger(__name__)
 
 # --- constants ---------------------------------------------------------------
 
-_DEFAULT_EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+_DEFAULT_EMBED_MODEL = "Snowflake/snowflake-arctic-embed-s"
 _DEFAULT_EMBED_DIM = 384
 
 BGE_M3_MODEL_ID = os.environ.get("MEMCONTEXT_EMBED_MODEL", _DEFAULT_EMBED_MODEL)
 BGE_M3_MODEL_REVISION = "main"
 BGE_M3_VERSION_TAG = f"{BGE_M3_MODEL_ID}@{BGE_M3_MODEL_REVISION}"
-BGE_M3_EMBED_DIM = _DEFAULT_EMBED_DIM if "MiniLM" in BGE_M3_MODEL_ID or "bge-small" in BGE_M3_MODEL_ID else 1024
+BGE_M3_EMBED_DIM = (
+    _DEFAULT_EMBED_DIM
+    if "MiniLM" in BGE_M3_MODEL_ID
+    or "bge-small" in BGE_M3_MODEL_ID
+    or "arctic-embed-s" in BGE_M3_MODEL_ID
+    else 1024
+)
+
+
+def _query_prefix_for(model_id: str) -> str:
+    """Return the asymmetric-retrieval query prompt for ``model_id``.
+
+    Asymmetric retrieval models (arctic-embed, bge-*-en, e5) expect the SEARCH
+    QUERY to carry a task prompt while DOCUMENTS are embedded bare. Symmetric
+    models (MiniLM, gte) get no prefix.
+    """
+    mid = model_id.lower()
+    if "arctic-embed" in mid or ("bge-" in mid and "-en" in mid):
+        return "Represent this sentence for searching relevant passages: "
+    if "e5-" in mid:
+        return "query: "
+    return ""  # symmetric models (MiniLM, gte) — no prefix
+
+
+_QUERY_PREFIX = _query_prefix_for(BGE_M3_MODEL_ID)
+
+
+def apply_query_prefix(text: str) -> str:
+    """Prepend the asymmetric-retrieval query prompt to a SEARCH QUERY before
+    embedding. No-op for symmetric models and for documents (never prefixed)."""
+    return _QUERY_PREFIX + text if _QUERY_PREFIX else text
 
 MODAL_URL_ENV = "MODAL_BGE_M3_URL"
 CACHE_DIR_ENV = "SUBSTRATE_EMBED_CACHE_DIR"
@@ -592,7 +622,7 @@ def retrieve_relevant_claims(
             continue
         embedding_by_id[row["claim_id"]] = (vec, row["embedding_model_version"])
 
-    q_vec = effective.embed([question])[0]
+    q_vec = effective.embed([apply_query_prefix(question)])[0]
 
     scored: list[tuple[float, Claim, str]] = []
     for c in active:
@@ -930,7 +960,7 @@ def retrieve_hybrid(
 
     has_embeddings = bool(embedding_by_id)
     if has_embeddings:
-        q_vec: list[float] | None = effective.embed([query])[0]
+        q_vec: list[float] | None = effective.embed([apply_query_prefix(query)])[0]
     else:
         q_vec = None
         log.debug("substrate.retrieve_hybrid_no_embeddings", session_id=session_id)
@@ -1183,7 +1213,7 @@ def retrieve_episodes(
         embedding_by_id[row["turn_id"]] = (vec, row["embedding_model_version"])
 
     has_embeddings = bool(embedding_by_id)
-    q_vec = effective.embed([query])[0] if has_embeddings else None
+    q_vec = effective.embed([apply_query_prefix(query)])[0] if has_embeddings else None
 
     sem_scores: list[float] = []
     for t in episodes:
@@ -1711,7 +1741,7 @@ def retrieve_event_frames(
         except ValueError:
             continue
 
-    q_vec = effective.embed([query])[0]
+    q_vec = effective.embed([apply_query_prefix(query)])[0]
 
     scored: list[tuple[float, EventFrame]] = []
     for f in frames:

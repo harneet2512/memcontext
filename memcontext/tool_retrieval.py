@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 
 from memcontext.retrieval import (
     EmbeddingClient,
+    apply_query_prefix,
     bm25_over_docs,
     retrieve_memory_across,
     tokenize_for_bm25,
@@ -131,7 +132,7 @@ def build_memory_conditioning(
     terms = _dedupe(tokenize_for_bm25(memory_text), cap=max_terms)
     memory_embedding: list[float] | None = None
     if embedder is not None and memory_text.strip():
-        memory_embedding = embedder.embed([memory_text])[0]
+        memory_embedding = embedder.embed([apply_query_prefix(memory_text)])[0]
     provenance = tuple(hit.id for hit, _ in hits)
     return MemoryConditioning(
         query_terms=terms,
@@ -200,7 +201,9 @@ def build_structured_conditioning(
     terms = tuple(t for t, _ in sorted(scored.items(), key=lambda kv: (-kv[1], kv[0]))[:max_terms])
     memory_text = " ".join(summary)
     memory_embedding = (
-        embedder.embed([memory_text])[0] if embedder is not None and memory_text.strip() else None
+        embedder.embed([apply_query_prefix(memory_text)])[0]
+        if embedder is not None and memory_text.strip()
+        else None
     )
     return MemoryConditioning(
         query_terms=terms,

@@ -23,7 +23,7 @@ import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from memcontext.retrieval import EmbeddingClient
+from memcontext.retrieval import EmbeddingClient, apply_query_prefix
 from memcontext.supersession_semantic import Embedder
 from memcontext.tool_registry import build_tool_index, load_candidates
 from memcontext.tool_retrieval import (
@@ -99,7 +99,9 @@ def discover_tools(
             )
             memory_used = not conditioning.is_empty
 
-    query_embedding = embedder.embed([effective_query])[0] if embedder is not None else None
+    query_embedding = (
+        embedder.embed([apply_query_prefix(effective_query)])[0] if embedder is not None else None
+    )
     results = retrieve_tools(
         candidates,
         query=effective_query,
