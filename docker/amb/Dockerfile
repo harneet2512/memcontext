@@ -100,6 +100,15 @@ RUN uv pip install "/opt/product[embeddings]" \
  && python /opt/revert_json_schema.py /opt/amb/src/memory_bench/llm/openai.py \
  && python /opt/fix_extractor_fence.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/extractors.py
 
+# Prefetch + BAKE the AMB datasets into the image (.datasets/) — a single
+# sequential download at build time. Otherwise every shard downloads the dataset
+# from HuggingFace at runtime, and N parallel shards hammer HF -> HTTP 429 ->
+# shard failure (this is what killed multi-session). With them baked in, runtime
+# shards read the local copy and never hit HF. `|| true`: datasets needing an
+# external data path (membench/memsim) are skipped, not fatal.
+RUN cd /opt/amb && (uv run python /opt/discover_shards.py || true) \
+ && (du -sh /opt/amb/.datasets 2>/dev/null || echo "no .datasets baked")
+
 # Fold the resolved AMB SHA into the manifest refs.
 RUN python - <<'PY'
 import json, pathlib
