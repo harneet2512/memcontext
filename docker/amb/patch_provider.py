@@ -28,8 +28,9 @@ EDITS = [
         "    EmbeddingClient,\n"
         "    backfill_embeddings,\n"
         "    retrieve_hybrid,\n"
+        "    retrieve_memory_across,\n"
         ")",
-        "import retrieve_hybrid (mirror evals/longmemeval.py; NO ingest-time embedder/semantic)",
+        "import retrieve_memory_across (the product's real multi-session door) alongside retrieve_hybrid",
     ),
     (
         "        self._extractor = None\n"
@@ -42,8 +43,15 @@ EDITS = [
         "        # retrieve() can fan out across them via retrieve_memory_across,\n"
         "        # exactly as mcp_tools.handle_memory_query does for a multi-session\n"
         "        # query (mcp_tools.py:156). dedup + insertion order preserved.\n"
-        "        self._sessions_by_user: dict[str | None, list[str]] = {}",
-        "track per-user session ids on the provider instance (per-conversation session model)",
+        "        self._sessions_by_user: dict[str | None, list[str]] = {}\n"
+        "        # Per-session ISO-8601 date captured from the AMB Document.timestamp\n"
+        "        # field (longmemeval's per-session haystack_date). The product's\n"
+        "        # native harness prefixes each served episode with its date + a\n"
+        "        # relative offset to the query date so the reader can do temporal\n"
+        "        # reasoning; we mirror that by riding the date INSIDE Document.content\n"
+        "        # (AMB's frozen rag.py renders content unchanged).\n"
+        "        self._dates_by_session: dict[str, str] = {}",
+        "track per-user session ids + per-session ISO date on the provider instance",
     ),
     (
         "        if reset:\n"
@@ -53,9 +61,10 @@ EDITS = [
         "        if reset:\n"
         "            self.cleanup()\n"
         "            self._sessions_by_user = {}\n"
+        "            self._dates_by_session = {}\n"
         "            self._conn = open_database(self._db_path)\n"
         "            self._conn.row_factory = sqlite3.Row",
-        "reset tracked sessions alongside the connection on prepare(reset=True)",
+        "reset tracked sessions + per-session dates alongside the connection on prepare(reset=True)",
     ),
     (
         "        first_user_id = documents[0].user_id if documents else \"default\"\n"
@@ -79,6 +88,12 @@ EDITS = [
         "                user_sessions.append(sid)\n"
         "            if sid not in batch_sessions:\n"
         "                batch_sessions.append(sid)\n"
+        "            # Capture the per-session date (longmemeval's haystack_date,\n"
+        "            # surfaced by the loader as Document.timestamp, ISO-8601). Used\n"
+        "            # at serve time to date each episode for temporal reasoning.\n"
+        "            _ts = getattr(doc, \"timestamp\", None)\n"
+        "            if _ts:\n"
+        "                self._dates_by_session[sid] = _ts\n"
         "            turns = _parse_document_turns(doc)\n"
         "            for role, text in turns:\n"
         "                all_work.append((sid, role, text))",
@@ -105,20 +120,20 @@ EDITS = [
         '                    }]\n'
         '\n'
         '                sp = Speaker.USER if role == "user" else Speaker.ASSISTANT',
-        '                # Mirror the product LongMemEval harness EXACTLY: a turn that\n'
-        '                # produced NO claims is SKIPPED (never persisted) -- the harness\n'
-        '                # does `if not claims_data: continue` before on_new_turn. The old\n'
-        '                # raw-text fallback (text[:500]) AND persisting zero-claim turns\n'
-        '                # both diverge from the measured product and pollute retrieval;\n'
-        '                # this does neither. No embedder=/semantic= is passed to\n'
-        '                # on_new_turn either: the 88-percent harness runs only Pass-1\n'
-        '                # structural supersession, so Pass-2 semantic supersession cannot\n'
-        '                # wrongly retire a needle claim out of retrieval (the dominant\n'
-        '                # cause of gold-absent-from-context misses).\n'
-        '                if not claims_data:\n'
-        '                    continue\n'
+        '                # EPISODE FLOOR (product Tier-1): a turn the extractor produced\n'
+        '                # NO claims for is STILL ingested via on_new_turn with an empty\n'
+        '                # claim set (PassthroughExtractor([])). on_new_turn inserts the\n'
+        '                # turn regardless of claim count, so the turn becomes a\n'
+        '                # retrievable EPISODE carrying zero facts -- exactly the\n'
+        '                # product Tier-1 floor. The old `continue` HARD-DROPPED such turns,\n'
+        '                # so a needle turn the extractor missed vanished from the store\n'
+        '                # entirely and could never be retrieved. We drop the old raw-text\n'
+        '                # text[:500] fallback (that fabricated a junk fact) AND we no\n'
+        '                # longer drop the turn -- we keep it as a fact-less episode.\n'
+        '                # Still no embedder=/semantic= passed to on_new_turn: the\n'
+        '                # 88-percent harness runs only Pass-1 structural supersession.\n'
         '                sp = Speaker.USER if role == "user" else Speaker.ASSISTANT',
-        "skip zero-claim turns; no ingest-time embedder/semantic (mirror evals/longmemeval.py)",
+        "episode floor: ingest zero-claim turns as fact-less EPISODES (was: hard-drop via continue)",
     ),
     (
         "        backfill_embeddings(conn, unified_session, client=self._embedding_client)",
@@ -160,64 +175,96 @@ EDITS = [
         "            ))\n"
         "\n"
         "        return result_docs, None",
-        "        # Faithful multi-session serve path. mcp_tools.handle_memory_query\n"
-        "        # (mcp_tools.py:156), for a query with no single session, fans out\n"
-        "        # across EVERY session via retrieve_memory_across — per-session\n"
-        "        # fact+episode fusion merged by RRF rank. We mirror it exactly:\n"
-        "        # scope to this user's tracked sessions; if the user is unknown,\n"
-        "        # fall back to ALL tracked sessions (flattened), preserving the\n"
-        "        # product's cross-session reach. Only if nothing is tracked do we\n"
-        "        # keep the original single-session _get_any_session floor so a cold\n"
-        "        # retrieve never crashes. No benchmark tuning: same call, same\n"
-        "        # args, same default top_k as the product's door.\n"
-        "        # Scope STRICTLY to this user's (this unit's) sessions. The old\n"
-        "        # 'flatten ALL tracked users' fallback leaked other units' sessions\n"
-        "        # into the pool under AMB's unit-sequential isolation (the DB\n"
-        "        # accumulates every unit). Only the cold _get_any_session floor\n"
-        "        # remains, for a genuinely empty store.\n"
+        "        # REAL SERVE DOOR. mcp_tools.handle_memory_query (mcp_tools.py:156),\n"
+        "        # for a query spanning many sessions, fans out across EVERY session\n"
+        "        # via retrieve_memory_across — per-session fact+episode fusion merged\n"
+        "        # by RANK (RRF). That is the product's actual multi-session door, and\n"
+        "        # it surfaces the fact-less EPISODES created by the episode floor\n"
+        "        # (ingest change 1) that a facts-only retrieve_hybrid can never reach.\n"
+        "        # We replace the old per-session retrieve_hybrid raw-score pooling\n"
+        "        # (which silenced whole sessions by raw-score magnitude AND served\n"
+        "        # only fact-bearing turns) with a single retrieve_memory_across call.\n"
+        "        # Scope STRICTLY to this user's (this unit's) tracked sessions; under\n"
+        "        # AMB unit-sequential isolation the DB accumulates every unit, so a\n"
+        "        # flatten-all fallback would leak other units' sessions. Only the cold\n"
+        "        # _get_any_session floor remains, for a genuinely empty store.\n"
         "        session_ids = list(self._sessions_by_user.get(user_id) or [])\n"
         "        if not session_ids:\n"
         "            session_ids = [_get_any_session(conn)]\n"
         "\n"
-        "\n"
         "        from memcontext.claims import get_turn\n"
         "\n"
-        "        # Serve depth + content faithful to the product's own LongMemEval\n"
-        "        # harness (evals/longmemeval.py): retrieve top_k=50 PER session,\n"
-        "        # pool, take the top 50, and serve each retrieved claim's SOURCE\n"
-        "        # TURN text (the full surrounding conversation), deduped by turn --\n"
-        "        # NOT the terse claim_retrieval_text. Serving the terse claim text\n"
-        "        # gave ~300-token contexts and collapsed the benchmark score; the\n"
-        "        # native harness serves the dated turns the reader actually needs.\n"
-        "        _SERVE_TOP_K = 50\n"
-        "        pooled: list = []\n"
-        "        for _sid in session_ids:\n"
-        "            pooled.extend(retrieve_hybrid(\n"
-        "                conn,\n"
-        "                session_id=_sid,\n"
-        "                query=query,\n"
-        "                top_k=_SERVE_TOP_K,\n"
-        "                embedding_client=self._embedding_client,\n"
-        "            ))\n"
-        "        pooled.sort(key=lambda x: (-x[1], x[0].claim_id))\n"
-        "        top = pooled[:_SERVE_TOP_K]\n"
+        "        hits = retrieve_memory_across(\n"
+        "            conn,\n"
+        "            session_ids=session_ids,\n"
+        "            query=query,\n"
+        "            top_k=50,\n"
+        "            embedding_client=self._embedding_client,\n"
+        "        )\n"
         "\n"
         "        result_docs = []\n"
         "        seen_turns: set[str] = set()\n"
-        "        for claim, _score in top:\n"
-        "            if claim.source_turn_id in seen_turns:\n"
+        "        for hit, _score in hits:\n"
+        "            if hit.source_turn_id in seen_turns:\n"
         "                continue\n"
-        "            seen_turns.add(claim.source_turn_id)\n"
-        "            turn = get_turn(conn, claim.source_turn_id)\n"
-        "            content = turn.text if turn else claim.value\n"
+        "            seen_turns.add(hit.source_turn_id)\n"
+        "            turn = get_turn(conn, hit.source_turn_id)\n"
+        "            content = turn.text if turn else hit.text\n"
+        "            # TEMPORAL GROUNDING: prefix the served turn with its session\n"
+        "            # date + a relative offset to the query date, mirroring the\n"
+        "            # product's native harness. AMB's frozen rag.py renders this\n"
+        "            # content verbatim, so the dates reach the reader unchanged.\n"
+        "            content = _date_prefix(\n"
+        "                self._dates_by_session.get(turn.session_id) if turn else None,\n"
+        "                query_timestamp,\n"
+        "            ) + content\n"
         "            result_docs.append(Document(\n"
-        "                id=claim.claim_id,\n"
+        "                id=hit.id,\n"
         "                content=content,\n"
         "                user_id=user_id,\n"
         "            ))\n"
         "\n"
         "        return result_docs, None",
-        "serve top_k=50 per session + source TURN text (mirror evals/longmemeval.py; was 10 terse claim-texts)",
+        "REAL SERVE DOOR: retrieve_memory_across (facts+EPISODES by RRF) + dated turn text (was per-session raw-score pooling)",
+    ),
+    (
+        "def _get_any_session(conn: sqlite3.Connection) -> str:",
+        "def _date_prefix(session_iso: str | None, query_iso: str | None) -> str:\n"
+        "    \"\"\"Build the temporal-grounding prefix the product's native harness adds.\n"
+        "\n"
+        "    Returns ``'[<YYYY-MM-DD>, ~N days ago]\\n'`` when the session's date is\n"
+        "    known, computing N as the day offset from the query timestamp when that is\n"
+        "    also known. Returns '' when no session date is available (we NEVER\n"
+        "    fabricate a date). Failures degrade to a bare date or empty string.\n"
+        "    \"\"\"\n"
+        "    if not session_iso:\n"
+        "        return \"\"\n"
+        "    from datetime import datetime\n"
+        "\n"
+        "    def _parse(s: str):\n"
+        "        try:\n"
+        "            return datetime.fromisoformat(s.replace(\"Z\", \"+00:00\"))\n"
+        "        except Exception:\n"
+        "            return None\n"
+        "\n"
+        "    sdt = _parse(session_iso)\n"
+        "    if sdt is None:\n"
+        "        return f\"[{session_iso}]\\n\"\n"
+        "    date_str = sdt.strftime(\"%Y-%m-%d\")\n"
+        "    qdt = _parse(query_iso) if query_iso else None\n"
+        "    if qdt is not None:\n"
+        "        try:\n"
+        "            days = (qdt - sdt).days\n"
+        "            if days >= 0:\n"
+        "                return f\"[{date_str}, ~{days} days ago]\\n\"\n"
+        "            return f\"[{date_str}, ~{abs(days)} days from now]\\n\"\n"
+        "        except Exception:\n"
+        "            pass\n"
+        "    return f\"[{date_str}]\\n\"\n"
+        "\n"
+        "\n"
+        "def _get_any_session(conn: sqlite3.Connection) -> str:",
+        "add _date_prefix helper (temporal grounding: '[<date>, ~N days ago]' inside served content)",
     ),
 ]
 
