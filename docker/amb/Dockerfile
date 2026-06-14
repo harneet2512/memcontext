@@ -124,12 +124,21 @@ RUN cd /opt/amb && for i in 1 2 3 4 5 6; do \
 # (Parallel shards downloading the same dataset = HTTP 429, which killed
 # multi-session.) longmemeval is on HF; locomo/lifebench are on GitHub raw.
 # personamem/beam use the HF datasets library (handled via HF_TOKEN at runtime).
+# --retry alone does NOT retry TLS/connection failures (curl exit 35: "unexpected
+# eof" killed a build); --retry-all-errors does, and the must-succeed longmemeval
+# download is wrapped in an outer retry loop so a transient HF blip can't be fatal.
 RUN mkdir -p /opt/datasets \
- && curl -fSL --retry 4 --retry-delay 5 -o /opt/datasets/longmemeval_s_cleaned.json \
-      "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json" \
- && (curl -fSL --retry 4 --retry-delay 5 -o /opt/datasets/locomo10.json \
+ && for i in 1 2 3 4 5 6; do \
+      curl -fSL --retry-all-errors --retry 6 --retry-delay 8 --connect-timeout 30 \
+        -o /opt/datasets/longmemeval_s_cleaned.json \
+        "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json" \
+        && test -s /opt/datasets/longmemeval_s_cleaned.json && break; \
+      echo "longmemeval fetch attempt $i failed (HF blip) — retrying in 15s"; sleep 15; \
+    done \
+ && test -s /opt/datasets/longmemeval_s_cleaned.json \
+ && (curl -fSL --retry-all-errors --retry 6 --retry-delay 8 -o /opt/datasets/locomo10.json \
       "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json" || echo "WARN: locomo not fetched") \
- && (curl -fSL --retry 4 --retry-delay 5 -o /opt/datasets/our_en.json \
+ && (curl -fSL --retry-all-errors --retry 6 --retry-delay 8 -o /opt/datasets/our_en.json \
       "https://raw.githubusercontent.com/1754955896/LifeBench/main/life_bench_data/locomo_format/our_en.json" || echo "WARN: lifebench 404 upstream — skipped") \
  && du -sh /opt/datasets/* 2>/dev/null && echo "datasets self-hosted at /opt/datasets"
 
