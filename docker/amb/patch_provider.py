@@ -27,11 +27,9 @@ EDITS = [
         "from memcontext.retrieval import (\n"
         "    EmbeddingClient,\n"
         "    backfill_embeddings,\n"
-        "    episode_embedder,\n"
         "    retrieve_hybrid,\n"
-        "    semantic_supersession,\n"
         ")",
-        "import episode_embedder + semantic_supersession + retrieve_hybrid (production helpers)",
+        "import retrieve_hybrid (mirror evals/longmemeval.py; NO ingest-time embedder/semantic)",
     ),
     (
         "        self._extractor = None\n"
@@ -87,34 +85,15 @@ EDITS = [
         "per-doc sessions on ingest: id=amb_{doc.id}, tracked per user (dedup, order preserved)",
     ),
     (
-        "        for sid in sorted(by_session.keys()):\n"
-        "            for role, text, claims_data in by_session[sid]:",
-        "        # Faithful wiring: the production ingest path (cli.py / mcp_tools.py)\n"
-        "        # supplies the episode embedder and Pass-2 semantic supersession.\n"
-        "        _epi = episode_embedder()\n"
-        "        _sem = semantic_supersession()\n"
-        "        for sid in sorted(by_session.keys()):\n"
-        "            for role, text, claims_data in by_session[sid]:",
-        "construct production embedder + Pass-2 supersession once before the loop",
-    ),
-    (
-        "                on_new_turn(\n"
-        "                    conn,\n"
-        "                    session_id=sid,\n"
-        "                    speaker=sp,\n"
-        "                    text=text,\n"
-        "                    extractor=pt,\n"
-        "                )",
-        "                on_new_turn(\n"
-        "                    conn,\n"
-        "                    session_id=sid,\n"
-        "                    speaker=sp,\n"
-        "                    text=text,\n"
-        "                    extractor=pt,\n"
-        "                    embedder=_epi,\n"
-        "                    semantic=_sem,\n"
-        "                )",
-        "pass embedder= and semantic= to on_new_turn (the two missing capabilities)",
+        "                except Exception:\n"
+        "                    w = futures[fut]\n"
+        "                    extracted.append((w[0], w[1], w[2], []))",
+        "                except Exception:\n"
+        "                    # Mirror the product harness: a FAILED extraction is\n"
+        "                    # SKIPPED, not persisted as a zero-claim turn the\n"
+        "                    # measured product never creates.\n"
+        "                    pass",
+        "failed extraction -> skip (do not persist a zero-claim turn) — match product harness",
     ),
     (
         '                if not claims_data:\n'
@@ -126,14 +105,20 @@ EDITS = [
         '                    }]\n'
         '\n'
         '                sp = Speaker.USER if role == "user" else Speaker.ASSISTANT',
-        '                # Legitimacy (anti-overfitting rule): NO raw-text fallback.\n'
-        '                # A real LLMExtractor returns [] on a miss and contributes\n'
-        '                # no claim; injecting {user_fact: text[:500]} would turn\n'
-        '                # MemContext into a raw-text RAG baseline — a prohibited\n'
-        '                # benchmark hack. on_new_turn still persists the episode\n'
-        '                # with zero claims, exactly as the production pipeline does.\n'
+        '                # Mirror the product LongMemEval harness EXACTLY: a turn that\n'
+        '                # produced NO claims is SKIPPED (never persisted) -- the harness\n'
+        '                # does `if not claims_data: continue` before on_new_turn. The old\n'
+        '                # raw-text fallback (text[:500]) AND persisting zero-claim turns\n'
+        '                # both diverge from the measured product and pollute retrieval;\n'
+        '                # this does neither. No embedder=/semantic= is passed to\n'
+        '                # on_new_turn either: the 88-percent harness runs only Pass-1\n'
+        '                # structural supersession, so Pass-2 semantic supersession cannot\n'
+        '                # wrongly retire a needle claim out of retrieval (the dominant\n'
+        '                # cause of gold-absent-from-context misses).\n'
+        '                if not claims_data:\n'
+        '                    continue\n'
         '                sp = Speaker.USER if role == "user" else Speaker.ASSISTANT',
-        "remove the prohibited raw-text fallback (miss -> no claim, not text[:500])",
+        "skip zero-claim turns; no ingest-time embedder/semantic (mirror evals/longmemeval.py)",
     ),
     (
         "        backfill_embeddings(conn, unified_session, client=self._embedding_client)",
@@ -185,12 +170,12 @@ EDITS = [
         "        # keep the original single-session _get_any_session floor so a cold\n"
         "        # retrieve never crashes. No benchmark tuning: same call, same\n"
         "        # args, same default top_k as the product's door.\n"
+        "        # Scope STRICTLY to this user's (this unit's) sessions. The old\n"
+        "        # 'flatten ALL tracked users' fallback leaked other units' sessions\n"
+        "        # into the pool under AMB's unit-sequential isolation (the DB\n"
+        "        # accumulates every unit). Only the cold _get_any_session floor\n"
+        "        # remains, for a genuinely empty store.\n"
         "        session_ids = list(self._sessions_by_user.get(user_id) or [])\n"
-        "        if not session_ids:\n"
-        "            for _sids in self._sessions_by_user.values():\n"
-        "                for _s in _sids:\n"
-        "                    if _s not in session_ids:\n"
-        "                        session_ids.append(_s)\n"
         "        if not session_ids:\n"
         "            session_ids = [_get_any_session(conn)]\n"
         "\n"
