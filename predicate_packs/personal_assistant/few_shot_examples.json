@@ -120,17 +120,17 @@
       "expected_output": "[\n  {\"subject\":\"user\",\"predicate\":\"user_preference\",\"value\":\"dislikes: Jira (considers it bloated)\",\"confidence\":0.88},\n  {\"subject\":\"user\",\"predicate\":\"user_preference\",\"value\":\"uses plain Markdown for task management\",\"confidence\":0.85}\n]"
     },
     {
-      "name": "assistant_recommends_restaurant",
-      "scenario": "Assistant recommends a specific place. Extract as assistant_recommendation so the user can later ask 'what did you recommend?'.",
+      "name": "assistant_recommends_option",
+      "scenario": "Assistant recommends a specific option. Extract as assistant_recommendation so the user can later ask 'what did you recommend?'.",
       "prior_turns": [
-        {"speaker": "user", "text": "I'm visiting Bandung next week. Where should I eat?"}
+        {"speaker": "user", "text": "What's a good way to stay organized at work?"}
       ],
       "current_turn": {
         "speaker": "assistant",
-        "text": "I'd highly recommend Miss Bee Providore in Cihampeulas — it's a great brunch spot with Western and Indonesian fusion dishes. Their eggs benedict is particularly good."
+        "text": "I'd suggest time-blocking your calendar into 90-minute focus sessions — it protects deep work and keeps meetings from fragmenting your day."
       },
       "active_claims_summary": "(no active claims)",
-      "expected_output": "[\n  {\"subject\":\"assistant\",\"predicate\":\"assistant_recommendation\",\"value\":\"recommended Miss Bee Providore in Cihampeulas, Bandung for brunch — Western and Indonesian fusion, known for eggs benedict\",\"confidence\":0.93}\n]"
+      "expected_output": "[\n  {\"subject\":\"assistant\",\"predicate\":\"assistant_recommendation\",\"value\":\"recommended time-blocking the calendar into 90-minute focus sessions to protect deep work\",\"confidence\":0.93}\n]"
     },
     {
       "name": "assistant_provides_technical_info",
