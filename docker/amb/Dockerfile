@@ -69,6 +69,7 @@ COPY docker/amb/patch_amb_llm.py /opt/patch_amb_llm.py
 # answer/judge code is PRISTINE — gateways enforce complete fields, no rag/judge
 # touch. And fence-strip OUR extractor (MiniMax-M3 wraps JSON in a markdown fence).
 COPY docker/amb/revert_json_schema.py /opt/revert_json_schema.py
+COPY docker/amb/patch_openrouter_strict.py /opt/patch_openrouter_strict.py
 COPY docker/amb/fix_extractor_fence.py /opt/fix_extractor_fence.py
 # Shard enumerator for the sharded GHA workflow (lists dataset/split/category).
 COPY docker/amb/discover_shards.py /opt/discover_shards.py
@@ -98,6 +99,7 @@ RUN uv pip install "/opt/product[embeddings]" \
  && python /opt/harness/evals/amb/install.py \
  && python /opt/patch_amb_llm.py /opt/amb/src/memory_bench/llm \
  && python /opt/revert_json_schema.py /opt/amb/src/memory_bench/llm/openai.py \
+ && python /opt/patch_openrouter_strict.py /opt/amb/src/memory_bench/llm/openai.py \
  && python /opt/fix_extractor_fence.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/extractors.py
 
 # Bake the embedding model into the image (HF_HOME=/opt/hf_cache) so retrieval
