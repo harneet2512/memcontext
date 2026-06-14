@@ -27,10 +27,12 @@ EDITS = [
         "from memcontext.retrieval import (\n"
         "    EmbeddingClient,\n"
         "    backfill_embeddings,\n"
+        "    episode_embedder,\n"
         "    retrieve_hybrid,\n"
         "    retrieve_memory_across,\n"
+        "    semantic_supersession,\n"
         ")",
-        "import retrieve_memory_across (the product's real multi-session door) alongside retrieve_hybrid",
+        "import episode_embedder + semantic_supersession + retrieve_memory_across (the product's REAL ingest+serve collaborators)",
     ),
     (
         "        self._extractor = None\n"
@@ -130,10 +132,45 @@ EDITS = [
         '                # entirely and could never be retrieved. We drop the old raw-text\n'
         '                # text[:500] fallback (that fabricated a junk fact) AND we no\n'
         '                # longer drop the turn -- we keep it as a fact-less episode.\n'
-        '                # Still no embedder=/semantic= passed to on_new_turn: the\n'
-        '                # 88-percent harness runs only Pass-1 structural supersession.\n'
+        '                # The on_new_turn call now passes embedder=/semantic= (below),\n'
+        '                # so even this fact-less episode is EMBEDDED -- semantic episode\n'
+        '                # retrieval works, exactly as the product ingest does.\n'
         '                sp = Speaker.USER if role == "user" else Speaker.ASSISTANT',
         "episode floor: ingest zero-claim turns as fact-less EPISODES (was: hard-drop via continue)",
+    ),
+    (
+        "        for sid in sorted(by_session.keys()):\n"
+        "            for role, text, claims_data in by_session[sid]:",
+        "        # Faithful ingest: the product's REAL ingest (cli.py:89, mcp_tools.py:61)\n"
+        "        # passes BOTH the episode embedder and Pass-2 semantic supersession to\n"
+        "        # on_new_turn. Build them ONCE so the bridge ingests EXACTLY as the\n"
+        "        # product does -- episodes get embedded (so semantic episode retrieval\n"
+        "        # works) and cross-session duplicate/refined claims consolidate. Dropping\n"
+        "        # them was measuring a DEGRADED product (episodes blind, Pass-2 off).\n"
+        "        _epi = episode_embedder()\n"
+        "        _sem = semantic_supersession()\n"
+        "        for sid in sorted(by_session.keys()):\n"
+        "            for role, text, claims_data in by_session[sid]:",
+        "construct the product's episode embedder + Pass-2 supersession once before the ingest loop",
+    ),
+    (
+        "                on_new_turn(\n"
+        "                    conn,\n"
+        "                    session_id=sid,\n"
+        "                    speaker=sp,\n"
+        "                    text=text,\n"
+        "                    extractor=pt,\n"
+        "                )",
+        "                on_new_turn(\n"
+        "                    conn,\n"
+        "                    session_id=sid,\n"
+        "                    speaker=sp,\n"
+        "                    text=text,\n"
+        "                    extractor=pt,\n"
+        "                    embedder=_epi,\n"
+        "                    semantic=_sem,\n"
+        "                )",
+        "pass embedder= + semantic= to on_new_turn (match cli.py:89 / mcp_tools.py:61 -- the product's REAL ingest)",
     ),
     (
         "        backfill_embeddings(conn, unified_session, client=self._embedding_client)",
