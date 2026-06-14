@@ -69,7 +69,7 @@ jobs:
         with: { fetch-depth: 0 }   # full history: the build git-archives master@PRODUCT_REF
       - if: steps.check.outputs.build == 'true'
         name: Fetch product branch (PRODUCT_REF lives on master)
-        run: git fetch --no-tags origin master c1efbec44cf0389f9a4c5e98d60555e70e2a9414 2>/dev/null || git fetch --no-tags origin master
+        run: git fetch --no-tags origin master 00cf2fcb0f557d33f83368dd7fbc72f867ec7de4 2>/dev/null || git fetch --no-tags origin master
       - if: steps.check.outputs.build == 'true'
         name: Free disk space (image ~17GB w/ torch)
         uses: jlumbroso/free-disk-space@main
