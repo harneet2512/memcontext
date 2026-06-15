@@ -24,7 +24,7 @@ ARG PYTHON_VERSION=3.12
 # check out the codex working set.
 # ---------------------------------------------------------------------------
 FROM python:${PYTHON_VERSION}-slim AS export
-ARG PRODUCT_REF=00cf2fcb0f557d33f83368dd7fbc72f867ec7de4
+ARG PRODUCT_REF=73c34f65368f4e0638e16f6cf0e79c7cf6350f16
 ARG HARNESS_REF=578ce2fca8bed1d5e32ab66bde835810e1f3a09a
 RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
