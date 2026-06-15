@@ -224,3 +224,60 @@ def test_cross_session_fusion_is_rank_based_not_raw_score():
         "per-session rank-1 facts must score EQUALLY (rank-based RRF); unequal "
         "scores mean the fusion ranked by raw score globally and demoted a session"
     )
+
+
+def test_cross_session_keeps_per_session_depth_when_sessions_exceed_top_k():
+    """Many-session haystack must not starve a session to its rank-1 turn.
+
+    RED before the per-session-keep fix (a single global ``fused[:top_k]``):
+    once n_sessions >= top_k, the cap admits only each session's rank-1 - every
+    rank-1 scores ``w/(RRF_K+1)``, above ANY rank-2 - so a rank-2+ answer turn
+    inside its OWN session is dropped. Measured 33%->72% answer-turn recall on
+    53-session LongMemEval haystacks once each session may keep its top-3.
+
+    Mutation: revert the body to ``return fused[:top_k]`` and this fails - the
+    result collapses to top_k hits with at most one per session.
+    """
+    import collections
+
+    from memcontext.claims import get_turn
+
+    conn = _fresh()
+    n_sessions, top_k = 8, 3                     # sessions (8) outnumber budget (3)
+    for i in range(n_sessions):
+        for j in range(3):                       # 3 retrievable turns per session
+            _ingest(conn, f"s{i}",
+                    f"I photographed the Berlin tower on shot {i}-{j}",
+                    "user", "user_event", f"Berlin tower shot {i}-{j}")
+    hits = retrieve_memory_across(
+        conn, session_ids=[f"s{i}" for i in range(n_sessions)],
+        query="Berlin tower photograph", top_k=top_k,
+    )
+    assert len(hits) > top_k, (
+        f"global cap starved per-session depth: got {len(hits)} <= top_k={top_k}"
+    )
+    by_session = collections.Counter(
+        get_turn(conn, h.source_turn_id).session_id for h, _ in hits
+    )
+    assert max(by_session.values()) >= 2, (
+        f"every session starved to its rank-1 turn: {dict(by_session)}"
+    )
+
+
+def test_cross_session_normal_case_stays_within_top_k_when_budget_exceeds_guarantee():
+    """Few-session queries keep the old top_k envelope when depth already fits."""
+    conn = _fresh()
+    for i in range(2):
+        for j in range(3):
+            _ingest(conn, f"s{i}",
+                    f"I photographed the Berlin tower on normal shot {i}-{j}",
+                    "user", "user_event", f"Berlin tower normal shot {i}-{j}")
+
+    top_k = 6
+    hits = retrieve_memory_across(
+        conn, session_ids=["s0", "s1"], query="Berlin tower photograph", top_k=top_k,
+    )
+
+    assert len(hits) == top_k
+    scores = [s for _, s in hits]
+    assert scores == sorted(scores, reverse=True)

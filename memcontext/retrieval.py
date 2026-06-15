@@ -79,6 +79,14 @@ DEFAULT_CACHE_DIR = Path.home() / ".cache" / "substrate" / "embeddings"
 
 DEFAULT_TOP_K: int = 20
 
+# Cross-session fusion (``retrieve_memory_across``): each queried session keeps
+# at least its top-``DEFAULT_PER_SESSION_K`` hits, so a global ``top_k`` cap can
+# no longer collapse a session to one turn when the queried sessions outnumber
+# the budget (the session-starvation that loses rank-2+ answer turns). The total
+# is bounded by ``MAX_ACROSS_HITS`` to guard a pathological session count.
+DEFAULT_PER_SESSION_K: int = 3
+MAX_ACROSS_HITS: int = 300
+
 _BUILTIN_WEIGHTS = (0.5, 0.2, 0.1, 0.2)  # semantic, entity, temporal, BM25
 
 
@@ -1504,6 +1512,7 @@ def retrieve_memory_across(
     session_ids: list[str],
     query: str,
     top_k: int = DEFAULT_TOP_K,
+    per_session_k: int = DEFAULT_PER_SESSION_K,
     embedding_client: EmbeddingClient | None = None,
     explain: dict[str, dict[str, float]] | None = None,
     include_superseded: bool = False,
@@ -1531,17 +1540,39 @@ def retrieve_memory_across(
     """
     if not query or not query.strip() or not session_ids:
         return []
-    fused: list[tuple[MemoryHit, float]] = []
+    # Per-session depth guarantee. A single global ``fused[:top_k]`` collapses to
+    # ONE hit per session once the queried sessions reach ``top_k``: every
+    # session's rank-1 scores ``w/(RRF_K+1)``, which sorts above ANY rank-2
+    # (``w/(RRF_K+2)``), so the cap admits only rank-1s and starves an answer
+    # turn that is rank-2+ within its own session (measured: 33%->72% answer-turn
+    # recall on 53-session haystacks once each session may keep its top-3).
+    #
+    # We do NOT instead score-rank the sessions and give depth only to the
+    # "relevant" ones: raw cross-session scores are not comparable (see above),
+    # so session selection drops the answer session - measured WORSE than breadth
+    # (17% vs 33%). Breadth is load-bearing; depth is layered on top of it.
+    #
+    # Two passes: each session RESERVES its top-``per_session_k`` (the guarantee);
+    # the remainder share whatever budget is left up to ``top_k``. So few-session
+    # queries keep their old depth (budget >= guarantee) and many-session queries
+    # stop starving (budget grows to the guarantee), bounded by ``MAX_ACROSS_HITS``.
+    per_session_k = max(1, per_session_k)
+    tie = lambda h: (-h[1], h[0].kind != "fact", h[0].id)  # noqa: E731
+    reserved: list[tuple[MemoryHit, float]] = []
+    overflow: list[tuple[MemoryHit, float]] = []
     for sid in session_ids:
-        fused.extend(retrieve_memory(
+        hits = retrieve_memory(
             conn, session_id=sid, query=query, top_k=top_k,
             embedding_client=embedding_client, explain=explain,
             include_superseded=include_superseded,
-        ))
-    # Same tie-break as the within-session fusion: score desc, facts before
-    # episodes on an exact tie, then id for determinism.
-    fused.sort(key=lambda h: (-h[1], h[0].kind != "fact", h[0].id))
-    return fused[:top_k]
+        )
+        reserved.extend(hits[:per_session_k])
+        overflow.extend(hits[per_session_k:])
+    reserved.sort(key=tie)
+    overflow.sort(key=tie)
+    # Never cut below the per-session guarantee for the queried breadth.
+    budget = min(max(top_k, len(reserved)), MAX_ACROSS_HITS)
+    return (reserved + overflow)[:budget]
 
 
 def _fuse_memory(
