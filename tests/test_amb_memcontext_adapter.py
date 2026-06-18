@@ -14,9 +14,19 @@ from evals.amb_memcontext.router_llm import (
     OPENROUTER_READER_MODEL,
     TOKENROUTER_EXTRACTOR_MODEL,
     TOKENROUTER_JUDGE_MODEL,
+    _coerce_to_schema,
 )
 from evals.amb_memcontext.run import _configure_tokenrouter_models, _register_provider
 from memcontext.extractors import SimpleExtractor
+
+
+class _Schema:
+    properties = {
+        "answer": {"type": "string"},
+        "reasoning": {"type": "string"},
+        "citations": {"type": "array"},
+    }
+    required = ["answer", "reasoning", "citations"]
 
 
 def _provider(tmp_path):
@@ -185,3 +195,11 @@ def test_runner_defaults_to_openrouter_reader_and_tokenrouter_extractor_judge(mo
     assert os.environ["OMB_JUDGE_MODEL"] == TOKENROUTER_JUDGE_MODEL
     assert os.environ["OMB_JUDGE_REASONING_EFFORT"] == "low"
     monkeypatch.delenv("MEMCONTEXT_EXTRACTOR_API_KEY", raising=False)
+
+
+def test_router_llm_coerces_missing_required_schema_fields():
+    data = _coerce_to_schema({"response": "The user prefers green tea."}, _Schema())
+
+    assert data["answer"] == "The user prefers green tea."
+    assert data["reasoning"] == ""
+    assert data["citations"] == []

@@ -54,6 +54,47 @@ def _parse_json_object(text: str) -> dict[str, Any]:
     return parsed
 
 
+def _default_for_schema_property(spec: Any) -> Any:
+    if not isinstance(spec, dict):
+        return ""
+    typ = spec.get("type")
+    if isinstance(typ, list):
+        typ = next((item for item in typ if item != "null"), typ[0] if typ else "string")
+    if typ == "array":
+        return []
+    if typ == "object":
+        return {}
+    if typ == "boolean":
+        return False
+    if typ in {"integer", "number"}:
+        return 0
+    return ""
+
+
+def _coerce_to_schema(data: dict[str, Any], schema: Schema) -> dict[str, Any]:
+    """AMB indexes required keys directly; keep router oddities from crashing it."""
+    out = dict(data)
+    properties = getattr(schema, "properties", {}) or {}
+    for key in getattr(schema, "required", []) or []:
+        if key in out:
+            continue
+        if key == "answer":
+            for alias in ("response", "final_answer", "content", "text"):
+                value = out.get(alias)
+                if isinstance(value, str) and value.strip():
+                    out[key] = value
+                    break
+        if key == "reasoning" and key not in out:
+            for alias in ("rationale", "explanation", "thought"):
+                value = out.get(alias)
+                if isinstance(value, str) and value.strip():
+                    out[key] = value
+                    break
+        if key not in out:
+            out[key] = _default_for_schema_property(properties.get(key))
+    return out
+
+
 class _RouterLLM(LLM):
     role = "router"
     default_base_url = OPENROUTER_BASE_URL
@@ -89,7 +130,7 @@ class _RouterLLM(LLM):
         last_error: Exception | None = None
         for attempt in range(_MAX_RETRIES):
             try:
-                return self._post_json(payload)
+                return self._post_json(payload, schema)
             except urllib.error.HTTPError as exc:
                 last_error = exc
                 if exc.code in {429, 500, 502, 503, 504} and attempt < _MAX_RETRIES - 1:
@@ -133,7 +174,7 @@ class _RouterLLM(LLM):
             }
         return payload
 
-    def _post_json(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def _post_json(self, payload: dict[str, Any], schema: Schema | None = None) -> dict[str, Any]:
         request = urllib.request.Request(
             f"{self._base_url}/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
@@ -147,7 +188,8 @@ class _RouterLLM(LLM):
         with urllib.request.urlopen(request, timeout=180.0) as response:
             data = json.loads(response.read().decode("utf-8"))
         content = data.get("choices", [{}])[0].get("message", {}).get("content") or "{}"
-        return _parse_json_object(content)
+        parsed = _parse_json_object(content)
+        return _coerce_to_schema(parsed, schema) if schema is not None else parsed
 
 
 class OpenRouterReaderLLM(_RouterLLM):
