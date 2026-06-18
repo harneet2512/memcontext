@@ -27,8 +27,9 @@ except Exception:  # noqa: BLE001
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 TOKENROUTER_BASE_URL = "https://api.tokenrouter.com/v1"
 OPENROUTER_READER_MODEL = "openai/gpt-oss-120b:free"
-TOKENROUTER_JUDGE_MODEL = "google/gemini-3-flash-preview"
-TOKENROUTER_EXTRACTOR_MODEL = "minimax/MiniMax-M3"
+TOKENROUTER_GEMINI_MODEL = "google/gemini-3-flash-preview"
+TOKENROUTER_JUDGE_MODEL = TOKENROUTER_GEMINI_MODEL
+TOKENROUTER_EXTRACTOR_MODEL = TOKENROUTER_GEMINI_MODEL
 _MAX_RETRIES = 6
 _RETRY_BASE_DELAY = 5
 
@@ -147,9 +148,14 @@ class _RouterLLM(LLM):
             "required": schema.required,
             "additionalProperties": False,
         }
+        json_prompt = (
+            f"{prompt}\n\n"
+            "Return only a valid JSON object matching this schema:\n"
+            f"{json.dumps(schema_json, ensure_ascii=False)}"
+        )
         payload: dict[str, Any] = {
             "model": self._model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [{"role": "user", "content": json_prompt}],
             "temperature": 0.0,
             "response_format": {
                 "type": "json_schema",
@@ -162,6 +168,8 @@ class _RouterLLM(LLM):
         }
         effort = os.environ.get(self.reasoning_effort_env, self.reasoning_effort).strip()
         exclude = os.environ.get(self.reasoning_exclude_env, "1").strip() != "0"
+        if not effort:
+            return payload
         if effort != "none":
             payload["reasoning"] = {
                 "effort": effort,
@@ -187,9 +195,30 @@ class _RouterLLM(LLM):
         )
         with urllib.request.urlopen(request, timeout=180.0) as response:
             data = json.loads(response.read().decode("utf-8"))
-        content = data.get("choices", [{}])[0].get("message", {}).get("content") or "{}"
-        parsed = _parse_json_object(content)
+        message = data.get("choices", [{}])[0].get("message", {})
+        content = _message_content(message)
+        try:
+            parsed = _parse_json_object(content)
+        except (json.JSONDecodeError, RuntimeError):
+            parsed = {"response": content} if content.strip() else {}
         return _coerce_to_schema(parsed, schema) if schema is not None else parsed
+
+
+def _message_content(message: Any) -> str:
+    content = message.get("content") if isinstance(message, dict) else ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if isinstance(text, str):
+                    parts.append(text)
+            elif isinstance(item, str):
+                parts.append(item)
+        return "\n".join(parts)
+    return ""
 
 
 class OpenRouterReaderLLM(_RouterLLM):
@@ -212,8 +241,8 @@ class TokenRouterJudgeLLM(_RouterLLM):
     default_base_url = TOKENROUTER_BASE_URL
     default_model = TOKENROUTER_JUDGE_MODEL
     model_env = "OMB_JUDGE_MODEL"
-    key_envs = ("TOKENROUTER_AMB_JUDGE_KEY", "TOKENROUTER_API_KEY")
-    reasoning_effort = "low"
+    key_envs = ("TOKENROUTER_AMB_GEMINI_KEY", "TOKENROUTER_AMB_JUDGE_KEY", "TOKENROUTER_API_KEY")
+    reasoning_effort = ""
     reasoning_effort_env = "OMB_JUDGE_REASONING_EFFORT"
     reasoning_exclude_env = "OMB_JUDGE_REASONING_EXCLUDE"
 
