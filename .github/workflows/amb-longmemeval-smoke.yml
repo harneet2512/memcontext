@@ -166,7 +166,12 @@ jobs:
       - name: Confirm AMB checkout stayed clean
         if: always()
         shell: bash
-        run: git -C "$RUNNER_TEMP/agent-memory-benchmark" status --short
+        run: |
+          if [ -d "$RUNNER_TEMP/agent-memory-benchmark/.git" ]; then
+            git -C "$RUNNER_TEMP/agent-memory-benchmark" status --short
+          else
+            echo "AMB checkout was not cloned; skipping clean-check."
+          fi
 
       - name: Upload AMB outputs
         if: always()
