@@ -61,6 +61,7 @@ def run_server(
     from memcontext.schema import open_database
     from memcontext.mcp_tools import (
         handle_brain,
+        handle_memory_contradictions,
         handle_memory_correct,
         handle_memory_digest,
         handle_memory_entity_graph,
@@ -75,6 +76,7 @@ def run_server(
         handle_memory_output_provenance,
         handle_memory_forget,
         handle_memory_trust_status,
+        handle_memory_verify,
     )
 
     conn = open_database(db_path)
@@ -290,6 +292,28 @@ def run_server(
                 },
             ),
             Tool(
+                name="memory_contradictions",
+                description="Surface unresolved contradictions where both claims remain active. Deterministic, zero-LLM.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                    },
+                },
+            ),
+            Tool(
+                name="memory_verify",
+                description="Verify cited claim_ids against the durable serve-events ledger for a session.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "claim_ids": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["session_id", "claim_ids"],
+                },
+            ),
+            Tool(
                 name="tool_discover",
                 description=(
                     "Curate the agent's tool set: return the top-K most relevant tools "
@@ -350,6 +374,10 @@ def run_server(
                 result = handle_memory_trust_status(conn, **arguments)
             elif name == "memory_entity_graph":
                 result = handle_memory_entity_graph(conn, **arguments)
+            elif name == "memory_contradictions":
+                result = handle_memory_contradictions(conn, **arguments)
+            elif name == "memory_verify":
+                result = handle_memory_verify(conn, **arguments)
             elif name == "tool_discover":
                 from memcontext.mcp_tools import handle_tool_discover
 
@@ -395,6 +423,7 @@ def create_http_app(db_path: str = "memcontext.db"):
 
     from memcontext.mcp_tools import (
         handle_brain,
+        handle_memory_contradictions,
         handle_memory_correct,
         handle_memory_digest,
         handle_memory_entity_graph,
@@ -409,6 +438,7 @@ def create_http_app(db_path: str = "memcontext.db"):
         handle_memory_output_provenance,
         handle_memory_forget,
         handle_memory_trust_status,
+        handle_memory_verify,
     )
     from memcontext.schema import open_database
 
@@ -462,6 +492,10 @@ def create_http_app(db_path: str = "memcontext.db"):
                      inputSchema={"type":"object","properties":{}}),
                 Tool(name="memory_entity_graph", description="Co-occurrence neighbors of an entity within a session's claim graph.",
                      inputSchema={"type":"object","properties":{"session_id":{"type":"string"},"entity":{"type":"string"},"max_hops":{"type":"integer","default":1}},"required":["session_id","entity"]}),
+                Tool(name="memory_contradictions", description="Surface unresolved contradictions where both claims remain active.",
+                     inputSchema={"type":"object","properties":{"session_id":{"type":"string"}}}),
+                Tool(name="memory_verify", description="Verify cited claim_ids against the durable serve-events ledger for a session.",
+                     inputSchema={"type":"object","properties":{"session_id":{"type":"string"},"claim_ids":{"type":"array","items":{"type":"string"}}},"required":["session_id","claim_ids"]}),
             ]
 
         @server.call_tool()
@@ -501,6 +535,10 @@ def create_http_app(db_path: str = "memcontext.db"):
                     result = handle_memory_trust_status(conn, **arguments)
                 elif name == "memory_entity_graph":
                     result = handle_memory_entity_graph(conn, **arguments)
+                elif name == "memory_contradictions":
+                    result = handle_memory_contradictions(conn, **arguments)
+                elif name == "memory_verify":
+                    result = handle_memory_verify(conn, **arguments)
                 else:
                     result = {"error": f"Unknown tool: {name}"}
             except Exception as exc:  # malformed/hostile input or handler error

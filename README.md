@@ -116,6 +116,9 @@ Both hit the same SQLite database. An observation made through the REST API is q
 
 ## Quick Start
 
+Product retrieval defaults to `BAAI/bge-m3`. Set `MEMCONTEXT_EMBED_MODEL` only
+for explicitly labeled ablations or local experiments.
+
 ```bash
 # Install core
 pip install -e .

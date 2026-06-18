@@ -305,13 +305,14 @@ def detect_pass1(
         edge_type=edge_type,
         identity_score=None,
     )
-    set_claim_status(conn, old_claim.claim_id, ClaimStatus.SUPERSEDED)
-    conn.execute(
-        "UPDATE claims SET valid_until_ts = ?"
-        " WHERE claim_id = ?"
-        " AND (valid_from_ts IS NULL OR valid_from_ts < ?)",
-        (edge.created_ts, old_claim.claim_id, edge.created_ts),
-    )
+    if edge_type is not EdgeType.CONTRADICTS:
+        set_claim_status(conn, old_claim.claim_id, ClaimStatus.SUPERSEDED)
+        conn.execute(
+            "UPDATE claims SET valid_until_ts = ?"
+            " WHERE claim_id = ?"
+            " AND (valid_from_ts IS NULL OR valid_from_ts < ?)",
+            (edge.created_ts, old_claim.claim_id, edge.created_ts),
+        )
     log.info(
         "substrate.supersession_pass1",
         session_id=new_claim.session_id,

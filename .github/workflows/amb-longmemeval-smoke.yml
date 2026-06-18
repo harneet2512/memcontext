@@ -1,0 +1,123 @@
+name: AMB LongMemEval Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      query_limit:
+        description: "Queries per LongMemEval category"
+        default: "5"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: amb-longmemeval-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONIOENCODING: utf-8
+  OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+  TOKENROUTER_BASE_URL: https://api.tokenrouter.com/v1
+  OMB_ANSWER_LLM: openrouter-reader
+  OMB_ANSWER_MODEL: openai/gpt-oss-120b:free
+  OMB_ANSWER_REASONING_EFFORT: high
+  OMB_ANSWER_REASONING_EXCLUDE: "1"
+  MEMCONTEXT_EXTRACTOR_BACKEND: openrouter
+  MEMCONTEXT_EXTRACTOR_ENDPOINT: https://api.tokenrouter.com/v1/chat/completions
+  MEMCONTEXT_EXTRACTOR_MODEL: minimax/MiniMax-M3
+  MEMCONTEXT_EXTRACTOR_REASONING_EFFORT: none
+  MEMCONTEXT_EXTRACTOR_REASONING_EXCLUDE: "1"
+  MEMCONTEXT_EXTRACTOR_MAX_TOKENS: "2048"
+  MEMCONTEXT_EXTRACTOR_POOL: "128"
+  OMB_JUDGE_LLM: tokenrouter-judge
+  OMB_JUDGE_MODEL: google/gemini-3-flash-preview
+  OMB_JUDGE_REASONING_EFFORT: low
+  OMB_JUDGE_REASONING_EXCLUDE: "1"
+  MEMCONTEXT_EMBED_MODEL: BAAI/bge-m3
+  MEMCONTEXT_EMBED_EPISODES: "1"
+  HF_HOME: ~/.cache/huggingface
+  SENTENCE_TRANSFORMERS_HOME: ~/.cache/huggingface/sentence-transformers
+
+jobs:
+  category:
+    name: ${{ matrix.category }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: benchmark
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        category:
+          - single-session-user
+          - single-session-assistant
+          - multi-session
+          - temporal-reasoning
+          - knowledge-update
+          - single-session-preference
+    env:
+      OPENROUTER_AMB_READER_KEY: ${{ secrets.OPENROUTER_AMB_READER_KEY }}
+      TOKENROUTER_AMB_EXTRACTOR_KEY: ${{ secrets.TOKENROUTER_AMB_EXTRACTOR_KEY }}
+      TOKENROUTER_AMB_JUDGE_KEY: ${{ secrets.TOKENROUTER_AMB_JUDGE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-bge-m3-${{ runner.os }}-v1
+          restore-keys: |
+            hf-bge-m3-${{ runner.os }}-
+
+      - name: Verify secrets are present
+        shell: bash
+        run: |
+          test -n "$OPENROUTER_AMB_READER_KEY"
+          test -n "$TOKENROUTER_AMB_EXTRACTOR_KEY"
+          test -n "$TOKENROUTER_AMB_JUDGE_KEY"
+
+      - name: Clone AMB harness read-only
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/vectorize-io/agent-memory-benchmark.git "$RUNNER_TEMP/agent-memory-benchmark"
+          git -C "$RUNNER_TEMP/agent-memory-benchmark" remote -v
+          git -C "$RUNNER_TEMP/agent-memory-benchmark" status --short
+
+      - name: Install MemContext and AMB
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[embeddings]"
+          python -m pip install -e "$RUNNER_TEMP/agent-memory-benchmark"
+
+      - name: Run AMB category smoke
+        shell: bash
+        run: |
+          python -m evals.amb_memcontext.run \
+            --amb-root "$RUNNER_TEMP/agent-memory-benchmark" \
+            --dataset longmemeval \
+            --split s \
+            --memory memcontext-full \
+            --category "${{ matrix.category }}" \
+            --query-limit "${{ inputs.query_limit }}" \
+            --name "memcontext-full-${{ matrix.category }}" \
+            --description "MemContext AMB smoke: OpenRouter gpt-oss reader, TokenRouter MiniMax extractor, TokenRouter Gemini judge, BGE-M3 embeddings."
+
+      - name: Confirm AMB checkout stayed clean
+        if: always()
+        shell: bash
+        run: git -C "$RUNNER_TEMP/agent-memory-benchmark" status --short
+
+      - name: Upload AMB outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amb-longmemeval-${{ matrix.category }}
+          path: evals/amb_outputs/**
