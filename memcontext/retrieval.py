@@ -196,6 +196,8 @@ class EmbeddingClient:
         return [list(map(float, v)) for v in vectors]
 
     def _embed_local(self, texts: list[str]) -> list[list[float]]:
+        if BGE_M3_MODEL_ID == "BAAI/bge-m3":
+            return self._embed_bge_m3_local(texts)
         try:
             from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
         except ImportError as exc:
@@ -210,6 +212,30 @@ class EmbeddingClient:
         raw = self._local_model.encode(texts, normalize_embeddings=True)
         out: list[list[float]] = []
         for v in raw:
+            out.append([float(x) for x in v])
+        return out
+
+    def _embed_bge_m3_local(self, texts: list[str]) -> list[list[float]]:
+        try:
+            from FlagEmbedding import BGEM3FlagModel  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise RuntimeError(
+                "FlagEmbedding is not installed; install `memcontext[embeddings]` "
+                "or set MODAL_BGE_M3_URL for remote BGE-M3 embeddings."
+            ) from exc
+        if self._local_model is None:
+            self._local_model = BGEM3FlagModel(BGE_M3_MODEL_ID, use_fp16=False)
+        raw = self._local_model.encode(
+            texts,
+            batch_size=int(os.environ.get("MEMCONTEXT_EMBED_BATCH_SIZE", "12")),
+            max_length=int(os.environ.get("MEMCONTEXT_EMBED_MAX_LENGTH", "8192")),
+            return_dense=True,
+            return_sparse=False,
+            return_colbert_vecs=False,
+        )
+        vectors = raw.get("dense_vecs") if isinstance(raw, dict) else raw
+        out: list[list[float]] = []
+        for v in vectors:
             out.append([float(x) for x in v])
         return out
 

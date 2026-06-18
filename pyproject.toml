@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 embeddings = [
+    "FlagEmbedding>=1.2.10",
     "sentence-transformers>=3.0",
     "transformers>=4.40",
     "requests>=2.28",
