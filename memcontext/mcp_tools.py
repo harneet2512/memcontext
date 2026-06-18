@@ -100,6 +100,31 @@ def _session_in_namespace(conn: sqlite3.Connection, session_id: str, namespace: 
     ).fetchone() is not None
 
 
+def _record_serve_events(
+    conn: sqlite3.Connection,
+    *,
+    request_session_id: str,
+    claim_ids: list[str],
+    query: str,
+) -> list[str]:
+    """Append served claim IDs to the answer-time verification ledger."""
+    if not claim_ids:
+        return []
+    from memcontext.claims import now_ns
+
+    rows = [
+        (f"se_{uuid.uuid4().hex[:12]}", request_session_id, cid, query, now_ns())
+        for cid in claim_ids
+    ]
+    conn.executemany(
+        "INSERT INTO serve_events"
+        " (event_id, request_session_id, claim_id, query, served_ts)"
+        " VALUES (?, ?, ?, ?, ?)",
+        rows,
+    )
+    return [r[0] for r in rows]
+
+
 def handle_memory_query(
     conn: sqlite3.Connection,
     *,
@@ -199,7 +224,14 @@ def handle_memory_query(
             })
 
     # Usage reinforcement: the fact claims we served are now "accessed".
-    bump_access(conn, [c["claim_id"] for c in claims_out])
+    served_claim_ids = [c["claim_id"] for c in claims_out]
+    bump_access(conn, served_claim_ids)
+    serve_event_ids = _record_serve_events(
+        conn,
+        request_session_id=session_id or "__cross_session__",
+        claim_ids=served_claim_ids,
+        query=query,
+    )
 
     # Consolidation marker + source-trust spotlight: each served fact carries its
     # trust and a 'quarantined' flag (low-trust origin -- citable, not authoritative),
@@ -248,6 +280,7 @@ def handle_memory_query(
         "query_type": query_type,
         "reader_hint": _READER_HINTS.get(query_type, _READER_HINTS["fact_recall"]),
         "token_report": token_report,
+        "serve_event_ids": serve_event_ids,
     }
     # Resolved view + briefing on the MAIN query path (not tool-only): alongside the
     # raw ranked hits, the agent gets the current world-state — one value per slot
@@ -279,6 +312,9 @@ def handle_memory_query(
             life = serve_life_events(conn, namespace=namespace)
             if life:
                 result["life_events"] = life
+            contradictions = handle_memory_contradictions(conn, session_id=session_id)
+            if contradictions["count"]:
+                result["contradictions"] = contradictions
         except Exception:  # noqa: BLE001 — resolved view is additive, never fatal
             pass
 
@@ -286,6 +322,105 @@ def handle_memory_query(
         served = [c["claim_id"] for c in claims_out]
         result["ranking"] = {cid: explain[cid] for cid in served if cid in explain}
     return result
+
+
+def handle_memory_verify(
+    conn: sqlite3.Connection,
+    *,
+    session_id: str,
+    claim_ids: list[str],
+) -> dict:
+    """Verify that cited claim IDs were served to this session's query door.
+
+    This is intentionally narrow: it checks the durable serve ledger, not whether
+    a claim exists or whether the answer was semantically correct.
+    """
+    unique_ids = list(dict.fromkeys(claim_ids or []))
+    if not unique_ids:
+        return {
+            "session_id": session_id,
+            "verified": False,
+            "served": [],
+            "missing": [],
+            "error": "claim_ids required",
+        }
+    placeholders = ",".join("?" for _ in unique_ids)
+    rows = conn.execute(
+        "SELECT claim_id, MAX(served_ts) AS served_ts FROM serve_events"
+        f" WHERE request_session_id = ? AND claim_id IN ({placeholders})"
+        " GROUP BY claim_id",
+        [session_id, *unique_ids],
+    ).fetchall()
+    served = {r["claim_id"]: r["served_ts"] for r in rows}
+    missing = [cid for cid in unique_ids if cid not in served]
+    return {
+        "session_id": session_id,
+        "verified": not missing,
+        "served": [{"claim_id": cid, "served_ts": served[cid]} for cid in unique_ids if cid in served],
+        "missing": missing,
+    }
+
+
+def handle_memory_contradictions(
+    conn: sqlite3.Connection,
+    *,
+    session_id: str | None = None,
+) -> dict:
+    """Surface unresolved contradictions where both endpoints remain active."""
+    active_statuses = ("active", "confirmed", "audited")
+    params: list[str] = [EdgeType.CONTRADICTS.value, *active_statuses, *active_statuses]
+    session_filter = ""
+    if session_id is not None:
+        session_filter = " AND old.session_id = ? AND new.session_id = ?"
+        params.extend([session_id, session_id])
+    rows = conn.execute(
+        "SELECT e.edge_id, e.identity_score, e.created_ts,"
+        " old.claim_id AS old_claim_id, old.subject AS old_subject,"
+        " old.predicate AS old_predicate, old.value AS old_value,"
+        " old.status AS old_status, old.source_turn_id AS old_turn_id,"
+        " new.claim_id AS new_claim_id, new.subject AS new_subject,"
+        " new.predicate AS new_predicate, new.value AS new_value,"
+        " new.status AS new_status, new.source_turn_id AS new_turn_id"
+        " FROM supersession_edges e"
+        " JOIN claims old ON old.claim_id = e.old_claim_id"
+        " JOIN claims new ON new.claim_id = e.new_claim_id"
+        " WHERE e.edge_type = ?"
+        " AND old.status IN (?, ?, ?)"
+        " AND new.status IN (?, ?, ?)"
+        f"{session_filter}"
+        " ORDER BY e.created_ts DESC",
+        params,
+    ).fetchall()
+    contradictions = [
+        {
+            "edge_id": r["edge_id"],
+            "edge_type": EdgeType.CONTRADICTS.value,
+            "created_ts": r["created_ts"],
+            "unresolved": True,
+            "old": {
+                "claim_id": r["old_claim_id"],
+                "subject": r["old_subject"],
+                "predicate": r["old_predicate"],
+                "value": r["old_value"],
+                "status": r["old_status"],
+                "source_turn_id": r["old_turn_id"],
+            },
+            "new": {
+                "claim_id": r["new_claim_id"],
+                "subject": r["new_subject"],
+                "predicate": r["new_predicate"],
+                "value": r["new_value"],
+                "status": r["new_status"],
+                "source_turn_id": r["new_turn_id"],
+            },
+        }
+        for r in rows
+    ]
+    return {
+        "session_id": session_id,
+        "count": len(contradictions),
+        "contradictions": contradictions,
+    }
 
 
 def handle_memory_working_context(

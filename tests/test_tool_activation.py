@@ -75,7 +75,7 @@ def _rank_of(results: list[DiscoveredTool], tool_id: str) -> int:
     return len(results)
 
 
-def test_schema_v12_has_tool_tables() -> None:
+def test_schema_v13_keeps_tool_tables() -> None:
     conn = _db()
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"tool_schemas", "tool_embeddings"} <= tables

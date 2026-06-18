@@ -35,19 +35,31 @@ log = structlog.get_logger(__name__)
 
 # --- constants ---------------------------------------------------------------
 
-_DEFAULT_EMBED_MODEL = "Snowflake/snowflake-arctic-embed-s"
-_DEFAULT_EMBED_DIM = 384
+# Product default: BGE-M3 is the benchmark/product embedder. It is heavier than
+# small efficiency models, but gives the retrieval layer the strongest default
+# signal for long-memory workloads.
+_DEFAULT_EMBED_MODEL = "BAAI/bge-m3"
 
 BGE_M3_MODEL_ID = os.environ.get("MEMCONTEXT_EMBED_MODEL", _DEFAULT_EMBED_MODEL)
 BGE_M3_MODEL_REVISION = "main"
 BGE_M3_VERSION_TAG = f"{BGE_M3_MODEL_ID}@{BGE_M3_MODEL_REVISION}"
-BGE_M3_EMBED_DIM = (
-    _DEFAULT_EMBED_DIM
-    if "MiniLM" in BGE_M3_MODEL_ID
-    or "bge-small" in BGE_M3_MODEL_ID
-    or "arctic-embed-s" in BGE_M3_MODEL_ID
-    else 1024
-)
+
+
+def _embedding_dim_for(model_id: str) -> int:
+    """Best-effort dimension for common supported models.
+
+    The runtime stores actual vectors as blobs, so this is mainly metadata for
+    callers that want to pre-size indexes. Keep BGE-M3 as the default path.
+    """
+    mid = model_id.lower()
+    if "minilm" in mid or "bge-small" in mid or "arctic-embed-s" in mid:
+        return 384
+    if "arctic-embed-m" in mid or "e5-base" in mid:
+        return 768
+    return 1024
+
+
+BGE_M3_EMBED_DIM = _embedding_dim_for(BGE_M3_MODEL_ID)
 
 
 def _query_prefix_for(model_id: str) -> str:
@@ -1474,6 +1486,7 @@ def retrieve_memory(
     session_id: str,
     query: str,
     top_k: int = DEFAULT_TOP_K,
+    valid_at_ts: int | None = None,
     embedding_client: EmbeddingClient | None = None,
     explain: dict[str, dict[str, float]] | None = None,
     include_superseded: bool = False,
@@ -1496,11 +1509,13 @@ def retrieve_memory(
 
     facts = retrieve_hybrid(
         conn, session_id=session_id, query=query, top_k=top_k,
+        valid_at_ts=valid_at_ts,
         embedding_client=embedding_client, explain=explain,
         include_superseded=include_superseded,
     )
     episodes = retrieve_episodes(
         conn, session_id=session_id, query=query, top_k=top_k,
+        valid_at_ts=valid_at_ts,
         embedding_client=embedding_client,
     )
     return _fuse_memory(facts, episodes, top_k)
@@ -1513,6 +1528,7 @@ def retrieve_memory_across(
     query: str,
     top_k: int = DEFAULT_TOP_K,
     per_session_k: int = DEFAULT_PER_SESSION_K,
+    valid_at_ts: int | None = None,
     embedding_client: EmbeddingClient | None = None,
     explain: dict[str, dict[str, float]] | None = None,
     include_superseded: bool = False,
@@ -1563,6 +1579,7 @@ def retrieve_memory_across(
     for sid in session_ids:
         hits = retrieve_memory(
             conn, session_id=sid, query=query, top_k=top_k,
+            valid_at_ts=valid_at_ts,
             embedding_client=embedding_client, explain=explain,
             include_superseded=include_superseded,
         )

@@ -9,6 +9,7 @@ Tables:
 - claims — atomic facts extracted from turns, with temporal validity
 - supersession_edges — typed edges linking old → new claims
 - decisions — audit trail for user actions
+- serve_events — ledger of claims served to a caller
 - output_sentences — generated text with provenance back to claims
 - claim_embeddings — sidecar for retrieval vectors
 - claim_metadata — sidecar for multi-signal retrieval fusion
@@ -201,6 +202,17 @@ class OutputSentence:
     source_claim_ids: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class ServeEvent:
+    """One served claim in the answer-time verification ledger."""
+
+    event_id: str
+    request_session_id: str
+    claim_id: str
+    query: str
+    served_ts: int
+
+
 # ----------------------------------------------------------------- schema ---
 
 
@@ -300,6 +312,18 @@ CREATE TABLE IF NOT EXISTS output_sentences (
 );
 CREATE INDEX IF NOT EXISTS idx_output_session_section
     ON output_sentences(session_id, section, ordinal);
+
+CREATE TABLE IF NOT EXISTS serve_events (
+    event_id            TEXT PRIMARY KEY,
+    request_session_id  TEXT NOT NULL,
+    claim_id            TEXT NOT NULL REFERENCES claims(claim_id) ON DELETE CASCADE,
+    query               TEXT NOT NULL,
+    served_ts           INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_serve_events_session
+    ON serve_events(request_session_id, served_ts);
+CREATE INDEX IF NOT EXISTS idx_serve_events_claim
+    ON serve_events(claim_id);
 
 CREATE TABLE IF NOT EXISTS claim_embeddings (
     claim_id                TEXT PRIMARY KEY REFERENCES claims(claim_id) ON DELETE CASCADE,
@@ -432,7 +456,7 @@ CREATE INDEX IF NOT EXISTS idx_tool_embeddings_model ON tool_embeddings(embeddin
 
 # Bump when adding a migration step below. Existing databases upgrade forward
 # on open; fresh databases get every step applied once.
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -675,6 +699,27 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_tool_embeddings_model"
             " ON tool_embeddings(embedding_model)"
+        )
+
+    if current < 13:
+        # v13: answer-time verification ledger. Every fact claim served by the
+        # query door is recorded here so a later citation can be checked against
+        # what was actually shown to the caller.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS serve_events ("
+            " event_id TEXT PRIMARY KEY,"
+            " request_session_id TEXT NOT NULL,"
+            " claim_id TEXT NOT NULL REFERENCES claims(claim_id) ON DELETE CASCADE,"
+            " query TEXT NOT NULL,"
+            " served_ts INTEGER NOT NULL)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_serve_events_session"
+            " ON serve_events(request_session_id, served_ts)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_serve_events_claim"
+            " ON serve_events(claim_id)"
         )
 
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

@@ -45,6 +45,7 @@ claim_embeddings / turn_embeddings   vector + model_version (semantic channels)
 claim_entities .. (claim_id, entity_text, entity_type)   co-occurrence graph source
 decisions ....... audit log: drift_blocked / forget / ... (trust observability)
 output_sentences  generated text -> source_claim_ids (output provenance)
+serve_events .... answer-time ledger: request session -> served claim_ids
 profiles ........ cached tiered profile per subject (derived)
 session_digests . cached top-facts + updates per session (derived)
 event_frames / event_frame_claims / event_frame_embeddings   episodic events (derived)
@@ -54,7 +55,9 @@ principals ...... namespace + read/write permissions (tenant auth)
 
 **Claim status lifecycle:** `active`/`confirmed`/`audited` (served) → `superseded`
 (retired by a newer value) / `dismissed` (user removed) / `demoted` (consolidated
-duplicate, retained for provenance, out of active retrieval).
+duplicate, retained for provenance, out of active retrieval). `CONTRADICTS` is the
+exception: both endpoints stay active and are surfaced as unresolved until a later
+correction resolves them.
 
 **Temporal model (bi-temporal-ish):** `created_ts` (ingestion), `valid_from_ts` /
 `valid_until_ts` (the window a fact was/is true), `event_ts` (when the event happened).
@@ -88,7 +91,8 @@ ENRICH       compute_importance (per claim) ; then on a cadence:
    |
 SERVE        retrieve_memory (two-tier RRF) ; handle_memory_query / build_context_briefing
              -> resolved world-state + briefing + digest + events + life-events
-                + per-fact trust/quarantine + provenance
+                + per-fact trust/quarantine + provenance + unresolved contradictions
+                + serve_events ledger for answer-time verification
    |
 DELIVER      MCP stdio (local clients) | MCP Streamable HTTP + OAuth (remote) | relay | CLI | library
 ```
@@ -166,8 +170,10 @@ predicates with no active claim). Deterministic, LLM-free.
 ### Serving (`mcp_tools.py::handle_memory_query`, `serving.py::build_context_briefing`)
 One call returns the ranked hits **plus the resolved view**: world-state, session
 briefing, session digest, entity links, event-frames, life-events, per-fact
-durability, and per-fact **trust + quarantine** flags + provenance "why". The MCP door
-and the library door (`build_context_briefing`) expose the same safety surface.
+durability, unresolved contradictions, and per-fact **trust + quarantine** flags +
+provenance "why". The query door appends a `serve_events` row for every served fact,
+and `memory_verify` checks cited claim IDs against that ledger. The MCP door and the
+library door (`build_context_briefing`) expose the same safety surface.
 
 ---
 
@@ -204,7 +210,7 @@ LOCAL (no network)            REMOTE (one stable URL)
         | stdio                        | HTTPS
   memcontext serve              memcontext serve --transport http [--oauth] | memcontext share
         |                              |
-        +---- same engine, same 19 MCP tools, same SQLite brain ----+
+        +---- same engine, same 18 MCP tools, same SQLite brain ----+
 ```
 
 - **stdio** (`mcp_server.py`): local clients, one config line, data never leaves the machine.
@@ -227,7 +233,8 @@ LOCAL (no network)            REMOTE (one stable URL)
 - **Predicate packs** (`predicate_packs/`, `predicate_packs.py`): domain vocabulary
   (families, sub-slots, `single_valued` cardinality), composable, env-overridable.
 - **Injected extractor**: any callable `Turn -> ExtractedClaim[]`.
-- **Embedders**: pluggable (`NullEmbedder` for tests, local sentence-transformers for prod);
+- **Embedders**: product default is `BAAI/bge-m3` via sentence-transformers
+  (`NullEmbedder` for tests; explicit overrides are ablations);
   gated by `MEMCONTEXT_EMBED_EPISODES`.
 - **Event bus** (`event_bus.py`): synchronous pub/sub; `on_new_turn` publishes lifecycle
   events; **no internal subscriber by design** — a host (UI, async worker, audit) subscribes.

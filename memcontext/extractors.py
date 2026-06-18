@@ -516,10 +516,10 @@ class LLMExtractor:
             self._session.mount("http://", _ad)
         elif self._backend == "gemini":
             # Native Google Gemini via the google-genai SDK — the same backbone
-            # and SDK AMB/Hindsight use (gemini-2.5-flash-lite). Authenticated
+            # and SDK AMB/Hindsight use. Authenticated
             # with the single GEMINI_API_KEY (or GOOGLE_API_KEY).
             self._model = model or os.environ.get(
-                "MEMCONTEXT_EXTRACTOR_MODEL", "gemini-2.5-flash-lite"
+                "MEMCONTEXT_EXTRACTOR_MODEL", "gemini-3-flash-preview"
             )
             self._base_url = None
             self._api_key = (
@@ -626,8 +626,6 @@ class LLMExtractor:
     def _call_openrouter(self, messages: list[dict]) -> str:
         import time
 
-        import requests
-
         if not self._api_key:
             raise ValueError(
                 "MEMCONTEXT_EXTRACTOR_API_KEY required for openrouter backend."
@@ -648,6 +646,12 @@ class LLMExtractor:
             "temperature": 0.0,
             "response_format": {"type": "json_object"},
         }
+        reasoning_effort = os.environ.get("MEMCONTEXT_EXTRACTOR_REASONING_EFFORT", "").strip()
+        if reasoning_effort:
+            payload["reasoning"] = {
+                "effort": reasoning_effort,
+                "exclude": os.environ.get("MEMCONTEXT_EXTRACTOR_REASONING_EXCLUDE", "1") != "0",
+            }
         # DeepSeek-direct V4 thinks by DEFAULT — disable it (extraction needs no
         # reasoning; thinking is ~14x slower under load). Gated by env because the
         # same `thinking:disabled` param backfires when routed via OpenRouter.

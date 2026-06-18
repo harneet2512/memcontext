@@ -91,6 +91,8 @@ class ContextBriefing:
     # query when embeddings exist, else most-recent; and detected life-event bursts.
     events: tuple[Any, ...]
     life_events: tuple[Any, ...]
+    # Unresolved contradiction edges where both claims are still active.
+    contradictions: dict
 
 
 def _load_digest_dict(conn: sqlite3.Connection, session_id: str) -> dict | None:
@@ -238,6 +240,13 @@ def build_context_briefing(
     events = tuple(serve_event_frames(
         conn, session_id=session_id, query=query, embedding_client=embedding_client))
     life_events = tuple(serve_life_events(conn, subject=subject, namespace=namespace))
+    contradictions: dict = {}
+    try:
+        from memcontext.mcp_tools import handle_memory_contradictions
+
+        contradictions = handle_memory_contradictions(conn, session_id=session_id)
+    except Exception:  # noqa: BLE001
+        contradictions = {"session_id": session_id, "count": 0, "contradictions": []}
 
     return ContextBriefing(
         session_id=session_id,
@@ -250,4 +259,5 @@ def build_context_briefing(
         fact_trust=fact_trust,
         events=events,
         life_events=life_events,
+        contradictions=contradictions,
     )

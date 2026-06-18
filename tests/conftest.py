@@ -8,7 +8,7 @@ import pytest
 from memcontext.claims import insert_claim, insert_turn, new_turn_id, now_ns
 from memcontext.event_bus import EventBus
 from memcontext.on_new_turn import ExtractedClaim
-from memcontext.schema import ClaimStatus, Speaker, Turn, open_database
+from memcontext.schema import Speaker, Turn, open_database
 from memcontext.supersession_semantic import NullEmbedder
 
 
@@ -83,6 +83,17 @@ def _set_packs_dir(monkeypatch: pytest.MonkeyPatch):
     # Never load/download an embedding model via the production episode-embed path
     # in CI; tests that exercise embedding inject an explicit stub client instead.
     monkeypatch.setenv("MEMCONTEXT_EMBED_EPISODES", "0")
+    # Tests should not auto-select a cloud extractor just because the developer
+    # shell has router credentials configured.
+    for name in (
+        "MEMCONTEXT_EXTRACTOR_API_KEY",
+        "MEMCONTEXT_EXTRACTOR_BACKEND",
+        "MEMCONTEXT_EXTRACTOR_ENDPOINT",
+        "MEMCONTEXT_EXTRACTOR_MODEL",
+        "MEMCONTEXT_EXTRACTOR_REASONING_EFFORT",
+        "MEMCONTEXT_EXTRACTOR_REASONING_EXCLUDE",
+    ):
+        monkeypatch.delenv(name, raising=False)
     from memcontext.predicate_packs import active_pack
     active_pack.cache_clear()
     yield
