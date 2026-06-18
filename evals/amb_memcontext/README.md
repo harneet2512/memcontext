@@ -50,7 +50,7 @@ or GitHub Actions secrets. Do not commit secret values.
 
 ```bash
 export OPENROUTER_AMB_READER_KEY=...
-export TOKENROUTER_AMB_EXTRACTOR_KEY=...
+export TOKENROUTER_AMB_GEMINI_KEY=...
 export TOKENROUTER_AMB_JUDGE_KEY=...
 
 export OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
@@ -63,13 +63,11 @@ export OMB_ANSWER_REASONING_EXCLUDE=1
 
 export MEMCONTEXT_EXTRACTOR_BACKEND=openrouter
 export MEMCONTEXT_EXTRACTOR_ENDPOINT=https://api.tokenrouter.com/v1/chat/completions
-export MEMCONTEXT_EXTRACTOR_MODEL=minimax/MiniMax-M3
-export MEMCONTEXT_EXTRACTOR_REASONING_EFFORT=none
+export MEMCONTEXT_EXTRACTOR_MODEL=google/gemini-3-flash-preview
 export MEMCONTEXT_EXTRACTOR_REASONING_EXCLUDE=1
 
 export OMB_JUDGE_LLM=tokenrouter-judge
 export OMB_JUDGE_MODEL=google/gemini-3-flash-preview
-export OMB_JUDGE_REASONING_EFFORT=low
 export OMB_JUDGE_REASONING_EXCLUDE=1
 
 export MEMCONTEXT_EMBED_MODEL=BAAI/bge-m3
@@ -96,12 +94,14 @@ Required GitHub secrets:
 
 ```text
 OPENROUTER_AMB_READER_KEY
-TOKENROUTER_AMB_EXTRACTOR_KEY
+TOKENROUTER_AMB_GEMINI_KEY
 TOKENROUTER_AMB_JUDGE_KEY
 ```
 
 The workflow runs six category jobs in parallel, with `query_limit=5` by
-default, for a 30-question LongMemEval-S smoke run.
+default, for a 30-question LongMemEval-S smoke run. The matrix is capped with
+`max-parallel: 20` so larger category/shard matrices do not exceed the GHA
+parallelism limit.
 
 ```bash
 python -m evals.amb_memcontext.run \
@@ -136,7 +136,7 @@ when AMB asks for reset, and writes `memcontext_run_config.json` beside the DB.
 - Plain `Document.content` is ingested as one episode.
 - `Document.context` and `Document.timestamp` are preserved in source metadata
   and context text.
-- Full runs use `LLMExtractor` through TokenRouter/MiniMax, BGE-M3 embeddings,
+- Full runs use `LLMExtractor` through TokenRouter Gemini, BGE-M3 embeddings,
   semantic supersession, importance, digests, event frames, life events, and
   consolidation.
 

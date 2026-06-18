@@ -13,6 +13,7 @@ from evals.amb_memcontext.provider import (
 from evals.amb_memcontext.router_llm import (
     OPENROUTER_READER_MODEL,
     TOKENROUTER_EXTRACTOR_MODEL,
+    TOKENROUTER_GEMINI_MODEL,
     TOKENROUTER_JUDGE_MODEL,
     _coerce_to_schema,
 )
@@ -174,11 +175,13 @@ def test_runner_defaults_to_openrouter_reader_and_tokenrouter_extractor_judge(mo
     monkeypatch.delenv("MEMCONTEXT_EXTRACTOR_ENDPOINT", raising=False)
     monkeypatch.delenv("MEMCONTEXT_EXTRACTOR_MODEL", raising=False)
     monkeypatch.delenv("MEMCONTEXT_EXTRACTOR_API_KEY", raising=False)
-    monkeypatch.setenv("TOKENROUTER_AMB_EXTRACTOR_KEY", "test-extractor-key")
+    monkeypatch.delenv("TOKENROUTER_AMB_EXTRACTOR_KEY", raising=False)
+    monkeypatch.setenv("TOKENROUTER_AMB_GEMINI_KEY", "test-gemini-key")
     monkeypatch.delenv("OMB_ANSWER_LLM", raising=False)
     monkeypatch.delenv("OMB_ANSWER_MODEL", raising=False)
     monkeypatch.delenv("OMB_JUDGE_LLM", raising=False)
     monkeypatch.delenv("OMB_JUDGE_MODEL", raising=False)
+    monkeypatch.delenv("OMB_JUDGE_REASONING_EFFORT", raising=False)
 
     _configure_tokenrouter_models()
 
@@ -186,14 +189,16 @@ def test_runner_defaults_to_openrouter_reader_and_tokenrouter_extractor_judge(mo
     assert os.environ["MEMCONTEXT_EXTRACTOR_ENDPOINT"].endswith("/chat/completions")
     assert "tokenrouter.com" in os.environ["MEMCONTEXT_EXTRACTOR_ENDPOINT"]
     assert os.environ["MEMCONTEXT_EXTRACTOR_MODEL"] == TOKENROUTER_EXTRACTOR_MODEL
-    assert os.environ["MEMCONTEXT_EXTRACTOR_API_KEY"] == "test-extractor-key"
-    assert os.environ["MEMCONTEXT_EXTRACTOR_REASONING_EFFORT"] == "none"
+    assert os.environ["MEMCONTEXT_EXTRACTOR_MODEL"] == TOKENROUTER_GEMINI_MODEL
+    assert os.environ["MEMCONTEXT_EXTRACTOR_API_KEY"] == "test-gemini-key"
+    assert "MEMCONTEXT_EXTRACTOR_REASONING_EFFORT" not in os.environ
     assert os.environ["OMB_ANSWER_LLM"] == "openrouter-reader"
     assert os.environ["OMB_ANSWER_MODEL"] == OPENROUTER_READER_MODEL
     assert os.environ["OMB_ANSWER_REASONING_EFFORT"] == "high"
     assert os.environ["OMB_JUDGE_LLM"] == "tokenrouter-judge"
     assert os.environ["OMB_JUDGE_MODEL"] == TOKENROUTER_JUDGE_MODEL
-    assert os.environ["OMB_JUDGE_REASONING_EFFORT"] == "low"
+    assert os.environ["OMB_JUDGE_MODEL"] == TOKENROUTER_GEMINI_MODEL
+    assert "OMB_JUDGE_REASONING_EFFORT" not in os.environ
     monkeypatch.delenv("MEMCONTEXT_EXTRACTOR_API_KEY", raising=False)
 
 
