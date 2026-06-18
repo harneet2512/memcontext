@@ -98,9 +98,10 @@ TOKENROUTER_AMB_GEMINI_KEY
 TOKENROUTER_AMB_JUDGE_KEY
 ```
 
-The workflow runs six category jobs in parallel, with `query_limit=5` by
-default, for a 30-question LongMemEval-S smoke run. The matrix is capped with
-`max-parallel: 20` so larger category/shard matrices do not exceed the GHA
+The workflow downloads the LongMemEval-S JSON once, shares it with the category
+matrix as an artifact, then runs six category jobs in parallel with
+`query_limit=5` by default for a 30-question smoke run. The matrix is capped
+with `max-parallel: 20` so larger category/shard matrices do not exceed the GHA
 parallelism limit.
 
 ```bash

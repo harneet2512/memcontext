@@ -17,6 +17,7 @@ concurrency:
 
 env:
   PYTHONIOENCODING: utf-8
+  LONGMEMEVAL_DATA_PATH: ${{ github.workspace }}/amb-data/longmemeval_s_cleaned.json
   OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
   TOKENROUTER_BASE_URL: https://api.tokenrouter.com/v1
   OMB_ANSWER_LLM: openrouter-reader
@@ -38,8 +39,50 @@ env:
   SENTENCE_TRANSFORMERS_HOME: ~/.cache/huggingface/sentence-transformers
 
 jobs:
+  dataset:
+    name: Prepare LongMemEval data
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download LongMemEval-S once
+        shell: bash
+        run: |
+          mkdir -p amb-data
+          python - <<'PY'
+          import time
+          import urllib.request
+          from pathlib import Path
+
+          url = (
+              "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned"
+              "/resolve/main/longmemeval_s_cleaned.json"
+          )
+          path = Path("amb-data/longmemeval_s_cleaned.json")
+          for attempt in range(1, 8):
+              try:
+                  urllib.request.urlretrieve(url, path)
+                  break
+              except Exception:
+                  if attempt == 7:
+                      raise
+                  time.sleep(20 * attempt)
+          if path.stat().st_size < 1_000_000:
+              raise SystemExit("LongMemEval download is unexpectedly small.")
+          PY
+
+      - name: Upload LongMemEval data
+        uses: actions/upload-artifact@v4
+        with:
+          name: longmemeval-s-cleaned
+          path: amb-data/longmemeval_s_cleaned.json
+
   category:
     name: ${{ matrix.category }}
+    needs: dataset
     runs-on: ubuntu-latest
     timeout-minutes: 180
     environment: benchmark
@@ -61,6 +104,12 @@ jobs:
       TOKENROUTER_AMB_JUDGE_KEY: ${{ secrets.TOKENROUTER_AMB_JUDGE_KEY }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download LongMemEval data
+        uses: actions/download-artifact@v4
+        with:
+          name: longmemeval-s-cleaned
+          path: amb-data
 
       - uses: actions/setup-python@v5
         with:
