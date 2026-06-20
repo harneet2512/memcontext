@@ -75,6 +75,9 @@ COPY docker/amb/fix_extractor_fence.py /opt/fix_extractor_fence.py
 # relevant memories instead of the ~140-memory breadth flood). Applied to the
 # INSTALLED product below, mirroring fix_extractor_fence's post-install patch.
 COPY docker/amb/patch_retrieval.py /opt/patch_retrieval.py
+# Scope Pass-1 supersession to the namespace (not the session) so value updates
+# resolve across a tenant's sessions. Applied to the INSTALLED product below.
+COPY docker/amb/patch_supersession.py /opt/patch_supersession.py
 # Shard enumerator for the sharded GHA workflow (lists dataset/split/category).
 COPY docker/amb/discover_shards.py /opt/discover_shards.py
 
@@ -105,7 +108,8 @@ RUN uv pip install "/opt/product[embeddings]" \
  && python /opt/revert_json_schema.py /opt/amb/src/memory_bench/llm/openai.py \
  && python /opt/patch_openrouter_strict.py /opt/amb/src/memory_bench/llm/openai.py \
  && python /opt/fix_extractor_fence.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/extractors.py \
- && python /opt/patch_retrieval.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/retrieval.py
+ && python /opt/patch_retrieval.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/retrieval.py \
+ && python /opt/patch_supersession.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/supersession.py
 
 # Bake the embedding model into the image (HF_HOME=/opt/hf_cache) so retrieval
 # NEVER downloads it from HuggingFace at runtime. N parallel shards each pulling

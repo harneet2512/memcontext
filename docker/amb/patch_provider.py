@@ -166,6 +166,7 @@ EDITS = [
                 _r = on_new_turn(
                     conn, session_id=sid, speaker=sp, text=text,
                     extractor=self._extractor, queue=_store_q, embedder=_epi,
+                    namespace=str(doc.user_id or "default"),
                 )
                 if _r.turn is not None:
                     stored.append(_r.turn)
@@ -317,7 +318,12 @@ EDITS = [
         "            # and the raw turn for an episode hit (the Tier-1 recall floor for\n"
         "            # when extraction missed). The old bridge resolved EVERY hit back\n"
         "            # to raw turn.text, discarding the distilled facts entirely.\n"
-        "            body = hit.text if hit.kind == 'fact' else (turn.text if turn else hit.text)\n"
+        "            # Serve the RAW SOURCE TURN, not the distilled claim: extraction is\n"
+        "            # lossy (it summarised 'redeemed a $5 coupon ... at Target' down to\n"
+        "            # '... last Sunday', dropping the gold answer 'Target'). The distilled\n"
+        "            # claim propagates that loss to the reader; the raw turn preserves the\n"
+        "            # full detail. Fall back to the claim text only if the turn is missing.\n"
+        "            body = turn.text if turn else hit.text\n"
         "            if body in seen:\n"
         "                continue\n"
         "            seen.add(body)\n"
