@@ -71,6 +71,10 @@ COPY docker/amb/patch_amb_llm.py /opt/patch_amb_llm.py
 COPY docker/amb/revert_json_schema.py /opt/revert_json_schema.py
 COPY docker/amb/patch_openrouter_strict.py /opt/patch_openrouter_strict.py
 COPY docker/amb/fix_extractor_fence.py /opt/fix_extractor_fence.py
+# Opt-in precision re-rank for retrieve_memory_across (serve the top-k most
+# relevant memories instead of the ~140-memory breadth flood). Applied to the
+# INSTALLED product below, mirroring fix_extractor_fence's post-install patch.
+COPY docker/amb/patch_retrieval.py /opt/patch_retrieval.py
 # Shard enumerator for the sharded GHA workflow (lists dataset/split/category).
 COPY docker/amb/discover_shards.py /opt/discover_shards.py
 
@@ -100,7 +104,8 @@ RUN uv pip install "/opt/product[embeddings]" \
  && python /opt/patch_amb_llm.py /opt/amb/src/memory_bench/llm \
  && python /opt/revert_json_schema.py /opt/amb/src/memory_bench/llm/openai.py \
  && python /opt/patch_openrouter_strict.py /opt/amb/src/memory_bench/llm/openai.py \
- && python /opt/fix_extractor_fence.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/extractors.py
+ && python /opt/fix_extractor_fence.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/extractors.py \
+ && python /opt/patch_retrieval.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/retrieval.py
 
 # Bake the embedding model into the image (HF_HOME=/opt/hf_cache) so retrieval
 # NEVER downloads it from HuggingFace at runtime. N parallel shards each pulling

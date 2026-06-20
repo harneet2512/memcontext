@@ -254,6 +254,7 @@ EDITS = [
         "            session_ids=session_ids,\n"
         "            query=query,\n"
         "            top_k=_depth_k,\n"
+        "            rerank_top_k=_depth_k,\n"
         "            include_superseded=_history,\n"
         "            embedding_client=self._embedding_client,\n"
         "        )\n"
