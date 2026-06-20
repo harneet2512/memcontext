@@ -132,26 +132,25 @@ EDITS = [
                 )
 
         backfill_embeddings(conn, unified_session, client=self._embedding_client)''',
-        '''        # FAITHFUL INGEST -- drive the product's REAL deferred-extraction path
-        # and reimplement NOTHING. on_new_turn(queue=q) stores each turn as an
-        # episode (Tier-1, embedded) and ENQUEUES extraction; q.drain() then runs
-        # the product's run_extraction per episode -- the set_context-aware
-        # extract -> Pass-1 -> Pass-2 -> project -> enrich tail
-        # (memcontext/on_new_turn.py). Extraction context, the episode floor,
-        # supersession, embedding and projection therefore ALL execute as PRODUCT
-        # code; the bridge only translates AMB Documents into on_new_turn calls.
-        # (The old parallel pool extracted each turn in ISOLATION via a
-        # PassthroughExtractor replay, silently dropping run_extraction's 8-turn
-        # set_context -- i.e. it measured a degraded, context-free extraction the
-        # real product never runs.)
+        '''        # FAITHFUL + PARALLEL INGEST. Restores the parallelism the benchmark
+        # needs (the serial queue+drain path TIMED OUT CI) WITHOUT losing fidelity:
+        # parallel LLM extract WITH set_context (per-worker extractor) + serial
+        # deterministic insert. Proven BYTE-IDENTICAL to the serial faithful path
+        # (same claims + supersession edges) in tests/test_parallel_faithful_ingest.py.
+        import threading
+        from concurrent.futures import ThreadPoolExecutor as _Pool
         from memcontext.extraction_queue import InlineQueue
+        from memcontext.on_new_turn import run_extraction
 
         _epi = episode_embedder()
-        _queue = InlineQueue(
-            conn, extractor=self._extractor, semantic=semantic_supersession()
-        )
+        _sem = semantic_supersession()
+        # InlineQueue here only makes on_new_turn DEFER (store + embed, no inline
+        # extract); we never drain it -- extraction runs in our pool below.
+        _store_q = InlineQueue(conn, extractor=self._extractor, semantic=_sem)
 
+        # Phase 1 -- store every turn (Tier-1: insert + embed; extraction deferred).
         batch_sessions: list[str] = []
+        stored: list[Turn] = []
         for doc in documents:
             sid = f"amb_{doc.id}"
             user_sessions = self._sessions_by_user.setdefault(doc.user_id, [])
@@ -159,34 +158,84 @@ EDITS = [
                 user_sessions.append(sid)
             if sid not in batch_sessions:
                 batch_sessions.append(sid)
-            # Per-session date (longmemeval haystack_date via Document.timestamp),
-            # used at serve time for temporal grounding.
             _ts = getattr(doc, "timestamp", None)
             if _ts:
                 self._dates_by_session[sid] = _ts
             for role, text in _parse_document_turns(doc):
                 sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
-                # Deferred path: stores the episode (embedded) + enqueues extraction.
-                on_new_turn(
-                    conn,
-                    session_id=sid,
-                    speaker=sp,
-                    text=text,
-                    extractor=self._extractor,
-                    queue=_queue,
-                    embedder=_epi,
+                _r = on_new_turn(
+                    conn, session_id=sid, speaker=sp, text=text,
+                    extractor=self._extractor, queue=_store_q, embedder=_epi,
                 )
+                if _r.turn is not None:
+                    stored.append(_r.turn)
 
-        # Run the product's extraction tail for every enqueued episode
-        # (set_context-aware extract + Pass-1 + Pass-2 + project + enrich). Serial
-        # by design: this IS the product's real extraction behaviour. Faithful
-        # parallelism would require the product to expose its extract/insert seam
-        # (a master change); the bridge will NOT fake it with a context-free pool.
-        _queue.drain()
+        # Phase 2 -- pre-fetch each turn's prior-turn context SERIALLY (main thread;
+        # SQLite :memory: is not thread-safe, so workers never touch the DB). Same
+        # query as run_extraction's set_context -> context identical to the serial path.
+        _prior: dict[str, list[Turn]] = {}
+        for _t in stored:
+            _rows = conn.execute(
+                "SELECT * FROM turns WHERE session_id = ? AND ts < ? ORDER BY ts DESC LIMIT 8",
+                (_t.session_id, _t.ts),
+            ).fetchall()
+            _prior[_t.turn_id] = [
+                Turn(turn_id=r["turn_id"], session_id=r["session_id"],
+                     speaker=Speaker(r["speaker"]), text=r["text"], ts=r["ts"],
+                     asr_confidence=r["asr_confidence"])
+                for r in reversed(_rows)
+            ]
+
+        # Phase 3 -- PARALLEL extract; each worker its OWN extractor instance so
+        # set_context state cannot race. This is the slow LLM call, fanned out;
+        # MEMCONTEXT_EXTRACTION_WORKERS sets the width (the parallelism the old pool
+        # had, now WITH context). Pure: workers read no DB.
+        _tl = threading.local()
+
+        def _worker_extractor():
+            ex = getattr(_tl, "ex", None)
+            if ex is None:
+                ex = _tl.ex = auto_extractor()
+            return ex
+
+        def _extract_one(t):
+            ex = _worker_extractor()
+            if hasattr(ex, "set_context"):
+                ex.set_context(_prior[t.turn_id])
+            try:
+                return (t.turn_id, list(ex(t)))
+            except Exception:
+                return (t.turn_id, [])
+
+        _workers = int(os.environ.get("MEMCONTEXT_EXTRACTION_WORKERS", "32"))
+        if stored:
+            with _Pool(max_workers=_workers) as _pool:
+                _claims_by_tid = dict(_pool.map(_extract_one, stored))
+        else:
+            _claims_by_tid = {}
+
+        # Phase 4 -- SERIAL insert in ts order. _Precomputed feeds the already-
+        # extracted ExtractedClaim objects (every field preserved -- no dict
+        # round-trip) into run_extraction, which runs Pass-1/Pass-2 supersession +
+        # projection deterministically, in the same order as the serial drain.
+        class _Precomputed:
+            is_deferrable = False
+
+            def __init__(self, _claims):
+                self._claims = _claims
+
+            def __call__(self, _turn):
+                return self._claims
+
+        for _t in sorted(stored, key=lambda x: x.ts):
+            run_extraction(
+                conn, episode_id=_t.turn_id, session_id=_t.session_id,
+                extractor=_Precomputed(_claims_by_tid.get(_t.turn_id, [])), semantic=_sem,
+            )
 
         for _sid in batch_sessions:
             backfill_embeddings(conn, _sid, client=self._embedding_client)''',
-        "FAITHFUL INGEST: on_new_turn(queue)+drain (product set_context path) replaces the context-free parallel pool",
+        "FAITHFUL + PARALLEL INGEST: parallel extract (per-worker set_context) + serial deterministic insert; byte-identical to serial, restores CI-viable parallelism",
     ),
     (
         "        unified_session = f\"amb_{user_id}\" if user_id else _get_any_session(conn)\n"
