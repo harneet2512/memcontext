@@ -45,16 +45,20 @@ export OMB_JUDGE_OPENAI_BASE_URL="${OMB_JUDGE_OPENAI_BASE_URL:-$TOKENROUTER_BASE
 # ---- extractor (provider detail; AMB mandates none) ------------------------
 # MemContext's own LLM extractor — its own key + endpoint, independent of the AMB
 # answer/judge roles. minimax-m3 with reasoning disabled (NO_THINK=1).
+# BACKEND is only the TRANSPORT selector (openai-compatible HTTP). The actual URL
+# comes from MEMCONTEXT_EXTRACTOR_ENDPOINT below (extractors.py:498-504), so
+# 'openrouter' + a TokenRouter ENDPOINT correctly routes to TokenRouter — the
+# string 'openrouter' does NOT force the openrouter.ai URL.
 export MEMCONTEXT_EXTRACTOR_BACKEND="${MEMCONTEXT_EXTRACTOR_BACKEND:-openrouter}"
 export MEMCONTEXT_EXTRACTOR_ENDPOINT="${MEMCONTEXT_EXTRACTOR_ENDPOINT:-${TOKENROUTER_BASE_URL_DEFAULT}/chat/completions}"
 export MEMCONTEXT_EXTRACTOR_MODEL="${MEMCONTEXT_EXTRACTOR_MODEL:-MiniMax-M3}"
 export MEMCONTEXT_EXTRACTOR_NO_THINK="${MEMCONTEXT_EXTRACTOR_NO_THINK:-1}"
 export MEMCONTEXT_EXTRACTOR_API_KEY="${EXTRACTOR_KEY}"
-# Parallelism: extraction is the dominant cost and the main lever. The extractor
-# has exponential 429 backoff (extractors.py:660,713) + a connection pool sized to
-# the worker count, so overshoot self-throttles instead of failing. Saturate the
-# extractor key's rate limit; raising past saturation just idles on backoff sleeps.
-# Tune to the key's actual RPM/TPM; 64 is an aggressive-but-sane default.
+# Parallelism: NO-OP for the faithful AMB ingest. The patched adapter delegates to
+# the product's on_new_turn(queue=) -> InlineQueue.drain(), which extracts SERIALLY,
+# so this var no longer affects ingest. Benchmark parallelism comes from GHA
+# sharding, not in-process workers. Left exported for any other code path that
+# reads it; harmless if unset. (Backoff/pool: extractors.py:660,713 / pool=128.)
 export MEMCONTEXT_EXTRACTION_WORKERS="${MEMCONTEXT_EXTRACTION_WORKERS:-128}"
 
 # ---- product config --------------------------------------------------------

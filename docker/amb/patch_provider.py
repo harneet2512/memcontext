@@ -71,117 +71,122 @@ EDITS = [
         "reset tracked sessions + per-session dates alongside the connection on prepare(reset=True)",
     ),
     (
-        "        first_user_id = documents[0].user_id if documents else \"default\"\n"
-        "        unified_session = f\"amb_{first_user_id}\"\n"
-        "\n"
-        "        for doc in documents:\n"
-        "            turns = _parse_document_turns(doc)\n"
-        "            for role, text in turns:\n"
-        "                all_work.append((unified_session, role, text))",
-        "        # Per-conversation session model: each AMB Document becomes its OWN\n"
-        "        # session (doc.id is a stable per-conversation id), exactly like the\n"
-        "        # product, where every ingested conversation is a distinct\n"
-        "        # session_id. This is what makes the multi-session machinery\n"
-        "        # (cross-session RRF fusion in retrieve_memory_across) real instead\n"
-        "        # of collapsing everything into one bag.\n"
-        "        batch_sessions: list[str] = []\n"
-        "        for doc in documents:\n"
-        "            sid = f\"amb_{doc.id}\"\n"
-        "            user_sessions = self._sessions_by_user.setdefault(doc.user_id, [])\n"
-        "            if sid not in user_sessions:\n"
-        "                user_sessions.append(sid)\n"
-        "            if sid not in batch_sessions:\n"
-        "                batch_sessions.append(sid)\n"
-        "            # Capture the per-session date (longmemeval's haystack_date,\n"
-        "            # surfaced by the loader as Document.timestamp, ISO-8601). Used\n"
-        "            # at serve time to date each episode for temporal reasoning.\n"
-        "            _ts = getattr(doc, \"timestamp\", None)\n"
-        "            if _ts:\n"
-        "                self._dates_by_session[sid] = _ts\n"
-        "            turns = _parse_document_turns(doc)\n"
-        "            for role, text in turns:\n"
-        "                all_work.append((sid, role, text))",
-        "per-doc sessions on ingest: id=amb_{doc.id}, tracked per user (dedup, order preserved)",
-    ),
-    (
-        "                except Exception:\n"
-        "                    w = futures[fut]\n"
-        "                    extracted.append((w[0], w[1], w[2], []))",
-        "                except Exception:\n"
-        "                    # Mirror the product harness: a FAILED extraction is\n"
-        "                    # SKIPPED, not persisted as a zero-claim turn the\n"
-        "                    # measured product never creates.\n"
-        "                    pass",
-        "failed extraction -> skip (do not persist a zero-claim turn) — match product harness",
-    ),
-    (
-        '                if not claims_data:\n'
-        '                    claims_data = [{\n'
-        '                        "subject": "user" if role == "user" else "assistant",\n'
-        '                        "predicate": "user_fact",\n'
-        '                        "value": text[:500],\n'
-        '                        "confidence": 0.3,\n'
-        '                    }]\n'
-        '\n'
-        '                sp = Speaker.USER if role == "user" else Speaker.ASSISTANT',
-        '                # EPISODE FLOOR (product Tier-1): a turn the extractor produced\n'
-        '                # NO claims for is STILL ingested via on_new_turn with an empty\n'
-        '                # claim set (PassthroughExtractor([])). on_new_turn inserts the\n'
-        '                # turn regardless of claim count, so the turn becomes a\n'
-        '                # retrievable EPISODE carrying zero facts -- exactly the\n'
-        '                # product Tier-1 floor. The old `continue` HARD-DROPPED such turns,\n'
-        '                # so a needle turn the extractor missed vanished from the store\n'
-        '                # entirely and could never be retrieved. We drop the old raw-text\n'
-        '                # text[:500] fallback (that fabricated a junk fact) AND we no\n'
-        '                # longer drop the turn -- we keep it as a fact-less episode.\n'
-        '                # The on_new_turn call now passes embedder=/semantic= (below),\n'
-        '                # so even this fact-less episode is EMBEDDED -- semantic episode\n'
-        '                # retrieval works, exactly as the product ingest does.\n'
-        '                sp = Speaker.USER if role == "user" else Speaker.ASSISTANT',
-        "episode floor: ingest zero-claim turns as fact-less EPISODES (was: hard-drop via continue)",
-    ),
-    (
-        "        for sid in sorted(by_session.keys()):\n"
-        "            for role, text, claims_data in by_session[sid]:",
-        "        # Faithful ingest: the product's REAL ingest (cli.py:89, mcp_tools.py:61)\n"
-        "        # passes BOTH the episode embedder and Pass-2 semantic supersession to\n"
-        "        # on_new_turn. Build them ONCE so the bridge ingests EXACTLY as the\n"
-        "        # product does -- episodes get embedded (so semantic episode retrieval\n"
-        "        # works) and cross-session duplicate/refined claims consolidate. Dropping\n"
-        "        # them was measuring a DEGRADED product (episodes blind, Pass-2 off).\n"
-        "        _epi = episode_embedder()\n"
-        "        _sem = semantic_supersession()\n"
-        "        for sid in sorted(by_session.keys()):\n"
-        "            for role, text, claims_data in by_session[sid]:",
-        "construct the product's episode embedder + Pass-2 supersession once before the ingest loop",
-    ),
-    (
-        "                on_new_turn(\n"
-        "                    conn,\n"
-        "                    session_id=sid,\n"
-        "                    speaker=sp,\n"
-        "                    text=text,\n"
-        "                    extractor=pt,\n"
-        "                )",
-        "                on_new_turn(\n"
-        "                    conn,\n"
-        "                    session_id=sid,\n"
-        "                    speaker=sp,\n"
-        "                    text=text,\n"
-        "                    extractor=pt,\n"
-        "                    embedder=_epi,\n"
-        "                    semantic=_sem,\n"
-        "                )",
-        "pass embedder= + semantic= to on_new_turn (match cli.py:89 / mcp_tools.py:61 -- the product's REAL ingest)",
-    ),
-    (
-        "        backfill_embeddings(conn, unified_session, client=self._embedding_client)",
-        "        # backfill_embeddings is per-session (retrieval.py:354) — embed each\n"
-        "        # session ingested in this batch, not one unified bag. Matches the\n"
-        "        # product, where each session's episodes are embedded under its own id.\n"
-        "        for _sid in batch_sessions:\n"
-        "            backfill_embeddings(conn, _sid, client=self._embedding_client)",
-        "backfill embeddings per session (loop over this batch's sessions)",
+        '''        extractor = self._extractor
+        all_work: list[tuple[str, str, str]] = []
+
+        first_user_id = documents[0].user_id if documents else "default"
+        unified_session = f"amb_{first_user_id}"
+
+        for doc in documents:
+            turns = _parse_document_turns(doc)
+            for role, text in turns:
+                all_work.append((unified_session, role, text))
+
+        extracted: list[tuple[str, str, str, list[dict]]] = []
+
+        def _extract_one(item: tuple[str, str, str]) -> tuple[str, str, str, list[dict]]:
+            sid, role, text = item
+            sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
+            claims = _extract_claims(extractor, sid, sp, text)
+            return (sid, role, text, claims)
+
+        _workers = int(os.environ.get("MEMCONTEXT_EXTRACTION_WORKERS", "32"))
+        with ThreadPoolExecutor(max_workers=_workers) as pool:
+            futures = {pool.submit(_extract_one, w): w for w in all_work}
+            done = 0
+            for fut in as_completed(futures):
+                done += 1
+                try:
+                    extracted.append(fut.result())
+                except Exception:
+                    w = futures[fut]
+                    extracted.append((w[0], w[1], w[2], []))
+                if done % 100 == 0:
+                    logger.info(f"Extracted {done}/{len(all_work)} turns")
+
+        if done > 0:
+            logger.info(f"Extracted {done}/{len(all_work)} turns")
+
+        by_session: dict[str, list[tuple[str, str, list[dict]]]] = {}
+        for sid, role, text, claims_data in extracted:
+            by_session.setdefault(sid, []).append((role, text, claims_data))
+
+        for sid in sorted(by_session.keys()):
+            for role, text, claims_data in by_session[sid]:
+                if not claims_data:
+                    claims_data = [{
+                        "subject": "user" if role == "user" else "assistant",
+                        "predicate": "user_fact",
+                        "value": text[:500],
+                        "confidence": 0.3,
+                    }]
+
+                sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
+                pt = PassthroughExtractor(claims_data)
+                on_new_turn(
+                    conn,
+                    session_id=sid,
+                    speaker=sp,
+                    text=text,
+                    extractor=pt,
+                )
+
+        backfill_embeddings(conn, unified_session, client=self._embedding_client)''',
+        '''        # FAITHFUL INGEST -- drive the product's REAL deferred-extraction path
+        # and reimplement NOTHING. on_new_turn(queue=q) stores each turn as an
+        # episode (Tier-1, embedded) and ENQUEUES extraction; q.drain() then runs
+        # the product's run_extraction per episode -- the set_context-aware
+        # extract -> Pass-1 -> Pass-2 -> project -> enrich tail
+        # (memcontext/on_new_turn.py). Extraction context, the episode floor,
+        # supersession, embedding and projection therefore ALL execute as PRODUCT
+        # code; the bridge only translates AMB Documents into on_new_turn calls.
+        # (The old parallel pool extracted each turn in ISOLATION via a
+        # PassthroughExtractor replay, silently dropping run_extraction's 8-turn
+        # set_context -- i.e. it measured a degraded, context-free extraction the
+        # real product never runs.)
+        from memcontext.extraction_queue import InlineQueue
+
+        _epi = episode_embedder()
+        _queue = InlineQueue(
+            conn, extractor=self._extractor, semantic=semantic_supersession()
+        )
+
+        batch_sessions: list[str] = []
+        for doc in documents:
+            sid = f"amb_{doc.id}"
+            user_sessions = self._sessions_by_user.setdefault(doc.user_id, [])
+            if sid not in user_sessions:
+                user_sessions.append(sid)
+            if sid not in batch_sessions:
+                batch_sessions.append(sid)
+            # Per-session date (longmemeval haystack_date via Document.timestamp),
+            # used at serve time for temporal grounding.
+            _ts = getattr(doc, "timestamp", None)
+            if _ts:
+                self._dates_by_session[sid] = _ts
+            for role, text in _parse_document_turns(doc):
+                sp = Speaker.USER if role == "user" else Speaker.ASSISTANT
+                # Deferred path: stores the episode (embedded) + enqueues extraction.
+                on_new_turn(
+                    conn,
+                    session_id=sid,
+                    speaker=sp,
+                    text=text,
+                    extractor=self._extractor,
+                    queue=_queue,
+                    embedder=_epi,
+                )
+
+        # Run the product's extraction tail for every enqueued episode
+        # (set_context-aware extract + Pass-1 + Pass-2 + project + enrich). Serial
+        # by design: this IS the product's real extraction behaviour. Faithful
+        # parallelism would require the product to expose its extract/insert seam
+        # (a master change); the bridge will NOT fake it with a context-free pool.
+        _queue.drain()
+
+        for _sid in batch_sessions:
+            backfill_embeddings(conn, _sid, client=self._embedding_client)''',
+        "FAITHFUL INGEST: on_new_turn(queue)+drain (product set_context path) replaces the context-free parallel pool",
     ),
     (
         "        unified_session = f\"amb_{user_id}\" if user_id else _get_any_session(conn)\n"

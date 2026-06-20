@@ -1,0 +1,174 @@
+# .github/workflows/amb-30-smoke.yml
+#
+# ──────────────────────────────────────────────────────────────────────────────
+# AMB 30-test SMOKE — MANUAL, BILLED.
+#
+#   * MANUAL ONLY: workflow_dispatch — it never auto-bills. You click "Run".
+#   * BILLED: every shard makes real answer/judge/extractor API calls. 30 tests
+#     total (5 questions × 6 LongMemEval-S categories) = real OpenRouter +
+#     TokenRouter spend on each run.
+#   * REQUIRES 3 REPO SECRETS: ANSWER_KEY (OpenRouter, answer = gpt-oss-120b),
+#     JUDGE_KEY (TokenRouter, judge = gemini-3-flash-preview),
+#     EXTRACTOR_KEY (TokenRouter, extractor = MiniMax-M3). HF_TOKEN optional.
+#   * FAITHFUL EXTRACTION: in-process extraction is SERIAL (the provider bridge
+#     delegates to the product's deferred-extraction path — InlineQueue.drain()
+#     runs run_extraction per episode with 8-prior-turn coreference context).
+#     MEMCONTEXT_EXTRACTION_WORKERS no longer affects ingest; parallelism for the
+#     smoke comes from SHARDING (one GHA job per category), NOT in-process workers.
+#
+# Shape: build-once -> GHCR  ->  6 parallel category shards (5 q each)  ->  aggregate.
+# Models are LOCKED by entrypoint.sh defaults — this workflow does not override them.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: AMB 30-test smoke (5 q × 6 categories)
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: "rebuild the image even if :built exists (set after changing docker/amb)"
+        default: "false"
+
+concurrency:
+  group: amb-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        # Stable tag — the image only depends on docker/amb + the pinned product,
+        # so this smoke REUSES the same :built image the full sharded run builds.
+        run: echo "image=$(echo ghcr.io/${{ github.repository }}/amb:built | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - id: check
+        run: |
+          if [ "${{ inputs.force_build }}" = "true" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"; echo "force_build set -> rebuilding"
+          elif docker manifest inspect "${{ steps.meta.outputs.image }}" >/dev/null 2>&1; then
+            echo "build=false" >> "$GITHUB_OUTPUT"; echo "image already in GHCR -> skipping the 17GB rebuild"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"; echo "image not found -> building once"
+          fi
+      - if: steps.check.outputs.build == 'true'
+        uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # full history: the build git-archives master@PRODUCT_REF
+      - if: steps.check.outputs.build == 'true'
+        name: Fetch product branch (PRODUCT_REF lives on master)
+        run: git fetch --no-tags origin master 73c34f65368f4e0638e16f6cf0e79c7cf6350f16 2>/dev/null || git fetch --no-tags origin master
+      - if: steps.check.outputs.build == 'true'
+        name: Free disk space (image ~17GB w/ torch)
+        uses: jlumbroso/free-disk-space@main
+        with: { tool-cache: true, android: true, dotnet: true, haskell: true, large-packages: true, swap-storage: true }
+      - if: steps.check.outputs.build == 'true'
+        uses: docker/setup-buildx-action@v3
+      - if: steps.check.outputs.build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/amb/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  shard:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions: { contents: read, packages: read }
+    strategy:
+      fail-fast: false          # one category failing must NOT cancel the rest
+      max-parallel: 20          # all 6 run at once; cap is well clear of the matrix size
+      matrix:
+        # 30 tests = 5 questions per category × 6 LongMemEval-S categories.
+        # --query-limit 5 is the SAME per-category knob the harness/Dockerfile CMD
+        # uses for a smoke (entrypoint.sh: omb run ... --query-limit N).
+        category:
+          - single-session-user
+          - single-session-assistant
+          - multi-session
+          - temporal-reasoning
+          - knowledge-update
+          - single-session-preference
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run category shard (5 questions)
+        env:
+          CAT: ${{ matrix.category }}
+        run: |
+          mkdir -p out
+          echo "shard: longmemeval s --category $CAT --query-limit 5"
+          docker run --rm \
+            -e ANSWER_KEY='${{ secrets.ANSWER_KEY }}' \
+            -e JUDGE_KEY='${{ secrets.JUDGE_KEY }}' \
+            -e EXTRACTOR_KEY='${{ secrets.EXTRACTOR_KEY }}' \
+            -e HF_TOKEN='${{ secrets.HF_TOKEN }}' \
+            -v "$PWD/out:/opt/amb/outputs" \
+            '${{ needs.build.outputs.image }}' \
+            longmemeval s --category "$CAT" --query-limit 5
+      - name: Tag results
+        env:
+          CAT: ${{ matrix.category }}
+        run: d="shard-longmemeval-s-${CAT}"; mkdir -p "$d"; cp -r out/* "$d"/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: results-longmemeval-s-${{ matrix.category }}
+          path: shard-*/
+          if-no-files-found: warn
+
+  aggregate:
+    needs: shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: all }
+      - name: Merge + per-category pass count
+        run: |
+          python - <<'PY'
+          import json, pathlib, collections
+          per = collections.defaultdict(lambda: [0, 0])   # category -> [correct, total]
+          for f in pathlib.Path("all").rglob("*.json"):
+              if f.name == "run_manifest.json":
+                  continue
+              try:
+                  data = json.loads(f.read_text())
+              except Exception:
+                  continue
+              rows = data if isinstance(data, list) else (data.get("results") or data.get("queries") or [])
+              if not isinstance(rows, list):
+                  continue
+              c = sum(1 for r in rows if isinstance(r, dict)
+                      and (r.get("correct") is True or r.get("score") in (1, 1.0, True)))
+              # f.parent like shard-longmemeval-s-<category>
+              key = f.parent.name.replace("shard-longmemeval-s-", "")
+              per[key][0] += c
+              per[key][1] += len(rows)
+          tot_c = sum(v[0] for v in per.values())
+          tot_t = sum(v[1] for v in per.values())
+          print("=== per category (LongMemEval-S smoke, 5 q each) ===")
+          for k in sorted(per):
+              c, t = per[k]
+              print(f"  {k:30s} {c}/{t}  {100*c/t if t else 0:.1f}%")
+          acc = 100 * tot_c / tot_t if tot_t else 0
+          print(f"=== SMOKE TOTAL: {tot_c}/{tot_t} = {acc:.2f}% ===")
+          pathlib.Path("amb_smoke_total.json").write_text(json.dumps(
+              {"correct": tot_c, "total": tot_t, "accuracy_pct": round(acc, 2),
+               "per_category": {k: {"correct": v[0], "total": v[1]} for k, v in per.items()}},
+              indent=2, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with: { name: amb-smoke-FINAL-score, path: amb_smoke_total.json }
