@@ -78,6 +78,11 @@ COPY docker/amb/patch_retrieval.py /opt/patch_retrieval.py
 # Scope Pass-1 supersession to the namespace (not the session) so value updates
 # resolve across a tenant's sessions. Applied to the INSTALLED product below.
 COPY docker/amb/patch_supersession.py /opt/patch_supersession.py
+# Tie-aware RRF rank fusion (competition ranking): a FLAT/degenerate retrieval
+# channel becomes NEUTRAL instead of injecting index-order noise that buries a
+# needle another channel ranked #1. General product fix; the benchmark's single
+# `user_fact` predicate makes channels flat, so this is the deepening that fires.
+COPY docker/amb/patch_fusion.py /opt/patch_fusion.py
 # Shard enumerator for the sharded GHA workflow (lists dataset/split/category).
 COPY docker/amb/discover_shards.py /opt/discover_shards.py
 
@@ -109,7 +114,8 @@ RUN uv pip install "/opt/product[embeddings]" \
  && python /opt/patch_openrouter_strict.py /opt/amb/src/memory_bench/llm/openai.py \
  && python /opt/fix_extractor_fence.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/extractors.py \
  && python /opt/patch_retrieval.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/retrieval.py \
- && python /opt/patch_supersession.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/supersession.py
+ && python /opt/patch_supersession.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/supersession.py \
+ && python /opt/patch_fusion.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/retrieval.py
 
 # Bake the embedding model into the image (HF_HOME=/opt/hf_cache) so retrieval
 # NEVER downloads it from HuggingFace at runtime. N parallel shards each pulling
