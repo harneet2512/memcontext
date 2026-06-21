@@ -811,15 +811,22 @@ _TEMPORAL_QUERY_KEYWORDS = frozenset({
 })
 
 
+def _kw_match(q_lower: str, keywords: frozenset[str]) -> bool:
+    """Word-boundary keyword match (deterministic). Substring matching mis-fired:
+    'count' matched 'account', 'every' matched 'everyone', inflating top_k to 50
+    and flooding the reader on unrelated queries. Word boundaries match standalone
+    words and multi-word phrases without those false positives."""
+    import re as _re
+    return any(_re.search(r"\b" + _re.escape(kw) + r"\b", q_lower) for kw in keywords)
+
+
 def classify_query_depth(query: str) -> tuple[str, int]:
     """Classify query type and return recommended top_k."""
     q_lower = query.lower().strip()
-    for kw in _AGGREGATION_KEYWORDS:
-        if kw in q_lower:
-            return ("aggregation", 50)
-    for kw in _TEMPORAL_QUERY_KEYWORDS:
-        if kw in q_lower:
-            return ("temporal", 30)
+    if _kw_match(q_lower, _AGGREGATION_KEYWORDS):
+        return ("aggregation", 50)
+    if _kw_match(q_lower, _TEMPORAL_QUERY_KEYWORDS):
+        return ("temporal", 30)
     return ("factual", 15)
 
 

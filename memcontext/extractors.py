@@ -419,16 +419,45 @@ def _to_extracted_claims(
 
 
 def _find_char_span(text: str, value: str) -> tuple[int | None, int | None]:
-    """Best-effort char-span resolution. (None, None) when no match."""
+    """Best-effort char-span resolution. (None, None) when no match.
+
+    Exact (then case-insensitive) substring first. If that fails — which happens
+    on every paraphrased / coref-resolved value (the extraction prompt *forces*
+    rewriting, e.g. "She moved there" -> "Anna moved to Seattle"), so the value no
+    longer substring-matches the turn — fall back to a deterministic TOKEN-OVERLAP
+    span: the range covering the value's content tokens where they appear in the
+    turn. This keeps provenance (and the verbatim source detail a lossy value
+    dropped, e.g. "...at Target...") recoverable instead of silently lost. No LLM,
+    no embedding — pure token matching.
+    """
     if not text or not value:
         return None, None
     idx = text.find(value)
-    if idx < 0:
-        lowered = text.lower().find(value.lower())
-        if lowered < 0:
-            return None, None
+    if idx >= 0:
+        return idx, idx + len(value)
+    lowered = text.lower().find(value.lower())
+    if lowered >= 0:
         return lowered, lowered + len(value)
-    return idx, idx + len(value)
+
+    import re as _re
+    _stop = {"the", "a", "an", "is", "was", "to", "for", "and", "or", "of", "in",
+             "on", "at", "it", "my", "i", "me", "we", "with", "has", "had", "be",
+             "do", "did", "that", "this", "as", "by", "from"}
+    val_toks = [t for t in _re.findall(r"[a-z0-9]+", value.lower())
+                if t not in _stop and len(t) > 1]
+    if not val_toks:
+        return None, None
+    tl = text.lower()
+    positions = []
+    for t in val_toks:
+        m = _re.search(r"\b" + _re.escape(t) + r"\b", tl)
+        if m:
+            positions.append((m.start(), m.end()))
+    # Require a majority of the value's content tokens to actually appear in the
+    # turn before trusting the span — otherwise the value is genuinely not grounded.
+    if len(positions) < max(1, (len(val_toks) + 1) // 2):
+        return None, None
+    return min(p[0] for p in positions), max(p[1] for p in positions)
 
 
 # ---------------------------------------------------------------------------
