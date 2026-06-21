@@ -116,7 +116,7 @@ RUN uv sync
 # also writes); patch that tree. Both shims are disclosed in README.
 RUN uv pip install "/opt/product[embeddings]" \
  && cp /opt/enumeration.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/enumeration.py \
- && python -c "import importlib.util as u; assert u.find_spec('memcontext.enumeration'), 'enumeration not importable'; from memcontext.enumeration import enumerate_retrieved, count_distinct_instances; print('vendored enumeration.py importable in product')" \
+ && uv run python -c "import importlib.util as u; assert u.find_spec('memcontext.enumeration'), 'enumeration not importable'; from memcontext.enumeration import enumerate_retrieved, count_distinct_instances; print('vendored enumeration.py importable in product')" \
  && python /opt/patch_provider.py /opt/harness/evals/amb/provider.py \
  && python /opt/harness/evals/amb/install.py \
  && python /opt/patch_amb_llm.py /opt/amb/src/memory_bench/llm \
