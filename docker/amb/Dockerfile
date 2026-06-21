@@ -83,6 +83,14 @@ COPY docker/amb/patch_supersession.py /opt/patch_supersession.py
 # needle another channel ranked #1. General product fix; the benchmark's single
 # `user_fact` predicate makes channels flat, so this is the deepening that fires.
 COPY docker/amb/patch_fusion.py /opt/patch_fusion.py
+# ENUMERATION counting deepening (instance-preserving distinct-count). PRODUCT_REF
+# 73c34f6 predates enumeration.py, so we VENDOR the proven module here and drop it
+# into the installed product's site-packages below, BEFORE the adapter's runtime
+# serve path can import it. The adapter (patch_provider.py) calls enumerate_retrieved
+# for aggregation-intent queries to serve the DEDUPLICATED distinct count instead of
+# the raw mention flood. Generic intent (classify_query_depth), zero generative-LLM,
+# embedding-cluster dedup only — additive: non-aggregation queries are untouched.
+COPY docker/amb/enumeration.py /opt/enumeration.py
 # Shard enumerator for the sharded GHA workflow (lists dataset/split/category).
 COPY docker/amb/discover_shards.py /opt/discover_shards.py
 
@@ -107,6 +115,8 @@ RUN uv sync
 # editable, so its source lives at /opt/amb/src/memory_bench/llm/ (where install.py
 # also writes); patch that tree. Both shims are disclosed in README.
 RUN uv pip install "/opt/product[embeddings]" \
+ && cp /opt/enumeration.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/enumeration.py \
+ && python -c "import importlib.util as u; assert u.find_spec('memcontext.enumeration'), 'enumeration not importable'; from memcontext.enumeration import enumerate_retrieved, count_distinct_instances; print('vendored enumeration.py importable in product')" \
  && python /opt/patch_provider.py /opt/harness/evals/amb/provider.py \
  && python /opt/harness/evals/amb/install.py \
  && python /opt/patch_amb_llm.py /opt/amb/src/memory_bench/llm \
