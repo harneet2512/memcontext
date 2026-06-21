@@ -293,12 +293,42 @@ def handle_memory_query(
                 "score": norm,
             })
 
+    # STALE-EPISODE FILTER (serve CLEAN CURRENT context — the product's core job):
+    # a retrieved episode whose facts have ALL been superseded states only retired
+    # values. Serving the raw turn drags that retired truth back into the resolved
+    # context and lets a reader answer with the OLD value (e.g. the $350k pre-approval
+    # that was later raised to $400k) even though supersession already retired it on
+    # the claims channel. Drop a turn only when it HAS claims and EVERY one is retired;
+    # turns with any active claim, or no claims at all (Tier-1 raw context / assistant
+    # turns), are served unchanged. Skipped under history/timeline intent, which
+    # explicitly wants the supersession trail. General: any updated fact, any domain.
+    if not history and episodes_out:
+        _kept: list[dict] = []
+        for _e in episodes_out:
+            _rows = conn.execute(
+                "SELECT status FROM claims WHERE source_turn_id = ?", (_e["turn_id"],)
+            ).fetchall()
+            _statuses = [
+                (_r["status"] if isinstance(_r, sqlite3.Row) else _r[0]) for _r in _rows
+            ]
+            if _statuses and not any(
+                _s in ("active", "confirmed", "audited") for _s in _statuses
+            ):
+                continue  # every fact from this turn is superseded -> stale evidence
+            _kept.append(_e)
+        episodes_out = _kept
+
     # SLOT-DEDUP (resolved-truth channel): the served claims become one value per
     # resolved slot (subject, predicate, attribute) — duplicate near-mentions and
     # competing single-valued-attribute values collapse to the best-ranked survivor,
     # so the agent reads resolved current truth, not a top-k pile of duplicates.
     # ADDITIVE: distinct facts (no shared slot) pass through byte-identical.
     claims_out = _dedup_claims_out(claims_out)
+
+    # Serve hygiene: never serve an empty-valued claim — it carries no information and
+    # only dilutes the resolved context (a degenerate extraction or a normalised-away
+    # value should not occupy a served slot). General; additive.
+    claims_out = [c for c in claims_out if str(c.get("value") or "").strip()]
 
     # PROVENANCE LINEAGE on the served channel: each surviving claim carries its
     # "why" — the source span/quote it came from and the typed correction chain it
