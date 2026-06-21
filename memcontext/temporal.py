@@ -69,6 +69,55 @@ def _to_ns(year: int, month: int, day: int) -> int | None:
     return int(dt.timestamp()) * _NS_PER_SEC
 
 
+_NS_PER_DAY = 86_400 * _NS_PER_SEC
+
+
+def format_elapsed(event_ts_ns: int | None, ref_ts_ns: int | None) -> str | None:
+    """Render the time between ``event_ts_ns`` and ``ref_ts_ns`` in multiple human
+    units, so an elapsed/interval question ("how many weeks/days/months ago …") can
+    be read off DIRECTLY without the reader doing any date arithmetic.
+
+    Pure arithmetic — deterministic, zero LLM, no network. Returns ``None`` when
+    either timestamp is ``None`` (graceful: nothing to ground, caller leaves the
+    served item unchanged).
+
+    Examples (ref AFTER event -> "ago"):
+        28 days  -> "~28 days (~4 weeks, ~1 month) ago"
+        6 days   -> "~6 days ago"
+        35 days  -> "~35 days (~5 weeks, ~1 month) ago"
+    A future event (ref BEFORE event) renders "… from now". A zero delta renders
+    "today / same day".
+    """
+    if event_ts_ns is None or ref_ts_ns is None:
+        return None
+
+    delta_ns = ref_ts_ns - event_ts_ns
+    future = delta_ns < 0
+    abs_ns = -delta_ns if future else delta_ns
+
+    days = abs_ns // _NS_PER_DAY
+    if days == 0:
+        return "today (same day)"
+
+    weeks = round(days / 7)
+    months = round(days / 30)
+
+    def _unit(n: int, singular: str) -> str:
+        return f"~{n} {singular}" if n == 1 else f"~{n} {singular}s"
+
+    parts = [_unit(int(days), "day")]
+    if weeks >= 1:
+        parts.append(_unit(int(weeks), "week"))
+    if months >= 1:
+        parts.append(_unit(int(months), "month"))
+
+    head = parts[0]
+    tail = parts[1:]
+    rendered = head if not tail else f"{head} ({', '.join(tail)})"
+    suffix = "from now" if future else "ago"
+    return f"{rendered} {suffix}"
+
+
 def extract_event_ts(*texts: str) -> int | None:
     """Return a UTC-midnight nanosecond timestamp for the FIRST explicit calendar
     date found across ``texts`` (checked in order), or ``None``.

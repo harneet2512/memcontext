@@ -278,6 +278,12 @@ def handle_memory_query(
                 # created_ts is a slot-dedup tie-breaker (most-recent survivor);
                 # internal, stripped before the payload is returned.
                 "created_ts": c.created_ts,
+                # event_ts (WHEN the described thing happened, deterministically
+                # populated at ingest by temporal.extract_event_ts) is exposed so a
+                # client can ground elapsed/interval questions ("how many weeks ago
+                # …") without re-deriving the date. None when the fact carried no
+                # explicit calendar date. Additive — never replaces created_ts.
+                "event_ts": c.event_ts,
                 # L3: durable instruction / standing preference / ephemeral chatter,
                 # so the agent can weight standing guidance over a passing remark.
                 "durability": detect_durability(c.value),
@@ -286,11 +292,32 @@ def handle_memory_query(
             t = get_turn(conn, hit.id)
             if t is None:
                 continue
+            # Derive the episode's event_ts so a client can ground a dated turn the
+            # same way it grounds a dated claim. Prefer an event_ts already populated
+            # on one of the turn's claims (authoritative — set at ingest); else fall
+            # back to a deterministic re-extraction from the turn text. None when the
+            # turn carries no explicit calendar date. Additive — never removes keys.
+            _ev_row = conn.execute(
+                "SELECT event_ts FROM claims"
+                " WHERE source_turn_id = ? AND event_ts IS NOT NULL"
+                " ORDER BY event_ts ASC LIMIT 1",
+                (t.turn_id,),
+            ).fetchone()
+            _episode_event_ts = (
+                (_ev_row["event_ts"] if isinstance(_ev_row, sqlite3.Row) else _ev_row[0])
+                if _ev_row is not None
+                else None
+            )
+            if _episode_event_ts is None:
+                from memcontext.temporal import extract_event_ts
+                _episode_event_ts = extract_event_ts(t.text)
             episodes_out.append({
                 "turn_id": t.turn_id,
                 "text": t.text,
                 "source_type": t.source_type.value,
                 "score": norm,
+                "created_ts": t.ts,
+                "event_ts": _episode_event_ts,
             })
 
     # STALE-EPISODE FILTER (serve CLEAN CURRENT context — the product's core job):
@@ -362,9 +389,38 @@ def handle_memory_query(
                 ],
             }
 
-    # Strip the internal dedup tie-breaker so the payload shape is unchanged.
-    for c in claims_out:
-        c.pop("created_ts", None)
+    # created_ts is KEPT on the served claim (alongside event_ts): a client grounding
+    # an elapsed/interval question needs BOTH the ingest time (created_ts) and the
+    # described-event time (event_ts) to choose a reference. It started as the internal
+    # slot-dedup tie-breaker; it is now part of the served payload. Additive.
+
+    # TEMPORAL-INTENT TIMELINE ORDERING: when the query asks for a chronology or an
+    # elapsed/interval ("when", "how long ago", "how many weeks/days/months ago",
+    # "how many days passed between X and Y"), present the DATED items in event_ts
+    # order so the reader reads a chronological timeline and can compute the interval
+    # by subtracting the two ends — instead of an arbitrary relevance ranking. Stable:
+    # undated items keep their original relative order and sort after dated ones.
+    # Additive — touches only ordering, not membership.
+    #
+    # NB classify_query_depth routes "how many days passed between …" to "aggregation"
+    # (the "how many" keyword wins), yet it is an interval question — the exact AMB
+    # failure shape. So we detect interval/elapsed intent locally and order on EITHER
+    # the temporal depth_kind OR that local signal, without disturbing depth routing.
+    import re as _re_t
+    _q_lower = query.lower()
+    _interval_intent = bool(
+        _re_t.search(r"\bhow (long|many (day|days|week|weeks|month|months|year|years))\b", _q_lower)
+        and (_re_t.search(r"\bago\b", _q_lower) or _re_t.search(r"\bpass(ed)?\b", _q_lower)
+             or _re_t.search(r"\bbetween\b", _q_lower) or _re_t.search(r"\belapsed\b", _q_lower)
+             or _re_t.search(r"\bsince\b", _q_lower))
+    )
+    if depth_kind == "temporal" or _interval_intent:
+        def _ts_key(item: dict) -> tuple[int, int]:
+            ev = item.get("event_ts")
+            return (0, ev) if ev is not None else (1, 0)
+
+        claims_out = sorted(claims_out, key=_ts_key)
+        episodes_out = sorted(episodes_out, key=_ts_key)
 
     # Usage reinforcement: the fact claims we served are now "accessed".
     served_claim_ids = [c["claim_id"] for c in claims_out]
