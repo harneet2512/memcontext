@@ -25,11 +25,33 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from memcontext.schema import Claim
 from memcontext.claims import row_to_claim
 from memcontext.supersession_semantic import DEFAULT_COSINE_THRESHOLD, cosine
+
+
+def _as_session_ids(session_id: "str | Sequence[str]") -> list[str]:
+    """Normalise the session scope to a de-duplicated, order-stable id list.
+
+    ADDITIVE generalisation for the multi-session store (the product keeps one
+    session per ingested document, so a namespace's instances for a slot are
+    spread across many sessions). A bare ``str`` is the legacy single-session
+    scope and behaves byte-identically to the original; a sequence counts across
+    all of the listed sessions as ONE instance set (the cross-session distinct
+    count an aggregation query actually needs). No clustering logic changes.
+    """
+    if isinstance(session_id, str):
+        return [session_id]
+    seen: set[str] = set()
+    out: list[str] = []
+    for sid in session_id:
+        if sid and sid not in seen:
+            seen.add(sid)
+            out.append(sid)
+    return out
 
 # Statuses that represent a real instance of an occurrence. Superseded rows are
 # INCLUDED on purpose: "how many times did X happen" must see retired instances,
@@ -127,29 +149,40 @@ def _derive_t_dup(pairwise: list[float]) -> float:
 
 
 def _load_instances(
-    conn: sqlite3.Connection, session_id: str, subject: str, predicate: str
+    conn: sqlite3.Connection,
+    session_id: "str | Sequence[str]",
+    subject: str,
+    predicate: str,
 ) -> list[Claim]:
-    placeholders = ",".join("?" for _ in _ENUMERATION_STATUSES)
+    sids = _as_session_ids(session_id)
+    if not sids:
+        return []
+    status_ph = ",".join("?" for _ in _ENUMERATION_STATUSES)
+    sid_ph = ",".join("?" for _ in sids)
     rows = conn.execute(
         f"""
         SELECT * FROM claims
-        WHERE session_id = ? AND subject = ? AND predicate = ?
-          AND status IN ({placeholders})
+        WHERE session_id IN ({sid_ph}) AND subject = ? AND predicate = ?
+          AND status IN ({status_ph})
         ORDER BY created_ts ASC, claim_id ASC
         """,
-        (session_id, subject, predicate, *_ENUMERATION_STATUSES),
+        (*sids, subject, predicate, *_ENUMERATION_STATUSES),
     ).fetchall()
     return [row_to_claim(r) for r in rows]
 
 
 def count_distinct_instances(
     conn: sqlite3.Connection,
-    session_id: str,
+    session_id: "str | Sequence[str]",
     subject: str,
     predicate: str,
     embedder: _EmbedderProto,
 ) -> EnumerationResult:
-    """Count DISTINCT occurrences for a (session, subject, predicate).
+    """Count DISTINCT occurrences for a (session(s), subject, predicate).
+
+    ``session_id`` may be a single id (legacy, byte-identical behaviour) or a
+    sequence of ids — the latter counts distinct instances ACROSS those sessions
+    as one set, which is what a namespace-wide aggregation query needs.
 
     Stage A (exact): collapse identical normalized values with zero embed cost.
     Stage B (near-dup): embed each surviving representative with the LIVE
@@ -301,7 +334,7 @@ def _temporal_block(candidate: Claim, cluster_members: list[Claim]) -> bool:
 
 def enumerate_retrieved(
     conn: sqlite3.Connection,
-    session_id: str,
+    session_id: "str | Sequence[str]",
     retrieved_claims: list[dict],
     embedder: _EmbedderProto,
 ) -> EnumerationResult | None:
