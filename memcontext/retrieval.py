@@ -895,10 +895,23 @@ def _entity_in_query(query_norm: str, entity_key: str) -> bool:
 
 
 def _rrf_ranks(scores: list[float]) -> list[int]:
-    indexed = sorted(range(len(scores)), key=lambda i: (-scores[i], i))
+    # Competition ranking: tied scores share the same (lowest) rank. A FLAT or
+    # degenerate channel (all-equal scores) therefore assigns every item the SAME
+    # rank and contributes a CONSTANT to the fused score — staying NEUTRAL instead
+    # of injecting index-ordered noise that buries an item another channel ranked
+    # #1. Distinct scores are unaffected (identical to the old strict ordering), so
+    # only genuine ties change — exactly the degenerate-channel case. Proven:
+    # results/proof_fusion_master.py (flat channel buried an entity-needle to #4;
+    # tie-aware ranking restores it to #1).
+    order = sorted(range(len(scores)), key=lambda i: (-scores[i], i))
     ranks = [0] * len(scores)
-    for rank_minus_1, idx in enumerate(indexed):
-        ranks[idx] = rank_minus_1 + 1
+    prev_score: float | None = None
+    rank = 0
+    for pos, idx in enumerate(order, start=1):
+        if prev_score is None or scores[idx] != prev_score:
+            rank = pos
+            prev_score = scores[idx]
+        ranks[idx] = rank
     return ranks
 
 

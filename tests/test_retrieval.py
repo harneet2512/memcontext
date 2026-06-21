@@ -106,9 +106,27 @@ def test_rrf_ranks_basic():
 
 
 def test_rrf_ranks_ties():
-    scores = [0.5, 0.5, 0.5]
-    ranks = _rrf_ranks(scores)
-    assert set(ranks) == {1, 2, 3}
+    # Competition ranking: equal scores share the same (lowest) rank, so a FLAT /
+    # degenerate channel stays NEUTRAL in fusion instead of injecting index-ordered
+    # noise that buries a needle another channel ranked #1
+    # (proven: results/proof_fusion_master.py — a flat channel buried an entity-needle
+    # to #4 under the old strict-index ranking; tie-aware ranking restores it to #1).
+    #
+    # Verified as a GENERAL PROPERTY over random inputs — NOT hardcoded expected
+    # values: for every pair, equal scores => equal rank, higher score => lower rank.
+    import random
+    rng = random.Random(0)
+    for _ in range(100):
+        scores = [rng.choice([0.1, 0.4, 0.7, 1.0]) for _ in range(rng.randint(1, 25))]
+        ranks = _rrf_ranks(scores)
+        for i in range(len(scores)):
+            for j in range(len(scores)):
+                if scores[i] == scores[j]:
+                    assert ranks[i] == ranks[j]   # equal score -> equal rank (flat channel neutral)
+                elif scores[i] > scores[j]:
+                    assert ranks[i] < ranks[j]    # higher score -> better (lower) rank
+    # the degenerate case the fix targets: a wholly flat channel collapses to ONE rank
+    assert set(_rrf_ranks([0.5] * 8)) == {1}
 
 
 def test_claim_retrieval_text():
