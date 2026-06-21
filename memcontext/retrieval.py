@@ -103,16 +103,49 @@ _BUILTIN_WEIGHTS = (0.5, 0.2, 0.1, 0.2)  # semantic, entity, temporal, BM25
 
 
 def _default_weights() -> tuple[float, ...]:
-    """Read retrieval weights from MEMCONTEXT_RETRIEVAL_WEIGHTS or use built-in defaults."""
+    """Read retrieval weights from MEMCONTEXT_RETRIEVAL_WEIGHTS or use built-in defaults.
+
+    The weight vector is (semantic, entity, temporal, BM25). A 3-element override
+    used to be accepted verbatim — which SILENTLY dropped the 4th (BM25) weight,
+    so ``retrieve_hybrid`` fell back to ``w_bm25 = 0.0`` and zeroed the lexical
+    channel even though the operator only meant to tune the first three signals.
+    Now a short vector is PADDED from the built-in defaults (so BM25 keeps its
+    default weight instead of vanishing) and an over-long vector is truncated to
+    the 4 known channels. Fewer than 3 values, or any non-float, is rejected as
+    malformed and falls back to the built-in defaults — never a silent partial
+    parse. Lexical retrieval is never dropped without an explicit 4th value.
+    """
     raw = os.environ.get("MEMCONTEXT_RETRIEVAL_WEIGHTS", "").strip()
-    if raw:
-        try:
-            parts = [float(x.strip()) for x in raw.split(",")]
-            if len(parts) >= 3:
-                return tuple(parts)
-        except ValueError:
-            log.warning("substrate.bad_retrieval_weights", raw=raw)
-    return _BUILTIN_WEIGHTS
+    if not raw:
+        return _BUILTIN_WEIGHTS
+    try:
+        parts = [float(x.strip()) for x in raw.split(",")]
+    except ValueError:
+        log.warning("substrate.bad_retrieval_weights", raw=raw, reason="non_float")
+        return _BUILTIN_WEIGHTS
+    if len(parts) < 3:
+        log.warning(
+            "substrate.bad_retrieval_weights", raw=raw, reason="too_few", count=len(parts)
+        )
+        return _BUILTIN_WEIGHTS
+    n = len(_BUILTIN_WEIGHTS)
+    if len(parts) < n:
+        # Pad missing trailing channels (notably BM25) from the defaults rather
+        # than letting retrieve_hybrid silently zero them.
+        padded = list(parts) + list(_BUILTIN_WEIGHTS[len(parts):])
+        log.warning(
+            "substrate.retrieval_weights_padded",
+            raw=raw,
+            given=len(parts),
+            padded_to=n,
+        )
+        return tuple(padded)
+    if len(parts) > n:
+        log.warning(
+            "substrate.retrieval_weights_truncated", raw=raw, given=len(parts), kept=n
+        )
+        return tuple(parts[:n])
+    return tuple(parts)
 
 
 # --- dataclasses -------------------------------------------------------------
@@ -873,7 +906,13 @@ def classify_query_predicates(query: str) -> tuple[set[str], str]:
     query_type = "fact_recall"
     for keywords, predicates, qtype in _QUERY_PREDICATE_MAP:
         for kw in keywords:
-            if kw in q_lower:
+            # Word-boundary match (same fix as classify_query_depth's _kw_match).
+            # Substring matching mis-fired: "like" matched "dislike"/"unlike",
+            # "want" matched "wanted"... and "plan" matched "explanation",
+            # routing unrelated queries to the wrong predicate family (and
+            # injecting a spurious predicate channel boost). \b matches standalone
+            # words and multi-word phrases without those false positives.
+            if _re.search(r"\b" + _re.escape(kw) + r"\b", q_lower):
                 matched_preds |= predicates
                 query_type = qtype
                 break
@@ -1163,11 +1202,52 @@ def retrieve_hybrid(
 
     conf_scores: list[float] = [c.confidence for c in active]
 
-    freq_counts: dict[tuple[str | None, str | None], int] = {}
+    # Frequency / corroboration channel. The intent was to PROMOTE a fact stated
+    # many times. The raw implementation (count of active claims sharing a
+    # (subject,predicate) key) inverted into a PENALTY on uniqueness, and the
+    # penalty was DECISIVE: in a measured case (results/proof_retrieval_footguns.py)
+    # a UNIQUE relevant needle won the semantic channel over a cluster of 20
+    # unrelated near-duplicates by ~1.4e-4, but LOST the frequency channel by
+    # ~4.1e-4 — so the freq channel alone flipped a relevance winner to dead last.
+    # That is a retrieval channel actively burying a unique relevant fact under
+    # mere repetition of an unrelated one, which a channel must never do.
+    #
+    # Root cause (LIPI Logic): a unique fact carries no corroboration EVIDENCE, but
+    # the raw count treated its absence of repetition as a negative signal and
+    # ranked it below any repeated cluster — penalising uniqueness instead of
+    # merely not-rewarding it. With the tie-aware _rrf_ranks already shipped, every
+    # monotonic transform of the count keeps the cluster strictly above the
+    # singleton, so a transform cannot fix this; the channel itself must stop
+    # discriminating against uniqueness.
+    #
+    # Fix — frequency is a PRESENCE / promote-only channel that is NEUTRAL by
+    # default: a unique fact is never ranked below a repeated one merely for being
+    # unique. A corroboration BONUS is granted only when the same (subject,
+    # predicate) is attested by >= 2 DISTINCT source turns, and the bonus is
+    # BOUNDED (FREQ_CORROBORATION_CAP) so cluster SIZE cannot become an unbounded
+    # rank advantage — a 20-row cluster saturates to the SAME tier as a 2-turn
+    # corroboration, removing the runaway dominance a unique needle was buried
+    # under. Counting DISTINCT TURNS (not raw rows) also dedups multiple claims
+    # extracted from one turn, so a single verbose turn no longer self-corroborates.
+    #
+    # NOTE (honest scope): this bounds and de-spikes the freq channel and stops it
+    # ranking by raw cluster size, but a cluster of genuinely-distinct turns still
+    # outranks a singleton on this one channel by one bounded tier. Fully
+    # preventing many verbatim ECHOES of one fact from out-corroborating a unique
+    # fact is a supersession/dedup concern (collapse echoes to one claim), not a
+    # retrieval-ranking one. General and zero-LLM.
+    FREQ_CORROBORATION_CAP = 2   # max corroboration tiers above the neutral baseline
+    distinct_turns: dict[tuple[str | None, str | None], set[str]] = {}
     for c in active:
         key = (c.subject, c.predicate)
-        freq_counts[key] = freq_counts.get(key, 0) + 1
-    freq_scores: list[float] = [float(freq_counts[(c.subject, c.predicate)]) for c in active]
+        distinct_turns.setdefault(key, set()).add(c.source_turn_id)
+
+    def _corroboration_score(c: Claim) -> float:
+        n = len(distinct_turns[(c.subject, c.predicate)])
+        # n == 1 (singleton) -> 0.0 neutral baseline; >=2 -> bounded corroboration.
+        return float(min(max(n - 1, 0), FREQ_CORROBORATION_CAP))
+
+    freq_scores: list[float] = [_corroboration_score(c) for c in active]
 
     # Importance: computed at ingest (importance.py) + stored in claim_metadata.
     # Now a first-class ranking signal (previously read only by digests/profiles).
