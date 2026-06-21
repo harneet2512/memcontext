@@ -158,6 +158,25 @@ def _has_closed_window(value: str) -> bool:
     return _CLOSED_WINDOW_RE.search(value) is not None
 
 
+def _event_blocks(new_claim: Claim, candidate: Claim) -> bool:
+    """True if ``new_claim`` and ``candidate`` are two DISTINCT DATED EVENTS that must
+    never supersede each other.
+
+    ``event_ts`` (schema.py) marks WHEN the described thing happened. Two claims on the
+    same (subject, predicate) with explicit, DIFFERING ``event_ts`` are distinct
+    occurrences ("ran a 5K" on two dates, "deployed v2" twice) — superseding one with
+    the other deletes valid history, so we keep both.
+
+    Maximally conservative: the guard fires ONLY when BOTH sides carry an explicit
+    ``event_ts`` and they differ. A state attribute (residence, employer) usually has
+    ``event_ts is None``, so legitimate state supersession is unaffected. Deterministic,
+    zero-LLM; protects temporal/enumeration history.
+    """
+    if new_claim.event_ts is None or candidate.event_ts is None:
+        return False
+    return new_claim.event_ts != candidate.event_ts
+
+
 def detect_pass1(
     conn: sqlite3.Connection,
     new_claim: Claim,
@@ -201,6 +220,8 @@ def detect_pass1(
         # regardless of token overlap (e.g. Postgres -> DynamoDB). Deterministic.
         for row in rows:
             candidate = row_to_claim(row)
+            if _event_blocks(new_claim, candidate):
+                continue  # distinct dated events — keep both
             if candidate.value.strip().lower() != new_value_norm:
                 best_match = candidate
                 break
@@ -221,6 +242,8 @@ def detect_pass1(
         if new_attr is not None and not _has_closed_window(new_claim.value):
             for row in rows:
                 candidate = row_to_claim(row)
+                if _event_blocks(new_claim, candidate):
+                    continue  # distinct dated events — keep both
                 if candidate.value.strip().lower() == new_value_norm:
                     continue
                 if _has_closed_window(candidate.value):
@@ -252,6 +275,8 @@ def detect_pass1(
         best_jaccard: float = 0.0
         for row in rows:
             candidate = row_to_claim(row)
+            if _event_blocks(new_claim, candidate):
+                continue  # distinct dated events — keep both
             if candidate.value.strip().lower() == new_value_norm:
                 continue
             old_content = _content(candidate.value)
@@ -279,6 +304,11 @@ def detect_pass1(
         return None
 
     old_claim = best_match
+
+    # Belt-and-suspenders: never let a distinct dated event supersede another, even if
+    # a cardinality path selected it. Protects temporal/enumeration history.
+    if _event_blocks(new_claim, old_claim):
+        return None
 
     new_speaker = _get_speaker(conn, new_claim.source_turn_id)
     old_speaker = _get_speaker(conn, old_claim.source_turn_id)
