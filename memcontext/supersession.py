@@ -192,13 +192,26 @@ def detect_pass1(
     """
     if not new_claim.subject or not new_claim.predicate:
         return None
+    # Cross-session truth resolution scoped to the TENANT (namespace), not the
+    # single session. A correction stated in a LATER session ("pre-approved $400k")
+    # must retire the value from an EARLIER session ("pre-approved $350k") — the two
+    # are the same user/slot, just different conversations. We match candidates whose
+    # source turn shares the NEW claim's namespace (the tenant boundary; same pattern
+    # as life_events.py), so resolution spans sessions but never crosses tenants.
+    # The `_event_blocks` guard below keeps two DISTINCT DATED events both active, so
+    # widening the scope does not delete valid history.
+    ns_row = conn.execute(
+        "SELECT namespace FROM turns WHERE turn_id = ?", (new_claim.source_turn_id,)
+    ).fetchone()
+    namespace = ns_row[0] if ns_row is not None else "default"
     rows = conn.execute(
-        "SELECT * FROM claims WHERE session_id = ? AND subject = ? AND predicate = ?"
-        " AND status IN ('active','confirmed') AND claim_id != ?"
-        " AND source_turn_id != ?"
-        " ORDER BY created_ts DESC",
+        "SELECT c.* FROM claims c JOIN turns t ON c.source_turn_id = t.turn_id"
+        " WHERE t.namespace = ? AND c.subject = ? AND c.predicate = ?"
+        " AND c.status IN ('active','confirmed') AND c.claim_id != ?"
+        " AND c.source_turn_id != ?"
+        " ORDER BY c.created_ts DESC",
         (
-            new_claim.session_id,
+            namespace,
             new_claim.subject,
             new_claim.predicate,
             new_claim.claim_id,

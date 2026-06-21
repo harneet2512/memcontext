@@ -158,7 +158,16 @@ def run_extraction(
     edges: list[SupersessionEdge] = []
     dropped: list[tuple[ExtractedClaim, str]] = []
 
+    from memcontext.temporal import extract_event_ts
+
     for ec in extracted:
+        # event_ts: WHEN the described thing happened (distinct from created_ts =
+        # when the turn was ingested). Parsed DETERMINISTICALLY from the claim value
+        # first, then the turn text, via regex/calendar arithmetic — no LLM. Populates
+        # the previously-inert field so supersession's `_event_blocks` guard can keep
+        # two distinct dated occurrences both active. None when no explicit date is
+        # present, leaving prior behaviour unchanged.
+        event_ts = extract_event_ts(ec.value, turn.text)
         try:
             claim = insert_claim(
                 conn,
@@ -171,6 +180,7 @@ def run_extraction(
                 value_normalised=ec.value_normalised,
                 char_start=ec.char_start,
                 char_end=ec.char_end,
+                event_ts=event_ts,
             )
         except ClaimValidationError as exc:
             log.warning(
