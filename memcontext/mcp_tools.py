@@ -154,6 +154,11 @@ def handle_memory_query(
     if top_k == 10:
         top_k = depth_top_k
 
+    # Session-id list backing the cross-session sweep (session_id=None). Captured
+    # so the resolved layer can project a cross-session world-state over exactly
+    # the tenant's sessions, not just produce a top-k dump (Fracture A).
+    cross_session_sids: list[str] = []
+
     # Unified two-tier retrieval (facts + episodes, source-tagged, RRF-fused).
     if session_id:
         # Namespace isolation: a caller bound to a namespace cannot read a session
@@ -179,6 +184,7 @@ def handle_memory_query(
         sids = [r["session_id"] if isinstance(r, sqlite3.Row) else r[0] for r in rows]
         if not sids:
             return {"claims": [], "episodes": [], "total": 0}
+        cross_session_sids = sids
         hits = retrieve_memory_across(
             conn, session_ids=sids, query=query, top_k=top_k, explain=explain,
             include_superseded=history,
@@ -357,6 +363,64 @@ def handle_memory_query(
                 result["contradictions"] = contradictions
         except Exception:  # noqa: BLE001 — resolved view is additive, never fatal
             pass
+
+    # FRACTURE A FIX (ADDITIVE): the CROSS-SESSION sweep (session_id=None) is the
+    # real multi-session / whole-tenant-history path, and historically it returned
+    # ONLY ranked claims + raw episodes — a top-k dump, the exact thing the product
+    # claims to beat. Give it the same resolved layer the single-session path has:
+    # a cross-session world_state (one CURRENT value per slot across the tenant's
+    # sessions, stale superseded values absent) plus, on aggregation intent, a
+    # cross-session distinct count. Best-effort so it never breaks a query.
+    if include_resolved and session_id is None and cross_session_sids:
+        try:
+            from memcontext.brain import brain_across
+
+            result["world_state"] = brain_across(conn, session_ids=cross_session_sids)
+            # Namespace-scoped briefing / life-events for the tenant (subject-keyed,
+            # so they must be namespace-scoped to avoid cross-tenant aggregation).
+            from memcontext.serving import serve_life_events, session_briefing
+
+            briefing = session_briefing(conn, namespace=namespace)
+            if briefing:
+                result["briefing"] = briefing
+            life = serve_life_events(conn, namespace=namespace)
+            if life:
+                result["life_events"] = life
+        except Exception:  # noqa: BLE001 — resolved view is additive, never fatal
+            pass
+
+        # Cross-session distinct count for aggregation intent ("how many ... in
+        # total"): reuse enumeration's sequence-capable session scope so the count
+        # spans the tenant's sessions (the cross-session caller enumeration was
+        # built for but never had). Embedding-based, so real-embedder only.
+        if depth_kind == "aggregation" and claims_out:
+            from memcontext.retrieval import episode_embedder, semantic_enabled
+
+            if semantic_enabled():
+                try:
+                    from memcontext.enumeration import enumerate_retrieved
+
+                    enum = enumerate_retrieved(
+                        conn,
+                        session_id=cross_session_sids,
+                        retrieved_claims=claims_out,
+                        embedder=episode_embedder(),
+                    )
+                    if enum is not None:
+                        result["enumeration"] = {
+                            "distinct_count": enum.distinct_count,
+                            "t_dup": round(enum.t_dup, 4),
+                            "representatives": [
+                                {
+                                    "representative": cl.representative,
+                                    "member_claim_ids": list(cl.member_claim_ids),
+                                    "event_ts_set": list(cl.event_ts_set),
+                                }
+                                for cl in enum.clusters
+                            ],
+                        }
+                except Exception:  # noqa: BLE001 — enumeration is additive, never fatal
+                    pass
 
     if debug and explain is not None:
         served = [c["claim_id"] for c in claims_out]
@@ -743,6 +807,35 @@ def handle_brain(
     with no active claim). Reads from the projection only.
     """
     return brain(conn, session_id=session_id)
+
+
+def handle_brain_across(
+    conn: sqlite3.Connection,
+    *,
+    session_ids: list[str] | None = None,
+    namespace: str | None = None,
+) -> dict:
+    """Cross-session resolved world-state — one current value per slot per subject,
+    spanning a SET of sessions (a tenant's whole history). No LLM.
+
+    Pass an explicit ``session_ids`` list, or a ``namespace`` to resolve over every
+    session that has episodes in that tenant. When neither is given, resolves over
+    every session in the store. Stale superseded values (per-slot, most-recent-wins)
+    are absent; older instances remain queryable via the raw/history channel.
+    """
+    from memcontext.brain import brain_across
+
+    if session_ids is None:
+        if namespace is not None:
+            rows = conn.execute(
+                "SELECT DISTINCT session_id FROM turns WHERE namespace = ?", (namespace,)
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT DISTINCT session_id FROM turns").fetchall()
+        session_ids = [
+            r["session_id"] if isinstance(r, sqlite3.Row) else r[0] for r in rows
+        ]
+    return brain_across(conn, session_ids=session_ids)
 
 
 def handle_memory_trace(
