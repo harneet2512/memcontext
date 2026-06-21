@@ -24,7 +24,7 @@ ARG PYTHON_VERSION=3.12
 # check out the codex working set.
 # ---------------------------------------------------------------------------
 FROM python:${PYTHON_VERSION}-slim AS export
-ARG PRODUCT_REF=73c34f65368f4e0638e16f6cf0e79c7cf6350f16
+ARG PRODUCT_REF=bc9838643c3308f9f06fadee813ffdd48b75332f
 ARG HARNESS_REF=578ce2fca8bed1d5e32ab66bde835810e1f3a09a
 RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
@@ -71,26 +71,12 @@ COPY docker/amb/patch_amb_llm.py /opt/patch_amb_llm.py
 COPY docker/amb/revert_json_schema.py /opt/revert_json_schema.py
 COPY docker/amb/patch_openrouter_strict.py /opt/patch_openrouter_strict.py
 COPY docker/amb/fix_extractor_fence.py /opt/fix_extractor_fence.py
-# Opt-in precision re-rank for retrieve_memory_across (serve the top-k most
-# relevant memories instead of the ~140-memory breadth flood). Applied to the
-# INSTALLED product below, mirroring fix_extractor_fence's post-install patch.
-COPY docker/amb/patch_retrieval.py /opt/patch_retrieval.py
-# Scope Pass-1 supersession to the namespace (not the session) so value updates
-# resolve across a tenant's sessions. Applied to the INSTALLED product below.
-COPY docker/amb/patch_supersession.py /opt/patch_supersession.py
-# Tie-aware RRF rank fusion (competition ranking): a FLAT/degenerate retrieval
-# channel becomes NEUTRAL instead of injecting index-order noise that buries a
-# needle another channel ranked #1. General product fix; the benchmark's single
-# `user_fact` predicate makes channels flat, so this is the deepening that fires.
-COPY docker/amb/patch_fusion.py /opt/patch_fusion.py
-# ENUMERATION counting deepening (instance-preserving distinct-count). PRODUCT_REF
-# 73c34f6 predates enumeration.py, so we VENDOR the proven module here and drop it
-# into the installed product's site-packages below, BEFORE the adapter's runtime
-# serve path can import it. The adapter (patch_provider.py) calls enumerate_retrieved
-# for aggregation-intent queries to serve the DEDUPLICATED distinct count instead of
-# the raw mention flood. Generic intent (classify_query_depth), zero generative-LLM,
-# embedding-cluster dedup only — additive: non-aggregation queries are untouched.
-COPY docker/amb/enumeration.py /opt/enumeration.py
+# CONSOLIDATED: the former product-patches (patch_retrieval, patch_supersession,
+# patch_fusion) and the vendored enumeration.py are REMOVED. PRODUCT_REF now points at
+# the real integrated product (master lineage), which carries tie-aware fusion, robust
+# cross-session + attribute-keyed supersession, the retrieval footgun fixes, and
+# enumeration.py NATIVELY. The benchmark measures the real product unmodified; only the
+# thin bridge (patch_provider) + transport shims remain. No product is patched at build.
 # Shard enumerator for the sharded GHA workflow (lists dataset/split/category).
 COPY docker/amb/discover_shards.py /opt/discover_shards.py
 
@@ -115,17 +101,12 @@ RUN uv sync
 # editable, so its source lives at /opt/amb/src/memory_bench/llm/ (where install.py
 # also writes); patch that tree. Both shims are disclosed in README.
 RUN uv pip install "/opt/product[embeddings]" \
- && cp /opt/enumeration.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/enumeration.py \
- && uv run python -c "import importlib.util as u; assert u.find_spec('memcontext.enumeration'), 'enumeration not importable'; from memcontext.enumeration import enumerate_retrieved, count_distinct_instances; print('vendored enumeration.py importable in product')" \
  && python /opt/patch_provider.py /opt/harness/evals/amb/provider.py \
  && python /opt/harness/evals/amb/install.py \
  && python /opt/patch_amb_llm.py /opt/amb/src/memory_bench/llm \
  && python /opt/revert_json_schema.py /opt/amb/src/memory_bench/llm/openai.py \
  && python /opt/patch_openrouter_strict.py /opt/amb/src/memory_bench/llm/openai.py \
- && python /opt/fix_extractor_fence.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/extractors.py \
- && python /opt/patch_retrieval.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/retrieval.py \
- && python /opt/patch_supersession.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/supersession.py \
- && python /opt/patch_fusion.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/retrieval.py
+ && python /opt/fix_extractor_fence.py /opt/amb/.venv/lib/python3.12/site-packages/memcontext/extractors.py
 
 # Bake the embedding model into the image (HF_HOME=/opt/hf_cache) so retrieval
 # NEVER downloads it from HuggingFace at runtime. N parallel shards each pulling

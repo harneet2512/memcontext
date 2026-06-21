@@ -315,35 +315,8 @@ EDITS = [
         "            _turn = get_turn(conn, e[\"turn_id\"])\n"
         "            result_docs.append(Document(id=e[\"turn_id\"], content=_dated(_turn, body), user_id=user_id))\n"
         "\n"
-        "        # ADDITIVE counting hint -- ONLY on TRUE counting intent ('how many',\n"
-        "        # 'how much', 'number of', 'count', 'list all'), NOT the broad aggregation\n"
-        "        # set (which includes 'history'/'timeline'/'overview' and would strip the\n"
-        "        # dated episodes from temporal/multi-session queries). Append ONE distinct-\n"
-        "        # count line to the FULL claims+episodes serve, never replacing it -- so\n"
-        "        # every non-counting query keeps a byte-identical context (cannot regress).\n"
-        "        import re as _re_cnt\n"
-        "        if _re_cnt.search(r\"\\b(how many|how much|number of|count|list all)\\b\", (query or \"\").lower()):\n"
-        "            try:\n"
-        "                from memcontext.enumeration import enumerate_retrieved\n"
-        "                # Derive sessions from the SAME namespace the serve used (not the\n"
-        "                # _sessions_by_user map, which could silently no-op on a key/type\n"
-        "                # mismatch) -- guaranteed non-empty since the serve returned claims.\n"
-        "                _sid_rows = conn.execute(\n"
-        "                    \"SELECT DISTINCT session_id FROM turns WHERE namespace = ?\", (_ns,)\n"
-        "                ).fetchall()\n"
-        "                _sids = [r[0] for r in _sid_rows]\n"
-        "                _enum = enumerate_retrieved(conn, _sids, res.get(\"claims\", []), episode_embedder())\n"
-        "                if _enum is not None and _enum.distinct_count > 0:\n"
-        "                    result_docs.append(Document(\n"
-        "                        id=f\"enum_count_{user_id}\",\n"
-        "                        content=f\"Distinct count of the items asked about: {_enum.distinct_count}.\",\n"
-        "                        user_id=user_id,\n"
-        "                    ))\n"
-        "            except Exception:\n"
-        "                pass\n"
-        "\n"
         "        return result_docs, None",
-        "DELEGATE serve to handle_memory_query (resolved claims + dated episodes + query-typing, namespace-scoped) + ENUMERATION counting fix for aggregation intent -- stop reimplementing the serve door",
+        "DELEGATE serve to handle_memory_query (resolved+deduped claims + dated episodes, query-typed, namespace-scoped) -- PURE translation; the product does enumeration/resolution natively, the bridge does not reimplement it",
     ),
     (
         "def _get_any_session(conn: sqlite3.Connection) -> str:",
