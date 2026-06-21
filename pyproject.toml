@@ -37,6 +37,9 @@ packages = ["memcontext"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "real_embedder: exercises the real local embedding model; skips honestly if it can't load",
+]
 
 [tool.ruff]
 target-version = "py311"

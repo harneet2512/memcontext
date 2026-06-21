@@ -21,6 +21,7 @@ and skips with a clear reason if `sentence_transformers` / the model is absent.
 """
 from __future__ import annotations
 
+import hashlib
 import math
 import sqlite3
 
@@ -90,15 +91,35 @@ def _add(
     return claim.claim_id
 
 
+def _stable_unit(s: str) -> float:
+    """Process-stable [0,1) hash. Python's builtin ``hash(str)`` is randomized by
+    ``PYTHONHASHSEED`` and therefore differs run-to-run — using it for the embed
+    jitter made this fixture's within-concept geometry NON-deterministic, so the
+    valley separator occasionally cut a genuine paraphrase band and the test
+    flaked (passed alone, failed under the full suite, purely by hash-seed luck).
+    A fixed digest removes that nondeterminism without touching the algorithm.
+    """
+    return int.from_bytes(hashlib.sha256(s.encode()).digest()[:4], "big") % 1000 / 1000.0
+
+
 class ConceptEmbedder:
     """Deterministic, model-free embedder with realistic near-dup structure.
 
     Each instance text is assigned to a CONCEPT (a small set of synonymous
-    phrasings). Texts in the same concept embed to nearly the same unit vector
-    (high within-cluster cosine); texts in different concepts are orthogonal
-    (low cross-cluster cosine). This produces the genuine BIMODAL pairwise
-    distribution the max-gap-valley separator is designed to cut — without any
-    model download. Unknown texts fall back to a hash so determinism holds.
+    phrasings). Texts in the same concept embed to the SAME unit vector (the
+    jitter is keyed by concept, not by individual phrasing, so paraphrases of one
+    occurrence are byte-identical — within-cosine exactly 1.0); texts in different
+    concepts are orthogonal (low cross-cluster cosine). This produces the genuine
+    BIMODAL pairwise distribution the max-gap-valley separator is designed to cut
+    — without any model download.
+
+    Determinism note: per-CONCEPT (not per-text) jitter is deliberate. A single
+    concept's paraphrases form one tight point rather than a micro-band, so a
+    3-paraphrase set is a degenerate single band (all cosines 1.0) and the
+    separator correctly falls back to the floor and collapses it to ONE instance.
+    Per-text jitter, combined with ``hash()`` randomization, instead produced a
+    cuttable spurious gap inside the within band — the source of the flake.
+    Unknown texts fall back to a fixed digest so determinism holds.
     """
 
     model_version = "concept-stub-v1"
@@ -135,13 +156,15 @@ class ConceptEmbedder:
             if concept is not None:
                 base = self._concept_idx[concept]
                 v[base] = 1.0
-                # deterministic per-text jitter on an extra shared dim
-                h = (hash(t) % 1000) / 1000.0
-                v[len(self._concept_idx)] = self._jitter * h
+                # per-CONCEPT jitter on an extra shared dim: identical for every
+                # paraphrase of the same occurrence, so within-cosine is exactly
+                # 1.0 (one tight point, not a cuttable micro-band) and the result
+                # is independent of PYTHONHASHSEED.
+                v[len(self._concept_idx)] = self._jitter * _stable_unit(concept)
             else:
-                # fall back to a deterministic hash spread (still unit-normalised)
+                # fall back to a deterministic digest spread (still unit-normalised)
                 for k in range(self._dim):
-                    v[k] = ((hash(t + str(k)) % 1000) / 1000.0)
+                    v[k] = _stable_unit(t + str(k))
             n = math.sqrt(sum(x * x for x in v)) or 1.0
             out.append([x / n for x in v])
         return out

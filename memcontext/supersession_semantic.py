@@ -166,8 +166,20 @@ class SemanticSupersession:
             return None
 
         from memcontext.claims import row_to_claim
+        from memcontext.supersession import _event_blocks
 
         candidates = [row_to_claim(r) for r in rows]
+
+        # Temporal guard (parity with Pass-1 detect_pass1): two claims that are
+        # distinct DATED events — both carry an explicit, DIFFERING event_ts — are
+        # separate occurrences and must never supersede each other, even at
+        # byte-identical identity text. Pass-2 runs live alongside Pass-1, so
+        # without this filter the semantic path would silently retire valid dated
+        # history that the Pass-1 guard protects. Drop such candidates before
+        # scoring; conservative (fires only when BOTH sides are dated and differ).
+        candidates = [c for c in candidates if not _event_blocks(new_claim, c)]
+        if not candidates:
+            return None
 
         if nl_mode:
             new_text = new_claim.text or new_turn_text

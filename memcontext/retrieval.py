@@ -894,6 +894,19 @@ def _entity_in_query(query_norm: str, entity_key: str) -> bool:
     return all(nt in tokens for nt in needle_tokens)
 
 
+# Two channel scores within this tolerance are treated as TIED. Channel scores
+# are frequently EQUAL by construction (same predicate, same recency bin, same
+# confidence...) but arrive as floats carrying rounding dust (e.g. an importance
+# score of 0.6549999997 vs 0.6549999999 for two structurally identical claims).
+# Exact `!=` would rank that dust, letting numerical noise — not a real signal —
+# break a tie and silently outweigh a genuine differentiator on another channel.
+# A relative+absolute tolerance collapses dust to a true tie while leaving any
+# real gap (the smallest meaningful channel gaps here are ~1e-3, ~6 orders of
+# magnitude above this floor) strictly ordered. Scale-invariant, deterministic.
+_RRF_TIE_REL_TOL = 1e-9
+_RRF_TIE_ABS_TOL = 1e-12
+
+
 def _rrf_ranks(scores: list[float]) -> list[int]:
     # Competition ranking: tied scores share the same (lowest) rank. A FLAT or
     # degenerate channel (all-equal scores) therefore assigns every item the SAME
@@ -903,14 +916,24 @@ def _rrf_ranks(scores: list[float]) -> list[int]:
     # only genuine ties change — exactly the degenerate-channel case. Proven:
     # results/proof_fusion_master.py (flat channel buried an entity-needle to #4;
     # tie-aware ranking restores it to #1).
+    #
+    # Ties are matched with a tolerance (see _RRF_TIE_*), so floating-point dust
+    # between structurally-identical scores collapses to ONE rank instead of being
+    # ranked as if it were signal. The tie group is anchored to the FIRST score of
+    # the current rank (the representative) and each subsequent score is compared
+    # against that anchor — not its immediate predecessor — so a slow drift of
+    # many dust-apart values cannot transitively fuse into one oversized tie.
     order = sorted(range(len(scores)), key=lambda i: (-scores[i], i))
     ranks = [0] * len(scores)
-    prev_score: float | None = None
+    anchor: float | None = None
     rank = 0
     for pos, idx in enumerate(order, start=1):
-        if prev_score is None or scores[idx] != prev_score:
+        s = scores[idx]
+        if anchor is None or not math.isclose(
+            s, anchor, rel_tol=_RRF_TIE_REL_TOL, abs_tol=_RRF_TIE_ABS_TOL
+        ):
             rank = pos
-            prev_score = scores[idx]
+            anchor = s
         ranks[idx] = rank
     return ranks
 
