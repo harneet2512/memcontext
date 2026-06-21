@@ -150,8 +150,9 @@ def handle_memory_query(
     # superseded facts; otherwise only current (active) facts are served.
     history = detect_history_intent(query)
     _, query_type = classify_query_predicates(query)
+    depth_kind, depth_top_k = classify_query_depth(query)
     if top_k == 10:
-        _, top_k = classify_query_depth(query)
+        top_k = depth_top_k
 
     # Unified two-tier retrieval (facts + episodes, source-tagged, RRF-fused).
     if session_id:
@@ -282,6 +283,45 @@ def handle_memory_query(
         "token_report": token_report,
         "serve_event_ids": serve_event_ids,
     }
+
+    # COUNTING deepening (ADDITIVE): for a generic aggregation-intent query
+    # ("how many", "count", "list all" — classify_query_depth=="aggregation",
+    # NOT a benchmark/predicate keyword list) the reader can over-count raw
+    # near-duplicate mentions. Attach a deterministic DISTINCT count of the
+    # dominant retrieved slot so the reader serves deduplicated instances.
+    #
+    # Strictly additive: only fires on aggregation intent AND when a real
+    # embedder is configured (NullEmbedder/no-model paths skip it — the cluster
+    # dedup is embedding-based) AND when scoped to a session. Never mutates
+    # claims/episodes/total, so non-aggregation queries are byte-identical.
+    if depth_kind == "aggregation" and session_id and claims_out:
+        from memcontext.retrieval import episode_embedder, semantic_enabled
+
+        if semantic_enabled():
+            try:
+                from memcontext.enumeration import enumerate_retrieved
+
+                enum = enumerate_retrieved(
+                    conn,
+                    session_id=session_id,
+                    retrieved_claims=claims_out,
+                    embedder=episode_embedder(),
+                )
+                if enum is not None:
+                    result["enumeration"] = {
+                        "distinct_count": enum.distinct_count,
+                        "t_dup": round(enum.t_dup, 4),
+                        "representatives": [
+                            {
+                                "representative": cl.representative,
+                                "member_claim_ids": list(cl.member_claim_ids),
+                                "event_ts_set": list(cl.event_ts_set),
+                            }
+                            for cl in enum.clusters
+                        ],
+                    }
+            except Exception:  # noqa: BLE001 — enumeration is additive, never fatal
+                pass
     # Resolved view + briefing on the MAIN query path (not tool-only): alongside the
     # raw ranked hits, the agent gets the current world-state — one value per slot
     # with provenance + typed supersession lineage — and a compact session briefing.
