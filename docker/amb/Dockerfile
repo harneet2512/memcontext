@@ -120,7 +120,7 @@ RUN uv pip install "/opt/product[embeddings]" \
 # longer HF timeout; only a sustained outage fails the build.
 ENV HF_HUB_DOWNLOAD_TIMEOUT=60
 RUN cd /opt/amb && for i in 1 2 3 4 5 6; do \
-      uv run python -c "from sentence_transformers import SentenceTransformer; m=SentenceTransformer('Snowflake/snowflake-arctic-embed-s'); print('baked arctic-embed-s dim=', m.get_sentence_embedding_dimension())" && exit 0; \
+      uv run python -c "from memcontext.retrieval import BGE_M3_MODEL_ID as M; from sentence_transformers import SentenceTransformer; m=SentenceTransformer(M); print('baked', M, 'dim=', m.get_sentence_embedding_dimension())" && exit 0; \
       echo "embedder bake attempt $i failed (HF unreachable) — retrying in 20s"; sleep 20; \
     done; \
     echo "embedder bake failed after 6 attempts" >&2; exit 1
