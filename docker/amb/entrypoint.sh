@@ -83,13 +83,25 @@ export HF_TOKEN="${HF_TOKEN:-}"
 export HUGGINGFACE_HUB_TOKEN="${HF_TOKEN:-}"
 
 # ---- baked embedding model (no HuggingFace at runtime) ----------------------
-# arctic-embed-s is baked into the image at /opt/hf_cache during build. Point the
-# runtime at that cache so retrieval loads the model locally. For HF-free datasets
+# The product's resolved embedder (MEMCONTEXT_EMBED_MODEL, default MiniLM) is baked
+# into the image at /opt/hf_cache during build. Point the runtime at that cache so
+# retrieval loads the model locally. For HF-free datasets
 # (everything except personamem/beam, which still pull via the HF datasets lib),
 # force offline so N parallel shards never even HEAD-check HF for the model — the
 # exact network call that 429'd/refused and crashed a shard. personamem/beam keep
 # HF online for their dataset; the embedder there still loads from the baked cache.
 export HF_HOME="${HF_HOME:-/opt/hf_cache}"
+
+# ---- LEAN memory-core mode (measure the substrate, not the agent layer) ------
+# LongMemEval tests MEMORY RECALL, so run the memory CORE — admit -> extract ->
+# supersede -> project -> retrieve -> serve — and skip the agent-enrichment layer
+# (importance, profiles, digests, event-frames, life-events, consolidation, decay).
+# That layer is orthogonal to recall, dominates per-turn ingest latency on long
+# histories, and its decay/consolidation can erode or merge a claim mid-ingest.
+# General product flag (default ON in the product); set MEMCONTEXT_ENRICH=1 to
+# measure the full product instead. The recall path is byte-identical either way.
+export MEMCONTEXT_ENRICH="${MEMCONTEXT_ENRICH:-0}"
+
 case "${1:-}" in
   personamem|beam) : ;;
   *)
