@@ -82,6 +82,9 @@ def test_claims_grouped_by_subject_predicate(
     )
     proj = rebuild_active_projection(db, session_id)
     grouped = claims_grouped_by_subject_predicate(proj.claims)
-    key = ("user", "user_fact")
+    # FRACTURE B: key is now (subject, predicate, attribute). These values carry
+    # no derivable attribute slot (no "label:" prefix, no relation verb), so the
+    # attribute is "" and they still collapse newest-wins exactly as before.
+    key = ("user", "user_fact", "")
     assert key in grouped
     assert grouped[key].claim_id == c2.claim_id

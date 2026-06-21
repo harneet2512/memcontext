@@ -85,13 +85,36 @@ def _norm_value(c: Claim) -> str:
     return (c.value_normalised or c.value or "").strip().lower()
 
 
+def _dedup_value(value: str) -> str:
+    """The DISCRIMINATING part of a value for occurrence dedup.
+
+    FRACTURE B: when a value carries a "label: value" prefix
+    ("favorite restaurant: Nopa"), the repeated label inflates cosine similarity
+    across genuinely-distinct instances and under-counts them (Nopa vs Zuni read
+    as one because 'favorite restaurant:' dominates the short string). Strip the
+    leading label so only the tail discriminates. Deterministic; abstains (keeps
+    the whole value) when no "label:" prefix is present, so unlabeled values are
+    embedded exactly as before.
+    """
+    colon = value.find(":")
+    if 0 < colon <= 60:
+        import re as _re
+        if len(_re.findall(r"[a-z0-9]+", value[:colon].lower())) <= 4:
+            tail = value[colon + 1 :].strip()
+            if tail:
+                return tail
+    return value
+
+
 def _instance_text(c: Claim) -> str:
     """Value-bearing text for the dedup embedding — value INCLUDED.
 
     Counting distinguishes occurrences by *what* happened, so unlike Pass-2's
-    identity_text (value-excluded), enumeration embeds the value.
+    identity_text (value-excluded), enumeration embeds the value. A "label:"
+    prefix is stripped (see _dedup_value) so the discriminating tail, not the
+    shared slot label, drives near-dup clustering.
     """
-    return f"{c.subject} {c.predicate} {c.value}".strip()
+    return f"{c.subject} {c.predicate} {_dedup_value(c.value)}".strip()
 
 
 def _derive_t_dup(pairwise: list[float]) -> float:
@@ -153,6 +176,7 @@ def _load_instances(
     session_id: "str | Sequence[str]",
     subject: str,
     predicate: str,
+    attribute: "str | None" = None,
 ) -> list[Claim]:
     sids = _as_session_ids(session_id)
     if not sids:
@@ -168,7 +192,18 @@ def _load_instances(
         """,
         (*sids, subject, predicate, *_ENUMERATION_STATUSES),
     ).fetchall()
-    return [row_to_claim(r) for r in rows]
+    claims = [row_to_claim(r) for r in rows]
+    # FRACTURE B: under a COARSE predicate ('user_fact') the (subject, predicate)
+    # instance set is the user's WHOLE personal corpus (residence + employer +
+    # hobby + …), so a "how many" count would tally every fact as one slot's
+    # occurrences. When the caller resolves a non-empty attribute slot, restrict
+    # the instance set to that slot. attribute=None (default) keeps today's
+    # behaviour byte-identical; the slot is derived deterministically from each
+    # value (attribute_key.py), never from the query or a predicate list.
+    if attribute:
+        from memcontext.attribute_key import attribute_key
+        claims = [c for c in claims if attribute_key(c.value) == attribute]
+    return claims
 
 
 def count_distinct_instances(
@@ -177,6 +212,7 @@ def count_distinct_instances(
     subject: str,
     predicate: str,
     embedder: _EmbedderProto,
+    attribute: "str | None" = None,
 ) -> EnumerationResult:
     """Count DISTINCT occurrences for a (session(s), subject, predicate).
 
@@ -194,7 +230,7 @@ def count_distinct_instances(
     claim joins the first existing cluster it matches, else opens a new one.
     Instance-preserving: each cluster keeps its member claim_ids.
     """
-    instances = _load_instances(conn, session_id, subject, predicate)
+    instances = _load_instances(conn, session_id, subject, predicate, attribute)
     if not instances:
         return EnumerationResult(0, (), DEFAULT_COSINE_THRESHOLD)
 
@@ -361,14 +397,24 @@ def enumerate_retrieved(
 
     # Tally slots present in the retrieved set, preserving first-seen order so
     # ties break deterministically toward the earliest-ranked retrieved slot.
-    order: list[tuple[str, str]] = []
-    counts: dict[tuple[str, str], int] = {}
+    #
+    # FRACTURE B: the slot key includes a deterministic ATTRIBUTE token read off
+    # the value (attribute_key.py). Under a COARSE predicate ('user_fact') every
+    # retrieved fact shares (subject, predicate), so without the attribute the
+    # dominant slot would be the user's whole corpus and the count would tally
+    # unrelated facts as one slot's occurrences. The attribute is "" when no slot
+    # is derivable, so fine-grained predicates tally exactly as before.
+    from memcontext.attribute_key import attribute_key
+
+    order: list[tuple[str, str, str]] = []
+    counts: dict[tuple[str, str, str], int] = {}
     for item in retrieved_claims:
         subject = (item.get("subject") or "").strip()
         predicate = (item.get("predicate") or "").strip()
         if not subject or not predicate:
             continue
-        slot = (subject, predicate)
+        attribute = attribute_key((item.get("value") or "").strip())
+        slot = (subject, predicate, attribute)
         if slot not in counts:
             counts[slot] = 0
             order.append(slot)
@@ -379,5 +425,8 @@ def enumerate_retrieved(
 
     # Dominant slot = highest retrieved frequency; first-seen order breaks ties.
     dominant = max(order, key=lambda s: counts[s])
-    subject, predicate = dominant
-    return count_distinct_instances(conn, session_id, subject, predicate, embedder)
+    subject, predicate, attribute = dominant
+    return count_distinct_instances(
+        conn, session_id, subject, predicate, embedder,
+        attribute=attribute or None,
+    )

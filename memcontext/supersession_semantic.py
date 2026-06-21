@@ -178,6 +178,20 @@ class SemanticSupersession:
         # history that the Pass-1 guard protects. Drop such candidates before
         # scoring; conservative (fires only when BOTH sides are dated and differ).
         candidates = [c for c in candidates if not _event_blocks(new_claim, c)]
+
+        # FRACTURE B guard (parity with Pass-1): under a coarse predicate the
+        # semantic candidate pool is the whole session, so the embedding could
+        # match two facts that name DIFFERENT attribute slots (residence vs
+        # employer) when their surrounding context is similar. Drop candidates
+        # whose value demonstrably names a different slot than the new value.
+        # attributes_conflict abstains when either value has no derivable slot, so
+        # NL-only / slot-less facts and same-slot updates are unaffected.
+        from memcontext.attribute_key import attributes_conflict
+
+        candidates = [
+            c for c in candidates
+            if not attributes_conflict(new_claim.value, c.value)
+        ]
         if not candidates:
             return None
 

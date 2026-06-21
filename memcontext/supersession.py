@@ -208,6 +208,7 @@ def detect_pass1(
     if not rows:
         return None
 
+    from memcontext.attribute_key import attributes_conflict
     from memcontext.claims import row_to_claim
     from memcontext.predicate_packs import active_pack
 
@@ -218,10 +219,19 @@ def detect_pass1(
         # Cardinality supersession: a single-valued (subject, predicate) slot holds
         # ONE current value, so a new value supersedes the newest prior active claim
         # regardless of token overlap (e.g. Postgres -> DynamoDB). Deterministic.
+        #
+        # FRACTURE B guard: when the predicate is coarse (e.g. the general pack's
+        # 'user_fact' is not actually single_valued so this branch is skipped — but
+        # a pack COULD declare it so), two values that name DIFFERENT attribute
+        # slots are distinct facts, not a cardinality update. attributes_conflict
+        # abstains when either value carries no derivable slot, so a true update of
+        # the same slot still supersedes and non-slotted values behave as today.
         for row in rows:
             candidate = row_to_claim(row)
             if _event_blocks(new_claim, candidate):
                 continue  # distinct dated events — keep both
+            if attributes_conflict(new_claim.value, candidate.value):
+                continue  # different attribute slot under one coarse predicate
             if candidate.value.strip().lower() != new_value_norm:
                 best_match = candidate
                 break
@@ -252,6 +262,34 @@ def detect_pass1(
                     best_match = candidate
                     break
 
+    if best_match is None:
+        # Generalized attribute-cardinality (FRACTURE B). The narrow _attribute_of
+        # above only knows residence/employer; attribute_key derives a slot token
+        # for ANY value carrying a "label: value" prefix or a generic relation verb
+        # ("home city: Toronto", "employer: Acme", "favorite restaurant: Nopa").
+        # When the NEW value and a prior candidate resolve to the SAME non-empty
+        # slot but a DIFFERENT value, that is a same-slot UPDATE under a coarse
+        # predicate — supersede it deterministically (no embedder, no LLM), instead
+        # of leaving two contradictory current values for one slot. attribute_key
+        # is "" when no slot is derivable, so this branch never fires on slot-less
+        # values and never touches the fine-grained / additive paths. Same closed-
+        # window history guard as above so historical ranges are never clobbered.
+        from memcontext.attribute_key import attribute_key
+
+        new_slot = attribute_key(new_claim.value)
+        if new_slot and not _has_closed_window(new_claim.value):
+            for row in rows:
+                candidate = row_to_claim(row)
+                if _event_blocks(new_claim, candidate):
+                    continue  # distinct dated events — keep both
+                if candidate.value.strip().lower() == new_value_norm:
+                    continue
+                if _has_closed_window(candidate.value):
+                    continue
+                if attribute_key(candidate.value) == new_slot:
+                    best_match = candidate
+                    break
+
     if best_match is None and new_claim.predicate not in active_pack().single_valued:
         # Multi-valued / undeclared: distinguish a value UPDATE (supersede) from an
         # ADDITIVE fact (keep both) on a shared (subject, predicate).
@@ -278,6 +316,15 @@ def detect_pass1(
             if _event_blocks(new_claim, candidate):
                 continue  # distinct dated events — keep both
             if candidate.value.strip().lower() == new_value_norm:
+                continue
+            # FRACTURE B guard (the load-bearing one): under a COARSE predicate
+            # like 'user_fact' every personal fact shares (subject, predicate), so
+            # a stray shared token ("my", a place name, a verb) could fuse two
+            # unrelated facts ("employer: Acme" vs "city: Acme-town"). When the two
+            # values name DIFFERENT attribute slots they are distinct facts — never
+            # a value update. Abstains when either value has no derivable slot, so
+            # fine-grained predicates and slot-less values behave exactly as today.
+            if attributes_conflict(new_claim.value, candidate.value):
                 continue
             old_content = _content(candidate.value)
             if not (old_content and new_content):

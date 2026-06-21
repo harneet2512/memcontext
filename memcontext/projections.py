@@ -112,14 +112,26 @@ def filtered_projection(
 def claims_grouped_by_subject_predicate(
     claims: Iterable[Claim],
 ) -> dict[tuple[str, str], Claim]:
-    """Keep only the newest active claim per (subject, predicate).
+    """Keep only the newest active claim per identity slot.
 
     Safety net for downstream consumers — if two active claims land for
     the same identity, return the most recent.
+
+    FRACTURE B: the identity key is ``(subject, predicate, attribute)``, where
+    ``attribute`` is a deterministic slot token read off the VALUE
+    (attribute_key.py). Under a COARSE predicate ('user_fact'), keying on only
+    ``(subject, predicate)`` would collapse EVERY personal fact (residence,
+    employer, hobby …) into one row — newest-wins silently deletes the rest.
+    The attribute splits genuinely-different slots apart while still collapsing
+    true restatements of the same slot. The attribute defaults to ``""`` when no
+    slot is derivable, so fine-grained predicates key exactly as before (no
+    regression): the tuple becomes ``(subject, predicate, "")``.
     """
-    out: dict[tuple[str, str], Claim] = {}
+    from memcontext.attribute_key import attribute_key
+
+    out: dict[tuple[str, str, str], Claim] = {}
     for c in claims:
-        key = (c.subject, c.predicate)
+        key = (c.subject, c.predicate, attribute_key(c.value))
         prev = out.get(key)
         if prev is None or c.created_ts > prev.created_ts:
             out[key] = c
