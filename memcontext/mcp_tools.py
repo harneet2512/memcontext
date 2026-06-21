@@ -125,6 +125,66 @@ def _record_serve_events(
     return [r[0] for r in rows]
 
 
+def _slot_key(subject: str, predicate: str, value: str) -> tuple[str, str, str]:
+    """Resolved-slot identity for a served claim — one value per slot.
+
+    Keys on (subject, predicate, attribute-or-normalised-value). For a coarse
+    catch-all predicate the value distinguishes genuinely different facts, so
+    different values are NOT fused; only a single-valued ATTRIBUTE slot (read off
+    the value phrasing, e.g. "lives in X" / "moved to Y" -> `reside`) collapses
+    competing values to one resolved truth — mirroring the supersession layer's
+    own slot model.
+
+    C1 SLOT UNIFY (Fracture B): keys on the CANONICAL slot taxonomy
+    ``memcontext.attribute_key.attribute_key`` — the exact generalized slot
+    function supersession/projection/enumeration key on — so serve-dedup and
+    supersession fuse on the SAME slot identity, not two divergent ones. The
+    canonical fn returns ``""`` for "no derivable slot"; that empty / no-opinion
+    case falls back to the value, so distinct facts never fuse (no regression).
+    Deterministic, zero-LLM, no predicate/benchmark list.
+    """
+    from memcontext.attribute_key import attribute_key
+
+    attr = attribute_key(value or "")
+    discriminator = attr if attr else (value or "").strip().lower()
+    return ((subject or "").strip().lower(), (predicate or "").strip().lower(), discriminator)
+
+
+def _dedup_claims_out(claims_out: list[dict]) -> list[dict]:
+    """Collapse the served claims channel to one resolved value per slot.
+
+    Within a slot the survivor is the BEST-ranked claim; ties break toward an
+    active (non-superseded) status, then the most recent. Order-stable: the kept
+    survivors are emitted in their original ranked order. ADDITIVE: when no two
+    claims share a slot (the single-fact / distinct-fact case) the list is
+    returned byte-identical.
+    """
+    if len(claims_out) < 2:
+        return claims_out
+    _ACTIVE = {"active", "confirmed", "audited"}
+
+    def _better(a: dict, b: dict) -> bool:
+        # True if `a` should replace incumbent `b` as the slot survivor.
+        if a["score"] != b["score"]:
+            return a["score"] > b["score"]
+        a_active = a.get("status") in _ACTIVE
+        b_active = b.get("status") in _ACTIVE
+        if a_active != b_active:
+            return a_active
+        return a.get("created_ts", 0) > b.get("created_ts", 0)
+
+    survivor: dict[tuple[str, str, str], dict] = {}
+    for c in claims_out:
+        key = _slot_key(c.get("subject", ""), c.get("predicate", ""), c.get("value", ""))
+        cur = survivor.get(key)
+        if cur is None or _better(c, cur):
+            survivor[key] = c
+    if len(survivor) == len(claims_out):
+        return claims_out  # nothing collapsed — byte-identical
+    keep = set(id(v) for v in survivor.values())
+    return [c for c in claims_out if id(c) in keep]
+
+
 def handle_memory_query(
     conn: sqlite3.Connection,
     *,
@@ -215,6 +275,9 @@ def handle_memory_query(
                 "confidence": c.confidence,
                 "status": c.status.value,
                 "score": norm,
+                # created_ts is a slot-dedup tie-breaker (most-recent survivor);
+                # internal, stripped before the payload is returned.
+                "created_ts": c.created_ts,
                 # L3: durable instruction / standing preference / ephemeral chatter,
                 # so the agent can weight standing guidance over a passing remark.
                 "durability": detect_durability(c.value),
@@ -229,6 +292,49 @@ def handle_memory_query(
                 "source_type": t.source_type.value,
                 "score": norm,
             })
+
+    # SLOT-DEDUP (resolved-truth channel): the served claims become one value per
+    # resolved slot (subject, predicate, attribute) — duplicate near-mentions and
+    # competing single-valued-attribute values collapse to the best-ranked survivor,
+    # so the agent reads resolved current truth, not a top-k pile of duplicates.
+    # ADDITIVE: distinct facts (no shared slot) pass through byte-identical.
+    claims_out = _dedup_claims_out(claims_out)
+
+    # PROVENANCE LINEAGE on the served channel: each surviving claim carries its
+    # "why" — the source span/quote it came from and the typed correction chain it
+    # retired — so a served fact is self-justifying without a second tool call.
+    # Best-effort; never breaks a query.
+    from memcontext.provenance import explain_claim
+
+    for c in claims_out:
+        try:
+            ex = explain_claim(conn, c["claim_id"])
+        except Exception:  # noqa: BLE001 — provenance is additive, never fatal
+            ex = None
+        if ex is not None:
+            quote = None
+            if (
+                ex.source_text is not None
+                and ex.char_start is not None
+                and ex.char_end is not None
+            ):
+                quote = ex.source_text[ex.char_start:ex.char_end]
+            c["provenance"] = {
+                "source_turn_id": ex.source_turn_id,
+                "source_speaker": ex.source_speaker,
+                "source_ts": ex.source_ts,
+                "char_start": ex.char_start,
+                "char_end": ex.char_end,
+                "quote": quote,
+                # (old_value, edge_type) for each retired predecessor, oldest first.
+                "superseded": [
+                    {"old_value": ov, "edge_type": et} for ov, et in ex.superseded
+                ],
+            }
+
+    # Strip the internal dedup tie-breaker so the payload shape is unchanged.
+    for c in claims_out:
+        c.pop("created_ts", None)
 
     # Usage reinforcement: the fact claims we served are now "accessed".
     served_claim_ids = [c["claim_id"] for c in claims_out]
@@ -280,12 +386,27 @@ def handle_memory_query(
         "fact_recall": "Answer directly from the retrieved facts.",
     }
 
+    # AGGREGATION reader hint (ADDITIVE): a generic counting/listing query
+    # (depth_kind == "aggregation": "how many", "count", "list all", "every" —
+    # a general intent classifier, NOT a benchmark/predicate list) over-counts
+    # raw near-duplicate mentions. When an enumeration distinct-count is attached
+    # below, the hint tells the reader to answer from that DISTINCT count, not the
+    # number of raw retrieved rows. Overrides the per-type hint only on this intent.
+    if depth_kind == "aggregation":
+        reader_hint = (
+            "This is a counting/listing question. Count DISTINCT occurrences, not"
+            " raw mentions: multiple phrasings of the same instance are ONE. If an"
+            " 'enumeration.distinct_count' is provided, use it as the count."
+        )
+    else:
+        reader_hint = _READER_HINTS.get(query_type, _READER_HINTS["fact_recall"])
+
     result: dict = {
         "claims": claims_out,
         "episodes": episodes_out,
         "total": total,
         "query_type": query_type,
-        "reader_hint": _READER_HINTS.get(query_type, _READER_HINTS["fact_recall"]),
+        "reader_hint": reader_hint,
         "token_report": token_report,
         "serve_event_ids": serve_event_ids,
     }
