@@ -238,6 +238,19 @@ def run_extraction(
         {"session_id": session_id, "active_count": len(proj.claims)},
     )
 
+    # LEAN MODE (MEMCONTEXT_ENRICH=0): skip the agent-enrichment layer — importance,
+    # profiles, digests, event-frames, life-events, consolidation, DECAY — and keep only
+    # the memory CORE (admit -> extract -> supersede -> project). A general latency
+    # option for deployments that want pure memory without the agent layer; the recall
+    # path (claims / episodes / retrieval / serve) is byte-identical either way, and
+    # decay/consolidation can no longer erode or merge a claim mid-ingest. Default ON.
+    import os as _os
+    if _os.environ.get("MEMCONTEXT_ENRICH", "1") == "0":
+        _set_extraction_status(
+            conn, episode_id, done_status if created else ExtractionStatus.SKIPPED
+        )
+        return ExtractionResult(tuple(created), tuple(edges), tuple(dropped))
+
     try:
         # Importance for EVERY new claim at ingest, not only superseded ones, so the
         # importance ranking signal has real values instead of a flat 0.5 default in
