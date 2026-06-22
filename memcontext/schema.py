@@ -267,6 +267,12 @@ CREATE TABLE IF NOT EXISTS claims (
 );
 CREATE INDEX IF NOT EXISTS idx_claims_active
     ON claims(session_id, subject, predicate, status);
+-- Tenant-scoped supersession (detect_pass1) filters by (subject, predicate) and
+-- orders by created_ts, NOT by session_id, so idx_claims_active (session-first)
+-- cannot serve it — it fell back to a full scan + nested join per claim (O(N^2)).
+-- This index lets the recency-bounded candidate query be an index walk.
+CREATE INDEX IF NOT EXISTS idx_claims_subj_pred_ts
+    ON claims(subject, predicate, created_ts);
 CREATE INDEX IF NOT EXISTS idx_claims_temporal
     ON claims(valid_from_ts, valid_until_ts);
 

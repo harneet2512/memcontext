@@ -111,6 +111,35 @@ class SemanticSupersession:
     ) -> None:
         self._embedder: Embedder = embedder or NullEmbedder()
         self._threshold = threshold
+        # Identity-vector cache. Pass-2 compares each NEW claim against its session's
+        # active candidates, so the SAME candidate identity texts get re-encoded for
+        # every new claim in the session — O(claims x candidates) encodes. With the
+        # heavy bge-m3 model (~80ms/encode) that re-encoding dominated ingest at
+        # haystack scale (~21k encodes for a 500-turn haystack, mostly duplicates) and
+        # blew the shard timeout. Caching by text encodes each identity ONCE; candidates
+        # become cache hits. Per-instance, so it lives exactly as long as one ingest.
+        self._vec_cache: dict[str, list[float]] = {}
+
+    def _embed_cached(self, texts: list[str]) -> list[list[float]]:
+        """Embed `texts`, reusing the per-instance cache so each text is encoded once.
+
+        Encodes only cache-misses (deduped, one batched call), then returns vectors in
+        the requested order. Soft-capped to bound memory if the instance is long-lived;
+        eviction never touches texts in the current request, so the return is always valid.
+        """
+        missing = [t for t in dict.fromkeys(texts) if t not in self._vec_cache]
+        if missing:
+            new_vecs = self._embedder.embed(missing)
+            for t, v in zip(missing, new_vecs, strict=True):
+                self._vec_cache[t] = v
+            if len(self._vec_cache) > 50_000:
+                keep = set(texts)
+                for k in list(self._vec_cache):
+                    if len(self._vec_cache) <= 50_000:
+                        break
+                    if k not in keep:
+                        del self._vec_cache[k]
+        return [self._vec_cache[t] for t in texts]
 
     def detect(
         self,
@@ -208,7 +237,7 @@ class SemanticSupersession:
                 for c in candidates
             ]
 
-        vecs = self._embedder.embed([new_text, *cand_texts])
+        vecs = self._embed_cached([new_text, *cand_texts])
         if len(vecs) != 1 + len(candidates):
             log.error(
                 "substrate.semantic_embed_length_mismatch",

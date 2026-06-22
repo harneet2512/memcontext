@@ -13,6 +13,7 @@ turn — claims emitted together from one utterance are additive.
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 import uuid
 
@@ -22,6 +23,11 @@ from memcontext.claims import now_ns, set_claim_status
 from memcontext.schema import Claim, ClaimStatus, EdgeType, Speaker, SupersessionEdge
 
 log = structlog.get_logger(__name__)
+
+# Recency-bounded supersession lookback (see detect_pass1). Bounds the same-slot
+# candidate scan to the newest N active claims so a coarse predicate cannot make
+# ingest O(N^2) over a long history. Generous default; env-tunable.
+_SUPERSEDE_LOOKBACK = int(os.environ.get("MEMCONTEXT_SUPERSEDE_LOOKBACK", "400"))
 
 
 def _new_edge_id() -> str:
@@ -209,13 +215,24 @@ def detect_pass1(
         " WHERE t.namespace = ? AND c.subject = ? AND c.predicate = ?"
         " AND c.status IN ('active','confirmed') AND c.claim_id != ?"
         " AND c.source_turn_id != ?"
-        " ORDER BY c.created_ts DESC",
+        " ORDER BY c.created_ts DESC"
+        # RECENCY-BOUNDED LOOKBACK: a coarse predicate ("user_fact") makes the
+        # (subject, predicate) slot the whole corpus, so comparing each new claim
+        # against EVERY active same-slot claim is O(N^2) over a haystack (the cost
+        # that timed out the bge-m3 shard). Supersession targets the most RECENT
+        # same-slot value, so bounding to the newest _SUPERSEDE_LOOKBACK candidates
+        # makes ingest O(N) while preserving the realistic update case (an updated
+        # value is near its predecessor in the conversation). Cross-session
+        # resolution is unaffected: the slot spans sessions, only deep history is
+        # trimmed. Backed by idx_claims_subj_pred_ts so this is an index walk.
+        " LIMIT ?",
         (
             namespace,
             new_claim.subject,
             new_claim.predicate,
             new_claim.claim_id,
             new_claim.source_turn_id,
+            _SUPERSEDE_LOOKBACK,
         ),
     ).fetchall()
     if not rows:
