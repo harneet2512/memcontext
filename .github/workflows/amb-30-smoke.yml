@@ -63,7 +63,7 @@ jobs:
         with: { fetch-depth: 0 }   # full history: the build git-archives master@PRODUCT_REF
       - if: steps.check.outputs.build == 'true'
         name: Fetch product branch (PRODUCT_REF = the integrated product)
-        run: git fetch --no-tags origin integration/strong-substrate 1c28a92ac75a02901e91adb4773a26c90cea2b99 2>/dev/null || git fetch --no-tags origin integration/strong-substrate
+        run: git fetch --no-tags origin integration/strong-substrate 2ea6bc721d64957b1f8fde174d2ae280a2838168 2>/dev/null || git fetch --no-tags origin integration/strong-substrate
       - if: steps.check.outputs.build == 'true'
         name: Free disk space (image ~17GB w/ torch)
         uses: jlumbroso/free-disk-space@main
