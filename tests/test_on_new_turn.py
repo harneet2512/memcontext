@@ -91,11 +91,12 @@ def test_on_new_turn_with_pass1_supersession(
     assert r2.supersession_edges[0].old_claim_id == r1.created_claims[0].claim_id
 
 
-def test_on_new_turn_out_of_vocab_predicate_stored_as_nl(
+def test_on_new_turn_out_of_vocab_predicate_coerced_to_user_fact(
     db: sqlite3.Connection, session_id: str,
 ):
-    """An out-of-vocab predicate is no longer dropped — it is stored as an
-    NL-only fact (the graceful Tier-2 behaviour). The fact is never lost."""
+    """An out-of-vocab predicate is no longer dropped OR value-stripped — it is
+    coerced to the generic ``user_fact`` family, KEEPING subject+value as a
+    structured, resolvable/served claim. The fact is never lost AND stays usable."""
     def extract_bad(turn: Turn) -> list[ExtractedClaim]:
         return [
             ExtractedClaim(
@@ -114,12 +115,11 @@ def test_on_new_turn_out_of_vocab_predicate_stored_as_nl(
         extractor=extract_bad,
     )
     assert result.admitted is True
-    # Created as an NL-only fact, not dropped.
+    # Created as a structured fact (predicate coerced), not dropped, not value-stripped.
     assert len(result.created_claims) == 1
     assert len(result.dropped_claims) == 0
     fact = result.created_claims[0]
-    assert fact.predicate == "" and fact.subject == ""  # triple demoted
-    assert fact.text and "invalid_predicate_xyz" in fact.text
+    assert fact.subject == "user" and fact.predicate == "user_fact" and fact.value == "something"
 
 
 def test_on_new_turn_events_published(

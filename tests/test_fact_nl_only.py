@@ -75,7 +75,7 @@ def test_nl_only_fact_stored_with_null_triple():
     assert meta is not None and meta["predicate_family"] == "nl"
 
 
-def test_out_of_vocab_predicate_demotes_not_drops():
+def test_out_of_vocab_predicate_coerces_to_user_fact():
     conn = _conn()
     sid = "s2"
     turn = _turn(conn, sid, "context")
@@ -88,9 +88,9 @@ def test_out_of_vocab_predicate_demotes_not_drops():
         predicate="totally_made_up_predicate",
         value="some value",
     )
-    # Demoted: triple dropped, NL text synthesised from the triple.
-    assert fact.predicate == "" and fact.subject == "" and fact.value == ""
-    assert fact.text and "totally_made_up_predicate" in fact.text
+    # Coerced to the generic family, KEEPING subject+value structured (so the fact is
+    # resolvable/served, not just raw text) — never dropped, and no longer value-less.
+    assert fact.subject == "user" and fact.predicate == "user_fact" and fact.value == "some value"
 
 
 def test_in_vocab_triple_stays_structured():
