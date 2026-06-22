@@ -116,6 +116,7 @@ jobs:
             -e JUDGE_KEY='${{ secrets.JUDGE_KEY }}' \
             -e EXTRACTOR_KEY='${{ secrets.EXTRACTOR_KEY }}' \
             -e HF_TOKEN='${{ secrets.HF_TOKEN }}' \
+            -e MEMCONTEXT_EXTRACTION_WORKERS=4 \
             -v "$PWD/out:/opt/amb/outputs" \
             '${{ needs.build.outputs.image }}' \
             longmemeval s --category "$CAT" --query-limit 5
