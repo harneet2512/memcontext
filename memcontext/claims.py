@@ -297,17 +297,33 @@ def insert_fact(
     value = value or None
 
     structured = bool(subject and predicate and value)
-    # Demote an out-of-vocab structured triple to NL-only — never drop the fact.
+    # Out-of-vocab structured triple: COERCE the predicate to the pack's generic
+    # catch-all ("user_fact"), KEEPING subject+value as a structured, resolvable fact,
+    # rather than nulling the whole triple to NL-only and losing the value from the
+    # structured/served channel. A real upstream LLM occasionally emits a predicate
+    # just off the pack vocabulary ("user_location" vs "user_fact"); demoting silently
+    # dropped that fact's value, so it could never be resolved, deduped, or served as a
+    # claim — only as raw episode text. The attribute slot model (attribute_key) keeps
+    # coerced user_fact facts distinct, so this does not re-collapse the predicate space.
+    # Fall back to NL-only demotion only when the pack has no "user_fact" family.
     if structured and not predicate_in_vocab(predicate or "", allowed_predicates):
-        if not text:
-            text = f"{_normalise_subject(subject or '')} {predicate} {value}"
-        log.info(
-            "substrate.predicate_demoted_to_nl",
-            session_id=session_id,
-            predicate=predicate,
-        )
-        subject = predicate = value = None
-        structured = False
+        if predicate_in_vocab("user_fact", allowed_predicates):
+            log.info(
+                "substrate.predicate_coerced_to_user_fact",
+                session_id=session_id,
+                predicate=predicate,
+            )
+            predicate = "user_fact"
+        else:
+            if not text:
+                text = f"{_normalise_subject(subject or '')} {predicate} {value}"
+            log.info(
+                "substrate.predicate_demoted_to_nl",
+                session_id=session_id,
+                predicate=predicate,
+            )
+            subject = predicate = value = None
+            structured = False
 
     norm_subject = _normalise_subject(subject) if structured and subject else None
     # NL form. Structured facts synthesise it to exactly match the legacy
