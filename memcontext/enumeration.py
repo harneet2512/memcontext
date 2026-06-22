@@ -24,6 +24,7 @@ predicate lists, no benchmark coupling. Temporal-preserving.
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -31,6 +32,121 @@ from dataclasses import dataclass
 from memcontext.schema import Claim
 from memcontext.claims import row_to_claim
 from memcontext.supersession_semantic import DEFAULT_COSINE_THRESHOLD, cosine
+
+
+# --------------------------------------------------------------------------- #
+# Content-aware cluster identity (boilerplate-robust distinct counting)
+# --------------------------------------------------------------------------- #
+#
+# THE FRACTURE this fixes: when most instances of a slot share a phrasing
+# TEMPLATE ("need to return a <X> that ...", "bought a <Y>"), the repeated
+# boilerplate dominates the SENTENCE embedding and inflates the pairwise cosine
+# between genuinely DISTINCT objects (jacket vs dress, laptop vs phone) above the
+# data-driven valley — so the distinct objects MERGE and the distinct-count
+# UNDER-counts. Sentence cosine alone cannot tell "same occurrence, different
+# words" from "different object, same template": both look similar because the
+# template is shared.
+#
+# THE FIX (general, deterministic, zero-LLM): make the merge decision aware of the
+# DISTINGUISHING content — the content words that VARY across the two instances —
+# not just the whole-sentence vector. Two instances are blocked from merging
+# (an "object conflict") when each carries a distinguishing content token the
+# other lacks AND those distinguishing tokens are NOT synonyms of each other
+# (laptop/phone, jacket/dress). Genuine paraphrases of ONE occurrence never
+# conflict: either they share the object token (so there is no distinguishing
+# token), or their distinguishing tokens ARE synonyms (bought/purchased). A
+# shared distinguishing object also BRIDGES two instances whose sentence cosine
+# dipped just below the valley (drifted paraphrase of the same object).
+#
+# WHY IT GENERALISES (no benchmark coupling): the only learned quantity is the
+# EMBEDDER'S OWN word-level synonym floor, probed live from fixed domain-neutral
+# word pairs (big/large vs cat/airplane) — never a tuned constant and never a
+# benchmark token. The refinement engages ONLY when the embedder demonstrably
+# encodes word-level synonymy (probe margin clears MIN_PROBE_MARGIN); for
+# constant/degenerate embedders (NullEmbedder, model-free stubs) it abstains and
+# the count is byte-identical to the legacy pure-cosine path.
+
+# Function/grammar words that never serve as a distinguishing OBJECT. Generic
+# English closed-class + light/transactional verbs and determiners only — NOT a
+# domain or benchmark vocabulary. Used solely to drop non-content tokens before
+# the distinguishing-token comparison.
+_ENUM_STOPWORDS = frozenset(
+    """
+    a an the to of for that this these those with at in on and or but as it its
+    i my me we our you your he she they them his her their is are was were be been
+    being am do does did done have has had will would shall should can could may
+    might must not no need needs needed want wants wanted get gets getting got
+    pick picked up some any new myself ourselves yourself just then than so very
+    about into out over under from by off again still also too more most
+    """.split()
+)
+
+# Fixed, domain-neutral probe pairs used to read the embedder's OWN word-level
+# synonym geometry at runtime. These are everyday English words with no relation
+# to any benchmark; they exist only to measure whether THIS embedder separates
+# synonyms from unrelated words, and by how much.
+_PROBE_SYNONYMS = (
+    ("big", "large"),
+    ("buy", "purchase"),
+    ("happy", "glad"),
+    ("small", "tiny"),
+    ("fast", "quick"),
+)
+_PROBE_UNRELATED = (
+    ("cat", "airplane"),
+    ("river", "keyboard"),
+    ("music", "brick"),
+    ("mountain", "pencil"),
+    ("ocean", "clock"),
+)
+# Minimum synonym-vs-unrelated separation for the live embedder before we trust
+# its word-level cosine enough to use the content-aware refinement. A real
+# sentence model clears this comfortably (~0.33); constant/degenerate embedders
+# (NullEmbedder => 0.0, model-free stubs => ~0.1) fall below it and the
+# refinement abstains. Not an operating threshold on the data — a capability gate
+# on the embedder.
+MIN_PROBE_MARGIN = 0.15
+
+
+def _content_tokens(value: str) -> set[str]:
+    """Lower-cased content tokens of a value: alphanumerics minus grammar words
+    and single characters. The distinguishing-object comparison runs over these.
+    """
+    return {
+        t
+        for t in re.findall(r"[a-z0-9]+", value.lower())
+        if len(t) > 1 and t not in _ENUM_STOPWORDS
+    }
+
+
+def _word_synonym_floor(embedder: "_EmbedderProto") -> "float | None":
+    """Read the embedder's OWN word-level synonym floor, or None if it cannot
+    encode word synonymy reliably.
+
+    Returns the midpoint between the embedder's mean synonym cosine and its mean
+    unrelated cosine — the cut above which two word embeddings count as the same
+    object/concept for THIS embedder — but only when the synonym and unrelated
+    bands are separated by at least ``MIN_PROBE_MARGIN``. Returns None otherwise
+    (constant/degenerate embedder), signalling the caller to fall back to the
+    legacy pure-cosine clustering. Deterministic; one embed call on fixed pairs.
+    """
+    words = sorted({w for pair in (_PROBE_SYNONYMS + _PROBE_UNRELATED) for w in pair})
+    try:
+        vecs = embedder.embed(words)
+    except Exception:  # noqa: BLE001 — never let the probe break counting
+        return None
+    if not vecs or len(vecs) != len(words):
+        return None
+    wv = dict(zip(words, vecs))
+    syn = [cosine(wv[a], wv[b]) for a, b in _PROBE_SYNONYMS]
+    unrel = [cosine(wv[a], wv[b]) for a, b in _PROBE_UNRELATED]
+    if not syn or not unrel:
+        return None
+    mean_syn = sum(syn) / len(syn)
+    mean_unrel = sum(unrel) / len(unrel)
+    if mean_syn - mean_unrel < MIN_PROBE_MARGIN:
+        return None
+    return (mean_syn + mean_unrel) / 2.0
 
 
 def _as_session_ids(session_id: "str | Sequence[str]") -> list[str]:
@@ -263,12 +379,75 @@ def count_distinct_instances(
             pairwise.append(cosine(rep_vecs[i], rep_vecs[j]))
     t_dup = _derive_t_dup(pairwise)
 
+    # --- Content-aware identity prep (boilerplate-robust) ---------------------
+    # Per-rep distinguishing content tokens + the embedder's own word-synonym
+    # floor. When the embedder cannot encode word synonymy (floor is None — Null/
+    # constant/model-free stub), we abstain and the edge rule below is the exact
+    # legacy `cosine >= t_dup` path, so existing behaviour is byte-identical.
+    rep_tokens: list[set[str]] = [_content_tokens(_dedup_value(c.value)) for c in reps]
+    syn_floor = _word_synonym_floor(embedder)
+    word_vec: dict[str, list[float]] = {}
+    if syn_floor is not None:
+        vocab = sorted({w for ts in rep_tokens for w in ts})
+        if vocab:
+            word_vec = dict(zip(vocab, embedder.embed(vocab)))
+
+    def _all_covered(src: set[str], tgt: set[str]) -> bool:
+        """True iff EVERY token in ``src`` has a synonym (cosine >= the embedder's
+        floor) somewhere in ``tgt``. A token whose embedding is unavailable is
+        treated as covered (it cannot witness a conflict)."""
+        for a in src:
+            va = word_vec.get(a)
+            if va is None:
+                continue  # unknown token can't witness a distinct object
+            if not any(
+                (vb := word_vec.get(b)) is not None and cosine(va, vb) >= syn_floor
+                for b in tgt
+            ):
+                return False
+        return True
+
+    def _object_conflict(i: int, j: int) -> bool:
+        """True iff reps i and j name DIFFERENT objects (so they must not merge
+        despite a boilerplate-inflated sentence cosine).
+
+        Identity is safe to MERGE only when the two instances are mutual
+        paraphrases: every distinguishing token each one adds must be a synonym of
+        some distinguishing token the other adds (bought<->purchased). If EITHER
+        side adds a distinguishing token with no synonym across the divide
+        (laptop with no match in {phone}; sushi with no match in {ramen, dinner}),
+        that token names a distinct object and the merge is a conflict.
+
+        Requiring EVERY distinguishing token to be covered — not merely SOME
+        synonymous cross-pair — is essential: a synonymous *incidental* token
+        (lunch<->dinner) must not license merging two genuinely different objects
+        (sushi vs ramen) that happen to share that incidental synonym. Abstains
+        (no conflict) when word-level synonymy is untrusted."""
+        if syn_floor is None:
+            return False
+        di = rep_tokens[i] - rep_tokens[j]
+        dj = rep_tokens[j] - rep_tokens[i]
+        if not di or not dj:
+            return False  # one side adds no distinct object => paraphrase
+        # Conflict unless BOTH sides are fully synonym-covered by the other.
+        return not (_all_covered(di, dj) and _all_covered(dj, di))
+
+    def _shared_object(i: int, j: int) -> bool:
+        """True iff reps i and j share a distinguishing content token — a bridge
+        that merges the same object across drifted phrasings whose sentence cosine
+        dipped just below the valley. Gated on trusted synonymy so legacy
+        (untrusted) embedders keep the pure-cosine edge rule."""
+        return syn_floor is not None and bool(rep_tokens[i] & rep_tokens[j])
+
     # --- Stage B: transitive merge over representatives (connected components) -
-    # An edge i-j exists iff cosine >= T_dup AND the temporal guard permits it.
-    # Clustering is the connected components of that graph via union-find. This is
-    # transitive: paraphrases that link through an intermediate still co-cluster,
-    # fixing the single-anchor severing of drifted paraphrases. Deterministic
-    # given the fixed (created_ts, claim_id) sort of `reps`.
+    # An edge i-j exists iff the temporal guard permits it, there is no OBJECT
+    # CONFLICT (distinct, non-synonymous distinguishing content), AND either the
+    # sentence cosine clears T_dup OR the two reps share a distinguishing object
+    # (the boilerplate-robust bridge). Clustering is the connected components of
+    # that graph via union-find — transitive, so paraphrases that link through an
+    # intermediate still co-cluster. Deterministic given the fixed
+    # (created_ts, claim_id) sort of `reps`. When synonymy is untrusted the rule
+    # reduces to the legacy `cosine >= t_dup`.
     n = len(reps)
     parent = list(range(n))
 
@@ -289,10 +468,16 @@ def count_distinct_instances(
 
     for i in range(n):
         for j in range(i + 1, n):
-            if cosine(rep_vecs[i], rep_vecs[j]) < t_dup:
-                continue
             # Temporal guard: never link two reps that both carry differing event_ts.
             if _temporal_block(reps[j], [reps[i]]):
+                continue
+            # Object conflict: distinct, non-synonymous distinguishing content =>
+            # different occurrences even if boilerplate inflates the cosine.
+            if _object_conflict(i, j):
+                continue
+            # Edge iff sentence cosine clears the valley OR a shared distinguishing
+            # object bridges a drifted paraphrase of the SAME object.
+            if cosine(rep_vecs[i], rep_vecs[j]) < t_dup and not _shared_object(i, j):
                 continue
             _union(i, j)
 
