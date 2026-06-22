@@ -51,14 +51,6 @@ ARG AMB_REPO=https://github.com/vectorize-io/agent-memory-benchmark.git
 # reproducible build. Override --build-arg AMB_REF=<sha> to track a different rev.
 ARG AMB_REF=45fa380523afab9b1acd667a03de51c5ea63f4d2
 ENV PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 HF_HOME=/opt/hf_cache
-# EMBEDDER: pin MiniLM (the proven 88.4% config embedder). The product DEFAULTS to
-# BAAI/bge-m3, which loads the heavy FlagEmbedding model (~80ms/embed) and, since claims
-# are re-embedded on retrieval, made every query ~14-27s at benchmark haystack scale
-# (ingest 720ms/turn, serve 27s/query at 500 claims) — a 20-30x slowdown that blew past
-# the shard timeout. MiniLM uses the fast SentenceTransformer path (~5ms/embed): ingest
-# 24ms/turn, serve 741ms/query, measured. Set as ENV so BOTH the build-time bake AND the
-# runtime EmbeddingClient resolve the SAME fast model (no drift). General deployment knob.
-ENV MEMCONTEXT_EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git build-essential curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
