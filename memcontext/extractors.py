@@ -694,8 +694,8 @@ class LLMExtractor:
         client = getattr(self, "_gemini_client", None)
         if client is None:
             try:
-                from google import (  # pyright: ignore[reportMissingImports, reportAttributeAccessIssue]
-                    genai,
+                from google import (  # pyright: ignore[reportMissingImports]
+                    genai,  # pyright: ignore[reportAttributeAccessIssue]
                 )
             except ImportError as exc:
                 raise ImportError(
