@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package with dev dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Pytest
+        run: python -m pytest tests -q
+        # Deterministic: :memory: SQLite + NullEmbedder. No model downloads.
+
+      - name: Smoke — CLI
+        run: python scripts/smoke/cli_smoke.py
+
+      - name: Smoke — core memory loop
+        run: python scripts/smoke/memory_loop_smoke.py
+
+      - name: Smoke — MCP protocol
+        run: python scripts/smoke/mcp_smoke.py
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package with dev dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+
+      - name: Pyright (basic)
+        run: pip install pyright && pyright

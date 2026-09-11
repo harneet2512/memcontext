@@ -33,7 +33,7 @@ class _StubEmbedder:
     Each text becomes a normalised bag-of-words vector over a fixed hashing
     space, so cosine similarity reflects token overlap. Uses a stable (non-salted)
     hash so the on-disk embedding cache stays content-consistent across runs.
-    Lets episode retrieval be asserted without downloading all-MiniLM-L6-v2.
+    Lets episode retrieval be asserted without downloading bge-m3.
     """
 
     model_version = "test-model"

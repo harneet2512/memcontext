@@ -43,12 +43,9 @@ memcontext/          # Core package (pip install memcontext)
   extractors.py      # PassthroughExtractor (default) + SimpleExtractor (regex fallback)
   mcp_tools.py       # MCP tool handler functions (no protocol dependency)
   mcp_server.py      # MCP server over stdio transport
-  cli.py             # Click CLI: init, status, ingest, query, serve
+  cli.py             # Click CLI: init, status, ingest, query, serve, serve-http
+  http_server.py     # FastAPI HTTP facade over the same handler functions
   predicate_packs.py # Domain vocabulary management, pack composition
-  observe/           # Browser observation sub-package
-    browser.py       # PageSnapshot, capture_snapshot, observe_page
-    extractors.py    # AccessibilityTreeExtractor, DOMExtractor
-    revisit.py       # diff_snapshots, apply_changes
 evals/               # Evaluation suite (not installed by default)
   metrics.py         # Scoring functions
   runner.py          # Suite runner

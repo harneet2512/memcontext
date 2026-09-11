@@ -4,21 +4,34 @@ import type {
   QueryRequest,
   QueryResponse,
   TraceResponse,
-  CorrectRequest,
-  ObserveRequest,
+  StatusResponse,
 } from "./types.js";
+
+export interface MemContextClientOptions {
+  /** Bearer token for the HTTP API. Every /api/* route requires it —
+   *  the value printed by `memcontext serve-http` or MEMCONTEXT_HTTP_TOKEN. */
+  token?: string;
+}
 
 export class MemContextClient {
   private baseUrl: string;
+  private token?: string;
 
-  constructor(baseUrl: string = "http://localhost:8100") {
+  constructor(baseUrl: string = "http://localhost:8100", options: MemContextClientOptions = {}) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
+    this.token = options.token;
+  }
+
+  private headers(extra?: Record<string, string>): Record<string, string> {
+    const h: Record<string, string> = { ...extra };
+    if (this.token) h["Authorization"] = `Bearer ${this.token}`;
+    return h;
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: this.headers({ "Content-Type": "application/json" }),
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -29,7 +42,7 @@ export class MemContextClient {
   }
 
   private async get<T>(path: string): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`);
+    const res = await fetch(`${this.baseUrl}${path}`, { headers: this.headers() });
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`MemContext API error ${res.status}: ${text}`);
@@ -61,28 +74,9 @@ export class MemContextClient {
   }
 
   /**
-   * Correct or dismiss an existing claim.
-   */
-  async correct(req: CorrectRequest): Promise<unknown> {
-    return this.post("/api/memory/correct", req);
-  }
-
-  /**
-   * Observe a URL and extract claims from its content.
-   */
-  async observe(req: ObserveRequest): Promise<unknown> {
-    return this.post("/api/memory/observe", req);
-  }
-
-  /**
    * Get memory database status (total claims, active claims, sessions, turns).
    */
-  async status(): Promise<{
-    total_claims: number;
-    active_claims: number;
-    sessions: number;
-    turns: number;
-  }> {
+  async status(): Promise<StatusResponse> {
     return this.get("/api/memory/status");
   }
 }

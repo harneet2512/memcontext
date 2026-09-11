@@ -37,26 +37,42 @@ export interface QueryRequest {
 
 export interface QueryResponse {
   claims: Claim[];
+  episodes: unknown[];
   total: number;
 }
 
+export interface TraceLineageStep {
+  claim_id: string;
+  value: string;
+  status: string;
+  edge_type: string | null;
+  confidence: number | null;
+  source_turn_id: string;
+  speaker: string | null;
+  text: string | null;
+  char_start: number | null;
+  char_end: number | null;
+  quote: string | null;
+}
+
 export interface TraceResponse {
+  subject: string;
+  predicate: string;
   claim: Claim | null;
   source_turn: {
     turn_id: string;
     text: string;
     speaker: string;
   } | null;
+  char_span: { start: number; end: number } | null;
+  /** Newest-first full supersession lineage with provenance quotes. */
+  lineage: TraceLineageStep[];
   supersession_chain: Array<{ from: string; to: string }>;
 }
 
-export interface CorrectRequest {
-  claim_id: string;
-  action: "dismiss" | "correct";
-  new_value?: string;
-}
-
-export interface ObserveRequest {
-  url: string;
-  session_id?: string;
+export interface StatusResponse {
+  total_claims: number;
+  active_claims: number;
+  sessions: number;
+  turns: number;
 }

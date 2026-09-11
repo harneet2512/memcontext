@@ -5,8 +5,8 @@ export type {
   QueryRequest,
   QueryResponse,
   TraceResponse,
-  CorrectRequest,
-  ObserveRequest,
+  StatusResponse,
 } from "./types.js";
 
 export { MemContextClient } from "./client.js";
+export type { MemContextClientOptions } from "./client.js";

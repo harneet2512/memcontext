@@ -531,7 +531,7 @@ def embed_and_store_episode(
     Mirrors :func:`embed_and_store` for claims, keyed on the episode's raw NL
     ``text``. Called synchronously in the Tier-1 write path (the always-on,
     zero-LLM floor); embedding is a local model inference (~tens of ms with
-    all-MiniLM-L6-v2, instant with NullEmbedder in tests), never an LLM call.
+    bge-m3, instant with NullEmbedder in tests), never an LLM call.
     On failure, logs and leaves the episode un-embedded for a backfill pass.
     """
     effective = client or _default_embedding_client()

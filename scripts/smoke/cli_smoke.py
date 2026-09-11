@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
     print("1. memcontext init")
     out = run(f'memcontext init --db "{db}" --pack general,developer')
     check("init creates db", os.path.exists(db))
-    check("init reports predicates", "19 predicates" in out)
+    check("init reports predicates", "21 predicates" in out)
 
     print("\n2. memcontext status (empty)")
     out = run(f'memcontext status --db "{db}"')
@@ -61,7 +61,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 
     print("\n5. memcontext query")
     out = run(f'memcontext query "dark mode" --db "{db}" --session smoke')
-    check("query finds claims", "Found" in out and "claim" in out.lower())
+    check("query finds claims", "Found" in out and "memory item" in out.lower())
     check("query returns dark mode", "dark" in out.lower())
 
     print("\n6. memcontext ingest (noise rejected)")

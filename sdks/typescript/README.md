@@ -1,6 +1,8 @@
 # @memcontext/client
 
-TypeScript client for the MemContext memory API. Zero dependencies -- uses the built-in `fetch` available in Node 18+.
+TypeScript client for the MemContext HTTP API. Zero dependencies — uses the built-in `fetch` available in Node 18+.
+
+**Experimental:** covers the four core REST endpoints (`store`, `query`, `trace`, `status`). The full surface — corrections, governance, digests — is over MCP (`mcp_tools.py` handlers) or the Python API.
 
 ## Install
 
@@ -13,7 +15,11 @@ npm install @memcontext/client
 ```typescript
 import { MemContextClient } from "@memcontext/client";
 
-const mc = new MemContextClient("http://localhost:8100");
+// Every /api/* route requires a bearer token — the one printed by
+// `memcontext serve-http` on startup, or MEMCONTEXT_HTTP_TOKEN.
+const mc = new MemContextClient("http://localhost:8100", {
+  token: process.env.MEMCONTEXT_HTTP_TOKEN,
+});
 
 // Store a conversational turn
 const stored = await mc.store({
@@ -36,9 +42,10 @@ console.log(`${info.active_claims} active claims across ${info.sessions} session
 
 ## API
 
-### `new MemContextClient(baseUrl?)`
+### `new MemContextClient(baseUrl?, options?)`
 
-Create a client. Defaults to `http://localhost:8100`.
+Create a client. Defaults to `http://localhost:8100`. Pass `{ token }` for the
+bearer token required by all `/api/*` routes.
 
 ### `store(req: StoreRequest): Promise<StoreResponse>`
 
@@ -50,15 +57,8 @@ Query memory with a natural-language string.
 
 ### `trace(claimId: string): Promise<TraceResponse>`
 
-Trace the provenance chain of a claim.
-
-### `correct(req: CorrectRequest): Promise<unknown>`
-
-Dismiss or correct an existing claim.
-
-### `observe(req: ObserveRequest): Promise<unknown>`
-
-Observe a URL and extract claims from its content.
+Trace the provenance chain of a claim — full supersession lineage with
+per-step source turns and character-span quotes.
 
 ### `status(): Promise<StatusResponse>`
 

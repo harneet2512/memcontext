@@ -30,11 +30,11 @@ Schema version: **13** · Storage: a single **SQLite** file · LLM in the core p
 
 ---
 
-## 2. Data model (SQLite, ~16 tables)
+## 2. Data model (SQLite, 25 tables)
 
 ```
 turns ........... raw episodes: text, speaker, ts, source_type
-                  (conversation|tool_call|browser), namespace (tenant), extraction_status
+                  (conversation|tool_call), namespace (tenant), extraction_status
 claims .......... the atomic unit: NL text + optional (subject, predicate, value),
                   confidence, status, created_ts, valid_from_ts, valid_until_ts,
                   event_ts, source_turn_id, char_start/char_end (span)
@@ -132,9 +132,11 @@ Two passes, both writing typed edges and stamping validity windows:
   - **Edge typing**: REFINES / ASSISTANT_CONFIRM / USER_CORRECTION / CONTRADICTS.
   - **Trust guard**: a markedly lower-trust source cannot override a higher-trust fact;
     the blocked attempt is audited to `decisions` (drift-blocked).
-- **Pass-2 (semantic, embedder-gated).** Identity = `subject + predicate + context`
+- **Pass-2 (semantic, capability-gated).** Identity = `subject + predicate + context`
   (value **excluded**, so "onset 3 days" / "onset 4 days" still match), cosine ≥ 0.88,
-  edge `SEMANTIC_REPLACE`. Active wherever a real embedder is configured (CLI, MCP, queue).
+  edge `SEMANTIC_REPLACE`. Runs wherever an embedding backend is actually importable or
+  reachable (`memcontext[embeddings]` or `MODAL_BGE_M3_URL`); when no backend exists the
+  substrate reports degraded lexical-only mode and Pass-2 is skipped, never crashed.
 
 ### Projection / world-state (`projections.py`, `brain.py`)
 `rebuild_active_projection` maintains the active-claims view. `brain()` is the resolved
@@ -233,9 +235,12 @@ LOCAL (no network)            REMOTE (one stable URL)
 - **Predicate packs** (`predicate_packs/`, `predicate_packs.py`): domain vocabulary
   (families, sub-slots, `single_valued` cardinality), composable, env-overridable.
 - **Injected extractor**: any callable `Turn -> ExtractedClaim[]`.
-- **Embedders**: product default is `BAAI/bge-m3` via sentence-transformers
+- **Embedders**: product default is `BAAI/bge-m3` via FlagEmbedding
+  (`BGEM3FlagModel`), or a remote BGE-M3 endpoint via `MODAL_BGE_M3_URL`
   (`NullEmbedder` for tests; explicit overrides are ablations);
-  gated by `MEMCONTEXT_EMBED_EPISODES`.
+  gated by `MEMCONTEXT_EMBED_EPISODES` and by backend availability — with no
+  importable/reachable backend the embedder reports itself absent and the
+  substrate runs lexical-only.
 - **Event bus** (`event_bus.py`): synchronous pub/sub; `on_new_turn` publishes lifecycle
   events; **no internal subscriber by design** — a host (UI, async worker, audit) subscribes.
 
@@ -286,7 +291,7 @@ memcontext/
   mcp_oauth.py         OAuth 2.1 provider + login gate
   relay.py             outbound-dial relay + self-certifying brain identity
   cli.py               Click CLI (init, ingest, query, brain, serve, share, ...)
-  observe/             browser observation sub-package (tool-driven)
+  http_server.py       REST API + hook endpoints (FastAPI, bearer + principal authz)
 ```
 
 ---
@@ -307,5 +312,5 @@ memcontext/
 
 ---
 
-*This document describes the connected substrate as built on `product/connect-substrate`
-(schema v13). It is the canonical architecture reference and travels with the product code.*
+*This document describes the connected substrate on `master` (schema v13). It is the
+canonical architecture reference and travels with the product code.*

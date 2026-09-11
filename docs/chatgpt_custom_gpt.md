@@ -3,14 +3,20 @@
 ## 1. Start the HTTP API
 
 ```bash
+pip install "memcontext[http]"   # or: pip install -e ".[http]" from a clone
+
 # Terminal 1: Start MemContext HTTP API
 memcontext init --db memcontext.db
-memcontext serve-http --db memcontext.db --port 8100
+MEMCONTEXT_HTTP_TOKEN=choose-a-token memcontext serve-http --db memcontext.db --port 8100
 
-# Terminal 2: Expose via ngrok (so ChatGPT can reach it)
+# Terminal 2: Expose it (so ChatGPT can reach it)
 ngrok http 8100
 # Copy the https://xxxx.ngrok-free.app URL
 ```
+
+Every `/api/*` route requires a bearer token. Pin one with
+`MEMCONTEXT_HTTP_TOKEN` as above (or let `serve-http` print a generated one).
+You will paste this token into the GPT's action authentication in step 2.
 
 ## 2. Create Custom GPT
 
@@ -28,8 +34,11 @@ When the user says "remember this" or shares information to save, call the memor
 When the user asks a question that might be answered from memory, call memory_query first.
 Always tell the user what you stored or found, including the source/provenance.
 
-You are one of many AIs connected to this memory. The user may have stored information from Claude Code, Cursor, browser observations, or other tools. Treat all memory equally regardless of source.
+You are one of many AIs connected to this memory. The user may have stored information from Claude Code, Cursor, or other tools. Treat all memory equally regardless of source.
 ```
+
+**Actions → Authentication:** choose **API Key**, auth type **Bearer**, and paste
+your `MEMCONTEXT_HTTP_TOKEN`.
 
 **Actions → Import OpenAPI schema:**
 
@@ -37,7 +46,7 @@ You are one of many AIs connected to this memory. The user may have stored infor
 openapi: 3.1.0
 info:
   title: MemContext Memory API
-  version: 0.1.0
+  version: 0.2.0
   description: Universal AI memory layer — store, query, and trace structured claims with provenance.
 servers:
   - url: https://YOUR-NGROK-URL-HERE

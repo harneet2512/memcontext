@@ -230,8 +230,18 @@ def serve(db: str, transport: str, host: str, port: int, token: str | None,
 
     from memcontext.retrieval import enforce_semantic_policy, semantic_enabled
 
+    # stdio transport: stdout is the JSON-RPC pipe — ALL status output (click
+    # echoes AND structlog warnings) must go to stderr or the stream corrupts.
+    _to_stderr = transport == "stdio"
+    if _to_stderr:
+        import structlog
+
+        structlog.configure(
+            logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+        )
     click.echo(
-        f"[memcontext] Semantic memory: {'ON' if semantic_enabled() else 'OFF (degraded lexical-only)'}"
+        f"[memcontext] Semantic memory: {'ON' if semantic_enabled() else 'OFF (degraded lexical-only)'}",
+        err=_to_stderr,
     )
     enforce_semantic_policy()  # loud warning, or raises under MEMCONTEXT_REQUIRE_EMBEDDINGS=1
     token = token or os.environ.get("MEMCONTEXT_MCP_TOKEN")
