@@ -1,5 +1,7 @@
 # MemContext
 
+[![CI](https://github.com/harneet2512/memcontext/actions/workflows/ci.yml/badge.svg)](https://github.com/harneet2512/memcontext/actions/workflows/ci.yml)
+
 **An auditable memory and context substrate for AI agents.**
 
 MemContext represents remembered information as structured claims with provenance and typed update history, then serves the current relevant state through MCP, HTTP, and Python interfaces. It is not a vector store for chat logs: when a fact changes, the old claim is superseded by a typed edge — `USER_CORRECTION`, `REFINES`, `CONTRADICTS`, `SEMANTIC_REPLACE` — not silently overwritten, and every claim traces back to the exact source turn and character span it came from.
