@@ -55,7 +55,9 @@ class E5Embedder:
 
     def __init__(self) -> None:
         try:
-            from sentence_transformers import SentenceTransformer
+            from sentence_transformers import (
+                SentenceTransformer,  # pyright: ignore[reportMissingImports]
+            )
         except ImportError as exc:
             log.error("substrate.e5_import_failed", error=str(exc))
             raise

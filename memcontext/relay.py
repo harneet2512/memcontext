@@ -253,7 +253,7 @@ class BrainConnector:
 
     async def run(self) -> None:
         """Connect-serve-reconnect loop. Returns only when stop() is called."""
-        import websockets
+        import websockets  # pyright: ignore[reportMissingImports]
 
         backoff = 1.0
         while not self._stop.is_set():

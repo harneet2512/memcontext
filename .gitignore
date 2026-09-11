@@ -6,3 +6,4 @@ data/
 *.db-shm
 .agent_chrome_profile/
 .venv-clean/
+.claude/settings.json

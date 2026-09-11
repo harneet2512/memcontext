@@ -694,7 +694,9 @@ class LLMExtractor:
         client = getattr(self, "_gemini_client", None)
         if client is None:
             try:
-                from google import genai
+                from google import (
+                    genai,  # pyright: ignore[reportMissingImports, reportAttributeAccessIssue]
+                )
             except ImportError as exc:
                 raise ImportError(
                     "The gemini backend requires google-genai. "
@@ -703,7 +705,7 @@ class LLMExtractor:
             client = genai.Client(api_key=self._api_key)
             self._gemini_client = client
 
-        from google.genai import types
+        from google.genai import types  # pyright: ignore[reportMissingImports]
 
         system = next(
             (m["content"] for m in messages if m.get("role") == "system"), ""

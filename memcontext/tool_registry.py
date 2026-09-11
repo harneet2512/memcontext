@@ -399,7 +399,7 @@ def build_tool_index(candidates: Sequence[ToolCandidate]) -> ToolIndex:
     dim = next((len(c.embedding) for c in cands if c.embedding is not None), 0)
     if dim:
         try:
-            import numpy as np
+            import numpy as np  # pyright: ignore[reportMissingImports]
 
             mat = np.zeros((n, dim), dtype=np.float32)
             for i, c in enumerate(cands):
@@ -450,7 +450,7 @@ def semantic_scores_indexed(
     n = len(index)
     if query_embedding is None or index.emb_matrix is None:
         return [0.0] * n
-    import numpy as np
+    import numpy as np  # pyright: ignore[reportMissingImports]
 
     q = np.asarray(query_embedding, dtype=np.float32)
     norm = float(np.linalg.norm(q))

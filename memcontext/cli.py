@@ -297,7 +297,7 @@ def share(db: str, port: int, password: str | None) -> None:
             click.echo(f"[memcontext] Generated login password (saved to {cfg_path.name})")
 
     try:
-        from pycloudflared import try_cloudflare
+        from pycloudflared import try_cloudflare  # pyright: ignore[reportMissingImports]
     except ImportError:
         click.echo("[memcontext] share requires pycloudflared:"
                    " python -m pip install pycloudflared", err=True)
@@ -354,7 +354,7 @@ def serve_http(db: str, port: int, host: str, share: bool) -> None:
     if share:
         import threading
         try:
-            from pycloudflared import try_cloudflare
+            from pycloudflared import try_cloudflare  # pyright: ignore[reportMissingImports]
         except ImportError:
             click.echo(
                 "[memcontext] --share requires pycloudflared: python -m pip install pycloudflared",
