@@ -16,6 +16,7 @@ import pytest
 # this scenario smoke test cleanly when it isn't importable in a fresh checkout.
 pytest.importorskip("demo.scenario")
 from demo.scenario import seed_demo
+
 from memcontext.brain import brain
 from memcontext.mcp_tools import handle_memory_trace
 

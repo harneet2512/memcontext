@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from memcontext.predicate_packs import active_pack, load_pack, load_packs
-
 
 # ---------------------------------------------------------------------------
 # General pack tests

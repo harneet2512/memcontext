@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import struct
 
 from memcontext.retrieval import (
@@ -40,7 +39,7 @@ def test_encode_decode_vector_roundtrip():
     encoded = _encode_vector(vec)
     decoded = _decode_vector(encoded)
     assert len(decoded) == len(vec)
-    for a, b in zip(vec, decoded):
+    for a, b in zip(vec, decoded, strict=True):
         assert abs(a - b) < 1e-6
 
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 import math
 import sqlite3
 import time
-from dataclasses import dataclass
 
 import structlog
 

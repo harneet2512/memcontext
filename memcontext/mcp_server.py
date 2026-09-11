@@ -6,6 +6,7 @@ All MCP-specific imports are lazy so mcp_tools.py works standalone.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import structlog
 
@@ -51,6 +52,7 @@ def run_server(
     import asyncio
     import logging
     import sys
+
     import structlog
     # Redirect structlog to stderr so it doesn't pollute the stdio JSON-RPC transport
     structlog.configure(
@@ -58,7 +60,6 @@ def run_server(
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
 
-    from memcontext.schema import open_database
     from memcontext.mcp_tools import (
         handle_brain,
         handle_memory_contradictions,
@@ -66,18 +67,19 @@ def run_server(
         handle_memory_digest,
         handle_memory_entity_graph,
         handle_memory_events,
+        handle_memory_forget,
         handle_memory_life_events,
+        handle_memory_output_provenance,
         handle_memory_profile,
         handle_memory_query,
         handle_memory_stats,
         handle_memory_store,
         handle_memory_trace,
-        handle_memory_working_context,
-        handle_memory_output_provenance,
-        handle_memory_forget,
         handle_memory_trust_status,
         handle_memory_verify,
+        handle_memory_working_context,
     )
+    from memcontext.schema import open_database
 
     conn = open_database(db_path)
 
@@ -410,16 +412,11 @@ def create_http_app(db_path: str = "memcontext.db"):
 
     ChatGPT connects via: https://your-ngrok-url/mcp
     """
-    from contextlib import asynccontextmanager
 
     import anyio
     from mcp.server import Server
     from mcp.server.streamable_http import StreamableHTTPServerTransport
     from mcp.types import TextContent, Tool
-    from starlette.applications import Starlette
-    from starlette.requests import Request
-    from starlette.responses import Response
-    from starlette.routing import Route
 
     from memcontext.mcp_tools import (
         handle_brain,
@@ -428,22 +425,21 @@ def create_http_app(db_path: str = "memcontext.db"):
         handle_memory_digest,
         handle_memory_entity_graph,
         handle_memory_events,
+        handle_memory_forget,
         handle_memory_life_events,
+        handle_memory_output_provenance,
         handle_memory_profile,
         handle_memory_query,
         handle_memory_stats,
         handle_memory_store,
         handle_memory_trace,
-        handle_memory_working_context,
-        handle_memory_output_provenance,
-        handle_memory_forget,
         handle_memory_trust_status,
         handle_memory_verify,
+        handle_memory_working_context,
     )
     from memcontext.schema import open_database
 
     conn = open_database(db_path)
-    transports: dict[str, StreamableHTTPServerTransport] = {}
 
     from memcontext.extractors import auto_extractor
     store_extractor = auto_extractor()
@@ -496,6 +492,8 @@ def create_http_app(db_path: str = "memcontext.db"):
                      inputSchema={"type":"object","properties":{"session_id":{"type":"string"}}}),
                 Tool(name="memory_verify", description="Verify cited claim_ids against the durable serve-events ledger for a session.",
                      inputSchema={"type":"object","properties":{"session_id":{"type":"string"},"claim_ids":{"type":"array","items":{"type":"string"}}},"required":["session_id","claim_ids"]}),
+                Tool(name="tool_discover", description="Curate the agent's tool set: top-K relevant registry tools for a query (query-only by default; use_memory=true conditions on user memory).",
+                     inputSchema={"type":"object","properties":{"query":{"type":"string"},"session_ids":{"type":"array","items":{"type":"string"}},"top_k":{"type":"integer","default":10},"use_memory":{"type":"boolean","default":False}},"required":["query"]}),
             ]
 
         @server.call_tool()
@@ -539,6 +537,10 @@ def create_http_app(db_path: str = "memcontext.db"):
                     result = handle_memory_contradictions(conn, **arguments)
                 elif name == "memory_verify":
                     result = handle_memory_verify(conn, **arguments)
+                elif name == "tool_discover":
+                    from memcontext.mcp_tools import handle_tool_discover
+
+                    result = handle_tool_discover(conn, **arguments)
                 else:
                     result = {"error": f"Unknown tool: {name}"}
             except Exception as exc:  # malformed/hostile input or handler error
@@ -548,7 +550,7 @@ def create_http_app(db_path: str = "memcontext.db"):
 
         return server
 
-    state = {"transport": None, "task": None}
+    state: dict[str, Any] = {"transport": None, "task": None}
 
     async def ensure_transport():
         """Lazy-init: create transport + server on first request."""

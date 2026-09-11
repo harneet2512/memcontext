@@ -10,7 +10,6 @@ Same database, same memory. Two doors in.
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 import secrets
@@ -21,14 +20,14 @@ import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 log = structlog.get_logger(__name__)
 
 app = FastAPI(
     title="MemContext",
     description="Universal AI memory layer. Store, query, and trace structured claims with provenance.",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 # CORS default-deny: no cross-origin access unless MEMCONTEXT_HTTP_ORIGINS lists
@@ -383,7 +382,7 @@ async def hook_pre_tool_use(request: Request):
         scored.sort(key=lambda x: -x[1])
         lines = []
         char_count = 0
-        for c, score in scored[:5]:
+        for c, _score in scored[:5]:
             line = f"- {c.subject}: {c.value}"
             if char_count + len(line) > 1500:
                 break
@@ -408,47 +407,6 @@ async def hook_pre_tool_use(request: Request):
 async def hook_stop(request: Request):
     """Session boundary marker. No-op."""
     return {"status": "ok"}
-
-
-# ── Session propagation (Chrome extension → Agent browser) ──
-
-AGENT_PROFILE = None
-
-def _get_cookie_cache():
-    import os
-    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".agent_chrome_profile")
-    os.makedirs(base, exist_ok=True)
-    return os.path.join(base, "_stolen_cookies.json")
-
-@app.post("/api/sessions/export")
-async def sessions_export(request: Request):
-    body = await request.json()
-    cookies = body.get("cookies", [])
-    if not cookies:
-        raise HTTPException(400, "No cookies provided")
-
-    path = _get_cookie_cache()
-    with open(path, "w") as f:
-        json.dump(cookies, f)
-
-    domains = {c.get("domain", "") for c in cookies}
-    return {
-        "status": "ok",
-        "cookies_received": len(cookies),
-        "domains": len(domains),
-        "saved_to": path,
-    }
-
-@app.get("/api/sessions/status")
-def sessions_status():
-    import os
-    path = _get_cookie_cache()
-    if os.path.exists(path):
-        with open(path) as f:
-            cookies = json.load(f)
-        domains = {c.get("domain", "") for c in cookies}
-        return {"has_sessions": True, "cookies": len(cookies), "domains": len(domains)}
-    return {"has_sessions": False}
 
 
 # ── Core ─────────────────────────────────────────────────

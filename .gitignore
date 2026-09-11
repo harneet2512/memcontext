@@ -1,2 +1,7 @@
 __pycache__/
 data/
+.venv/
+*.db
+*.db-wal
+*.db-shm
+.agent_chrome_profile/

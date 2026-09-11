@@ -9,7 +9,7 @@ from memcontext.provenance import (
     sentence_ids_for_claim,
     span_for_claim,
 )
-from memcontext.schema import Claim, OutputSection, Speaker, Turn
+from memcontext.schema import OutputSection, Speaker, Turn
 
 
 def test_claim_ids_for_turn(db: sqlite3.Connection, session_id: str, sample_turn: Turn):

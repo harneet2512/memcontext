@@ -13,6 +13,7 @@ turn — claims emitted together from one utterance are additive.
 """
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 import uuid
 
@@ -83,7 +84,7 @@ def _record_drift_blocked(
     import time
     import uuid
 
-    try:
+    with contextlib.suppress(Exception):  # noqa: BLE001
         conn.execute(
             "INSERT INTO decisions (decision_id, session_id, kind, target_type,"
             " target_id, claim_state_snapshot, ts)"
@@ -94,8 +95,6 @@ def _record_drift_blocked(
                          "edge_type": edge_type.value}),
              time.time_ns()),
         )
-    except Exception:  # noqa: BLE001
-        pass
     log.info("substrate.supersession_blocked_low_trust",
              new_claim_id=new_claim.claim_id, old_claim_id=old_claim.claim_id,
              edge_type=edge_type.value)

@@ -12,13 +12,13 @@ from memcontext.claims import insert_claim
 from memcontext.extractors import PassthroughExtractor
 from memcontext.on_new_turn import on_new_turn
 from memcontext.retrieval import retrieve_hybrid
+from memcontext.schema import Speaker, open_database
 from memcontext.source_trust import (
     EXTERNAL_WEB,
     TRUSTED_USER,
     trust_for_source,
 )
 from memcontext.supersession import detect_pass1
-from memcontext.schema import Speaker, open_database
 
 
 def _conn():

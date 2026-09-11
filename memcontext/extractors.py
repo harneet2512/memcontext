@@ -384,6 +384,9 @@ def _to_extracted_claims(
         if not isinstance(value, str) or not value.strip():
             drop_count += 1
             continue
+        if confidence_raw is None:
+            drop_count += 1
+            continue
         try:
             confidence = float(confidence_raw)
         except (TypeError, ValueError):
@@ -661,6 +664,7 @@ class LLMExtractor:
             "Authorization": f"Bearer {self._api_key}",
             "X-Title": "memcontext",
         }
+        assert self._base_url is not None  # set for the openrouter backend
         for attempt in range(6):
             resp = self._session.post(
                 self._base_url, headers=headers, json=payload,

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import secrets
 import time
+from typing import cast
 
 import structlog
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
@@ -167,7 +168,8 @@ class MemContextOAuthProvider(
         return c
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
-        self._clients[client_info.client_id] = client_info
+        cid = cast(str, client_info.client_id)  # set post-registration per spec
+        self._clients[cid] = client_info
         self._persist_client(client_info)
 
     # --- authorization ---
@@ -176,7 +178,7 @@ class MemContextOAuthProvider(
     ) -> str:
         """Hand off to our password-gated login page; return its URL for the 302."""
         rid = secrets.token_urlsafe(16)
-        self._pending[rid] = (client.client_id, params)
+        self._pending[rid] = (cast(str, client.client_id), params)
         return f"{self._public}/memcontext/login?rid={rid}"
 
     def password_ok(self, password: str) -> bool:
@@ -219,14 +221,15 @@ class MemContextOAuthProvider(
         access = secrets.token_urlsafe(32)
         refresh = secrets.token_urlsafe(32)
         scopes = list(authorization_code.scopes)
+        cid = cast(str, client.client_id)
         at = AccessToken(
-            token=access, client_id=client.client_id, scopes=scopes,
+            token=access, client_id=cid, scopes=scopes,
             expires_at=int(time.time() + _TOKEN_TTL), resource=authorization_code.resource,
         )
         self._access[access] = at
-        self._refresh[refresh] = (client.client_id, scopes)
+        self._refresh[refresh] = (cid, scopes)
         self._persist_access(at)
-        self._persist_refresh(refresh, client.client_id, scopes)
+        self._persist_refresh(refresh, cid, scopes)
         return OAuthToken(
             access_token=access, token_type="Bearer", expires_in=_TOKEN_TTL,
             scope=" ".join(scopes) or None, refresh_token=refresh,
@@ -238,7 +241,7 @@ class MemContextOAuthProvider(
     ) -> RefreshToken | None:
         rec = self._refresh.get(refresh_token) or self._load_refresh_db(refresh_token)
         if rec and rec[0] == client.client_id:
-            return RefreshToken(token=refresh_token, client_id=client.client_id,
+            return RefreshToken(token=refresh_token, client_id=cast(str, client.client_id),
                                 scopes=rec[1], expires_at=None)
         return None
 
@@ -251,14 +254,15 @@ class MemContextOAuthProvider(
         sc = scopes or refresh_token.scopes
         access = secrets.token_urlsafe(32)
         new_refresh = secrets.token_urlsafe(32)
+        cid = cast(str, client.client_id)
         at = AccessToken(
-            token=access, client_id=client.client_id, scopes=sc,
+            token=access, client_id=cid, scopes=sc,
             expires_at=int(time.time() + _TOKEN_TTL), resource=None,
         )
         self._access[access] = at
-        self._refresh[new_refresh] = (client.client_id, sc)
+        self._refresh[new_refresh] = (cid, sc)
         self._persist_access(at)
-        self._persist_refresh(new_refresh, client.client_id, sc)
+        self._persist_refresh(new_refresh, cid, sc)
         return OAuthToken(
             access_token=access, token_type="Bearer", expires_in=_TOKEN_TTL,
             scope=" ".join(sc) or None, refresh_token=new_refresh,

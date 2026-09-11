@@ -9,9 +9,8 @@ from memcontext.claims import (
     insert_turn,
     new_turn_id,
     now_ns,
-    set_claim_status,
 )
-from memcontext.schema import ClaimStatus, Speaker, Turn, open_database
+from memcontext.schema import Speaker, Turn
 from memcontext.supersession import detect_pass1
 
 

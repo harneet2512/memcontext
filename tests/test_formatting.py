@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import json
 
-from memcontext.formatting import format_context_for_reader, format_context_json, format_reader_prompt
+from memcontext.formatting import (
+    format_context_for_reader,
+    format_reader_prompt,
+)
 
 
 def test_format_empty():

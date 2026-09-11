@@ -25,14 +25,14 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 print("=== MCP Tool Handler Smoke Test ===\n")
 
-from memcontext.schema import open_database
-from memcontext.mcp_tools import (
-    handle_memory_store,
-    handle_memory_query,
-    handle_memory_trace,
-    handle_memory_correct,
-)
 from memcontext.claims import get_claim
+from memcontext.mcp_tools import (
+    handle_memory_correct,
+    handle_memory_query,
+    handle_memory_store,
+    handle_memory_trace,
+)
+from memcontext.schema import open_database
 
 conn = open_database(":memory:")
 conn.row_factory = sqlite3.Row
@@ -86,31 +86,31 @@ print("\n=== MCP Protocol Smoke Test ===\n")
 
 try:
     import asyncio
+
     from mcp.client.session import ClientSession
-    from mcp.client.stdio import stdio_client, StdioServerParameters
+    from mcp.client.stdio import StdioServerParameters, stdio_client
 
     async def _test_stdio():
         server_params = StdioServerParameters(
             command="memcontext",
             args=["serve", "--transport", "stdio", "--db", ":memory:"],
         )
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                tools = await session.list_tools()
-                tool_names = {t.name for t in tools.tools}
-                check("stdio lists tools", len(tool_names) >= 4, f"got {tool_names}")
-                check("has memory_store", "memory_store" in tool_names)
-                check("has memory_query", "memory_query" in tool_names)
-                check("has memory_trace", "memory_trace" in tool_names)
-                check("has memory_correct", "memory_correct" in tool_names)
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+            tool_names = {t.name for t in tools.tools}
+            check("stdio lists tools", len(tool_names) >= 4, f"got {tool_names}")
+            check("has memory_store", "memory_store" in tool_names)
+            check("has memory_query", "memory_query" in tool_names)
+            check("has memory_trace", "memory_trace" in tool_names)
+            check("has memory_correct", "memory_correct" in tool_names)
 
-                store_result = await session.call_tool(
-                    "memory_store",
-                    {"text": "I prefer dark mode for coding", "session_id": "proto_test"},
-                )
-                body = json.loads(store_result.content[0].text)
-                check("stdio store works", body.get("admitted") is True, str(body))
+            store_result = await session.call_tool(
+                "memory_store",
+                {"text": "I prefer dark mode for coding", "session_id": "proto_test"},
+            )
+            body = json.loads(store_result.content[0].text)
+            check("stdio store works", body.get("admitted") is True, str(body))
 
     asyncio.run(_test_stdio())
 except ImportError:

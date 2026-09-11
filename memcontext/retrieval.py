@@ -15,20 +15,26 @@ Multi-signal retrieval (retrieve_hybrid):
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import math
 import os
+import re as _re
 import sqlite3
 import struct
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import structlog
 
 from memcontext.claims import list_active_claims
 from memcontext.schema import Claim, Turn
+
+if TYPE_CHECKING:
+    from memcontext.event_frames import EventFrame
 
 log = structlog.get_logger(__name__)
 
@@ -166,6 +172,20 @@ class EmbeddingClient:
     def model_version(self) -> str:
         return self._model_version
 
+    def backend_available(self) -> bool:
+        """True when calling ``embed`` can actually succeed right now.
+
+        Remote (Modal) needs only ``requests``; the local path needs the driver
+        for the configured model — FlagEmbedding for BGE-M3, sentence-transformers
+        otherwise. This is a *capability* check, not a config check: an env flag
+        alone cannot make a missing package importable.
+        """
+        if self._modal_url is not None:
+            return importlib.util.find_spec("requests") is not None
+        if BGE_M3_MODEL_ID == "BAAI/bge-m3":
+            return importlib.util.find_spec("FlagEmbedding") is not None
+        return importlib.util.find_spec("sentence_transformers") is not None
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
@@ -235,7 +255,7 @@ class EmbeddingClient:
         )
         vectors = raw.get("dense_vecs") if isinstance(raw, dict) else raw
         out: list[list[float]] = []
-        for v in vectors:
+        for v in vectors or []:
             out.append([float(x) for x in v])
         return out
 
@@ -273,7 +293,13 @@ def episode_embedder() -> EmbeddingClient | None:
     """
     if os.environ.get(EPISODE_EMBED_ENV, "1") == "0":
         return None
-    return _default_embedding_client()
+    client = _default_embedding_client()
+    # Env-on is intent, not capability: without an importable backend the client
+    # would raise RuntimeError mid-pipeline (Pass-2 supersession, tool routing).
+    # Report degraded mode honestly instead of wiring a client that cannot embed.
+    if not client.backend_available():
+        return None
+    return client
 
 
 def semantic_supersession():
@@ -486,9 +512,7 @@ def _filter_missing_embeddings(
             "SELECT embedding_model_version FROM claim_embeddings WHERE claim_id = ?",
             (c.claim_id,),
         ).fetchone()
-        if row is None:
-            out.append(c)
-        elif row["embedding_model_version"] != model_version:
+        if row is None or row["embedding_model_version"] != model_version:
             out.append(c)
     return out
 
@@ -719,9 +743,6 @@ def _filter_by_branch(claims: list[Claim], branch: str) -> list[Claim]:
 
 # --- temporal parsing ---------------------------------------------------------
 
-import re as _re
-from datetime import datetime, timedelta, timezone
-
 _TEMPORAL_PATTERNS: list[tuple[str, str]] = [
     (r"(?:last|past)\s+(\d+)\s+days?", "last_n_days"),
     (r"(?:last|past)\s+(\d+)\s+weeks?", "last_n_weeks"),
@@ -749,7 +770,7 @@ def parse_temporal_scope(
     if reference_ts is None:
         reference_ts = int(time.time() * 1e9)
 
-    ref_dt = datetime.fromtimestamp(reference_ts / 1e9, tz=timezone.utc)
+    ref_dt = datetime.fromtimestamp(reference_ts / 1e9, tz=UTC)
     q_lower = query.lower()
 
     for pattern, kind in _TEMPORAL_PATTERNS:
@@ -1195,7 +1216,7 @@ def retrieve_hybrid(
         try:
             rerank_scores = reranker(query, texts)
             candidates = [
-                (c, float(rs)) for (c, _), rs in zip(candidates, rerank_scores)
+                (c, float(rs)) for (c, _), rs in zip(candidates, rerank_scores, strict=True)
             ]
             candidates.sort(key=lambda x: (-x[1], x[0].claim_id))
         except Exception:
@@ -1318,12 +1339,7 @@ def retrieve_episodes(
 
 
 _STOPWORDS = frozenset(
-    "i me my we our you your he she it they them the a an is are was were "
-    "be been have has had do did does will would can could should may might "
-    "in on at to for of with from by about into through during before after "
-    "and or but not no nor so if then than that this these those what which "
-    "who whom how when where why all any each every some many much more most "
-    "very also just only even still already yet again too quite really".split()
+    ["i", "me", "my", "we", "our", "you", "your", "he", "she", "it", "they", "them", "the", "a", "an", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do", "did", "does", "will", "would", "can", "could", "should", "may", "might", "in", "on", "at", "to", "for", "of", "with", "from", "by", "about", "into", "through", "during", "before", "after", "and", "or", "but", "not", "no", "nor", "so", "if", "then", "than", "that", "this", "these", "those", "what", "which", "who", "whom", "how", "when", "where", "why", "all", "any", "each", "every", "some", "many", "much", "more", "most", "very", "also", "just", "only", "even", "still", "already", "yet", "again", "too", "quite", "really"]
 )
 
 
@@ -1663,7 +1679,7 @@ def retrieve_with_fallback(
     query: str,
     *,
     top_k: int = 15,
-    embedding_client: "EmbeddingClient | None" = None,
+    embedding_client: EmbeddingClient | None = None,
 ) -> list[dict[str, Any]]:
     """Multi-resolution retrieval: claims first, raw turns as fallback."""
     claim_results = retrieve_hybrid(
@@ -1728,9 +1744,7 @@ def retrieve_with_fallback(
 def _claim_valid_at(claim: Claim, valid_at_ts: int) -> bool:
     if claim.valid_from_ts is not None and claim.valid_from_ts > valid_at_ts:
         return False
-    if claim.valid_until_ts is not None and valid_at_ts >= claim.valid_until_ts:
-        return False
-    return True
+    return not (claim.valid_until_ts is not None and valid_at_ts >= claim.valid_until_ts)
 
 
 # --- event-frame retrieval ---------------------------------------------------
@@ -1788,9 +1802,9 @@ def retrieve_event_frames(
     query: str,
     top_k: int = 8,
     embedding_client: EmbeddingClient | None = None,
-) -> list[tuple["EventFrame", float]]:
+) -> list[tuple[EventFrame, float]]:
     """Retrieve event frames ranked by query-frame cosine similarity."""
-    from memcontext.event_frames import EventFrame, list_event_frames
+    from memcontext.event_frames import list_event_frames
 
     if not query or not query.strip():
         return []

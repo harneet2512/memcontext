@@ -5,10 +5,11 @@ These are usable from CLI, tests, or the MCP server without importing mcp.
 """
 from __future__ import annotations
 
-import json
 import sqlite3
 import uuid
 from typing import TYPE_CHECKING
+
+import structlog
 
 from memcontext.brain import brain
 from memcontext.claims import (
@@ -18,7 +19,6 @@ from memcontext.claims import (
     get_turn,
     insert_fact,
     list_active_claims,
-    row_to_claim,
     set_claim_status,
 )
 from memcontext.extractors import PassthroughExtractor, auto_extractor
@@ -30,6 +30,8 @@ from memcontext.supersession import write_supersession_edge
 if TYPE_CHECKING:
     from memcontext.extraction_queue import ExtractionQueue
     from memcontext.on_new_turn import ExtractorFn
+
+log = structlog.get_logger(__name__)
 
 
 def handle_memory_store(
@@ -527,7 +529,12 @@ def handle_memory_profile(
     max_tokens: int = 500,
 ) -> dict:
     try:
-        from memcontext.profiles import build_smart_profile, format_profile, load_profile, store_profile
+        from memcontext.profiles import (
+            build_smart_profile,
+            format_profile,
+            load_profile,
+            store_profile,
+        )
 
         cached = load_profile(conn, subject)
         if cached:

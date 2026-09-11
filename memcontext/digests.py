@@ -53,6 +53,7 @@ def build_session_digest(
     # ---- Key facts: top 3 by importance ----
     featured_ids: set[str] = set()
     for r in rows[:3]:
+        _cols = r.keys()  # sqlite3.Row: `in` tests values, not columns
         digest.key_facts.append(
             {
                 "claim_id": r["claim_id"],
@@ -60,7 +61,8 @@ def build_session_digest(
                 "value": r["value"],
                 # NL form (always present) — lets NL-only facts (empty triple)
                 # surface in the digest instead of rendering as garbage.
-                "text": r["text"] if "text" in r.keys() else None,
+                # sqlite3.Row: `in` tests values, not columns — use keys().
+                "text": r["text"] if "text" in _cols else None,
                 "importance": r["importance_score"],
             }
         )
@@ -86,12 +88,13 @@ def build_session_digest(
         cid = ur["new_claim_id"]
         if cid in featured_ids:
             continue
+        _ucols = ur.keys()  # sqlite3.Row: `in` tests values, not columns
         digest.updates.append(
             {
                 "claim_id": cid,
                 "predicate": ur["predicate"],
                 "new_value": ur["new_value"],
-                "new_text": ur["new_text"] if "new_text" in ur.keys() else None,
+                "new_text": ur["new_text"] if "new_text" in _ucols else None,
                 "old_value": ur["old_value"],
                 "edge_type": ur["edge_type"],
             }

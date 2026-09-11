@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import sqlite3
 
-from memcontext.claims import insert_claim, set_claim_status
+from memcontext.claims import insert_claim
 from memcontext.projections import (
     claims_grouped_by_subject_predicate,
     filtered_projection,
     rebuild_active_projection,
 )
-from memcontext.schema import Claim, ClaimStatus, Turn
+from memcontext.schema import Turn
 
 
 def test_rebuild_active_projection(
@@ -72,7 +72,7 @@ def test_by_predicate_grouping(
 def test_claims_grouped_by_subject_predicate(
     db: sqlite3.Connection, session_id: str, sample_turn: Turn,
 ):
-    c1 = insert_claim(
+    insert_claim(
         db, session_id=session_id, subject="user", predicate="user_fact",
         value="old value", confidence=0.9, source_turn_id=sample_turn.turn_id,
     )

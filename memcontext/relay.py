@@ -23,12 +23,17 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import json
 import secrets
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
+
+if TYPE_CHECKING:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 log = structlog.get_logger(__name__)
 
@@ -47,7 +52,7 @@ def _unb64(s: str) -> bytes:
 # ----------------------------------------------------------------- identity ---
 
 
-def load_or_create_identity(key_path: str | Path):
+def load_or_create_identity(key_path: str | Path) -> tuple[Ed25519PrivateKey, str]:
     """Ed25519 keypair for this brain; created on first use, reused forever.
 
     Returns (private_key, brain_id). brain_id = first 16 hex chars of
@@ -59,7 +64,10 @@ def load_or_create_identity(key_path: str | Path):
 
     p = Path(key_path)
     if p.exists():
-        key = serialization.load_pem_private_key(p.read_bytes(), password=None)
+        loaded = serialization.load_pem_private_key(p.read_bytes(), password=None)
+        if not isinstance(loaded, Ed25519PrivateKey):
+            raise TypeError(f"{p} does not contain an Ed25519 private key")
+        key = loaded
     else:
         key = Ed25519PrivateKey.generate()
         p.write_bytes(
@@ -165,7 +173,7 @@ def create_relay_app():
             await ws.send_text(json.dumps(frame))
         try:
             resp = await asyncio.wait_for(fut, timeout=_REQUEST_TIMEOUT)
-        except (asyncio.TimeoutError, asyncio.CancelledError):
+        except (TimeoutError, asyncio.CancelledError):
             pending.pop(req_id, None)
             return Response(
                 json.dumps({"error": "brain timeout"}), status_code=504,
@@ -275,10 +283,8 @@ class BrainConnector:
                 return
             except Exception as exc:  # relay unreachable / dropped — retry
                 log.warning("relay.reconnect", error=type(exc).__name__, wait=backoff)
-                try:
+                with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(self._stop.wait(), timeout=backoff)
-                except asyncio.TimeoutError:
-                    pass
                 backoff = min(backoff * 2, 30.0)
 
     def stop(self) -> None:

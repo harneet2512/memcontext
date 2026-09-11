@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 _PACKAGE_DIR = Path(__file__).resolve().parent.parent
@@ -152,7 +152,7 @@ def load_packs(pack_ids: list[str]) -> PredicatePack:
     )
 
 
-@lru_cache(maxsize=None)
+@cache
 def active_pack() -> PredicatePack:
     """Return the active pack.
 

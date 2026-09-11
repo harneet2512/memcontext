@@ -10,7 +10,7 @@ from memcontext.digests import (
     load_digest,
     store_digest,
 )
-from memcontext.schema import Speaker, Turn, open_database
+from memcontext.schema import Speaker, Turn
 
 
 def _insert_turn(conn: sqlite3.Connection, session_id: str, text: str = "test") -> Turn:

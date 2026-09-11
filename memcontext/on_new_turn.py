@@ -209,7 +209,18 @@ def run_extraction(
             )
 
         if semantic is not None and edge1 is None:
-            edge2 = semantic.detect(conn, claim, new_turn_text=turn.text)
+            try:
+                edge2 = semantic.detect(conn, claim, new_turn_text=turn.text)
+            except Exception:  # noqa: BLE001 — Pass-2 is best-effort; an
+                # embedding failure (model missing, remote down) degrades to
+                # structural supersession only. It must never break ingest.
+                log.warning(
+                    "substrate.semantic_supersession_failed",
+                    session_id=session_id,
+                    claim_id=claim.claim_id,
+                    exc_info=True,
+                )
+                edge2 = None
             if edge2 is not None:
                 edges.append(edge2)
                 bus.publish(

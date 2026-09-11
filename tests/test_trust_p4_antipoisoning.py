@@ -13,8 +13,8 @@ from memcontext.claims import insert_claim
 from memcontext.extractors import PassthroughExtractor
 from memcontext.mcp_tools import handle_memory_query
 from memcontext.on_new_turn import on_new_turn
-from memcontext.supersession import detect_pass1
 from memcontext.schema import Speaker, open_database
+from memcontext.supersession import detect_pass1
 
 
 def _conn():

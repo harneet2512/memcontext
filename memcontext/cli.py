@@ -1,6 +1,7 @@
 """MemContext CLI — command-line interface for the memory substrate."""
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -97,7 +98,7 @@ def ingest(text: str, db: str, session: str, speaker: str, namespace: str) -> No
         conn.close()
         return
 
-    click.echo(f"Turn ingested: {result.turn.turn_id}")
+    click.echo(f"Turn ingested: {result.turn.turn_id if result.turn else 'unknown'}")
     click.echo(f"Claims created: {len(result.created_claims)}")
     for c in result.created_claims:
         click.echo(f"  [{c.predicate}] {c.subject}: {c.value} (confidence={c.confidence})")
@@ -196,21 +197,6 @@ def trace(db: str, session: str, subject: str, predicate: str, as_json: bool) ->
 
 
 @main.command()
-@click.option("--db", default="memcontext_demo.db", help="Demo database file (recreated each run).")
-@click.option(
-    "--pack",
-    type=click.Choice(["developer", "general"]),
-    default="developer",
-    help="Predicate vocabulary for the demo (controls the gaps report).",
-)
-def demo(db: str, pack: str) -> None:
-    """Run the 'one corrected fact, three memories' differentiator demo."""
-    from demo.run_demo import run
-
-    run(db=db, pack=pack)
-
-
-@main.command()
 @click.option("--db", default="memcontext.db", help="Database file path.")
 @click.option(
     "--transport", type=click.Choice(["stdio", "http"]), default="stdio",
@@ -259,7 +245,7 @@ def serve(db: str, transport: str, host: str, port: int, token: str | None,
         click.echo(
             "MCP server not available. Install with: pip install memcontext[mcp]", err=True
         )
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
 
 @main.command()
@@ -305,7 +291,7 @@ def share(db: str, port: int, password: str | None) -> None:
     except ImportError:
         click.echo("[memcontext] share requires pycloudflared:"
                    " python -m pip install pycloudflared", err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     # Tunnel FIRST: the OAuth issuer must be the public URL, so resolve it before
     # the server starts. The tunnel is outbound-only; data stays in the local DB.
@@ -337,14 +323,21 @@ def share(db: str, port: int, password: str | None) -> None:
               help="Expose via Cloudflare tunnel for remote MCP (ChatGPT, Gemini).")
 def serve_http(db: str, port: int, host: str, share: bool) -> None:
     """Start the HTTP API server (for ChatGPT, Gemini, browser extensions, any AI)."""
-    from memcontext.http_server import run_server
+    try:
+        from memcontext.http_server import run_server
+    except ImportError:
+        click.echo(
+            "HTTP API server not available. Install with: pip install \"memcontext[http]\"",
+            err=True,
+        )
+        raise SystemExit(1) from None
     from memcontext.retrieval import enforce_semantic_policy, semantic_enabled
 
     click.echo(
         f"[memcontext] Semantic memory: {'ON' if semantic_enabled() else 'OFF (degraded lexical-only)'}"
     )
     enforce_semantic_policy()
-    click.echo(f"[memcontext] Local MCP ready (stdio)")
+    click.echo("[memcontext] Local MCP ready (stdio)")
     click.echo(f"[memcontext] HTTP API ready: http://localhost:{port}")
     click.echo(f"[memcontext] Database: {db}")
 
@@ -357,14 +350,14 @@ def serve_http(db: str, port: int, host: str, share: bool) -> None:
                 "[memcontext] --share requires pycloudflared: python -m pip install pycloudflared",
                 err=True,
             )
-            raise SystemExit(1)
+            raise SystemExit(1) from None
 
         def start_tunnel():
             try:
                 info = try_cloudflare(port=port)
                 url = info.tunnel
                 click.echo(f"[memcontext] Remote MCP ready: {url}/mcp/")
-                click.echo(f"             Paste this URL into ChatGPT/Gemini ->")
+                click.echo("             Paste this URL into ChatGPT/Gemini ->")
                 click.echo(f"             Settings -> Connectors -> Create -> URL: {url}/mcp/")
             except Exception as e:
                 click.echo(f"[memcontext] Tunnel failed: {e}", err=True)
@@ -461,9 +454,8 @@ def uninstall(client: str, db: str, user: bool, purge: bool, project_dir: str) -
             removed.append(str(cc.claude_project_path(project_dir)))
         if user and cc.detach_claude(cc.claude_user_path()):
             removed.append(str(cc.claude_user_path()))
-    if client in ("codex", "both"):
-        if cc.detach_codex(cc.codex_path()):
-            removed.append(str(cc.codex_path()))
+    if client in ("codex", "both") and cc.detach_codex(cc.codex_path()):
+        removed.append(str(cc.codex_path()))
 
     # Strip MemContext ambient hooks (urls under /api/hooks/) from .claude/settings.json.
     settings_path = os.path.join(project_dir, ".claude", "settings.json")
@@ -502,10 +494,8 @@ def uninstall(client: str, db: str, user: bool, purge: bool, project_dir: str) -
     db_abs = os.path.abspath(db)
     if purge:
         for suffix in ("", "-wal", "-shm"):
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(db_abs + suffix)
-            except OSError:
-                pass
         click.echo(f"[memcontext] purged database {db_abs}")
     elif os.path.exists(db_abs):
         click.echo(f"[memcontext] your data is preserved at {db_abs} (use --purge to delete).")
@@ -555,9 +545,9 @@ def install(port: int, project_dir: str) -> None:
     click.echo("Restart Claude Code to activate. Run 'memcontext serve-http' first.")
 
 
-@hooks.command()
+@hooks.command("uninstall")
 @click.option("--project-dir", default=".", help="Project directory containing .claude/")
-def uninstall(project_dir: str) -> None:
+def hooks_uninstall(project_dir: str) -> None:
     """Remove ambient hooks from .claude/settings.json."""
     settings_path = os.path.join(project_dir, ".claude", "settings.json")
     if not os.path.exists(settings_path):

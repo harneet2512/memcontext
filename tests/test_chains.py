@@ -5,7 +5,7 @@ import sqlite3
 
 from memcontext.chains import ChainStep, build_chain, format_chain
 from memcontext.claims import insert_claim, insert_turn, new_turn_id, now_ns
-from memcontext.schema import Speaker, Turn, open_database
+from memcontext.schema import Speaker, Turn
 from memcontext.supersession import detect_pass1
 
 
@@ -46,7 +46,7 @@ def test_build_chain_no_history(db, session_id):
 def test_build_chain_with_supersession(db, session_id):
     """A chain with one supersession has 2 steps: old then new."""
     turn_a = _insert_turn(db, session_id, "My favorite city is Portland")
-    claim_a = insert_claim(
+    insert_claim(
         db,
         session_id=session_id,
         subject="user",
@@ -86,7 +86,7 @@ def test_build_chain_with_supersession(db, session_id):
 def test_format_chain(db, session_id):
     """format_chain produces readable text with dates."""
     turn_a = _insert_turn(db, session_id, "My employer company is Acme Corp")
-    claim_a = insert_claim(
+    insert_claim(
         db,
         session_id=session_id,
         subject="user",

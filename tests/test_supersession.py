@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from memcontext.claims import insert_claim, insert_turn, new_turn_id, now_ns
-from memcontext.schema import Claim, ClaimStatus, EdgeType, Speaker, Turn
+from memcontext.schema import ClaimStatus, EdgeType, Speaker, Turn
 from memcontext.supersession import detect_pass1
 
 
@@ -45,7 +45,7 @@ def test_pass1_same_value_no_supersession(
     db: sqlite3.Connection, session_id: str,
 ):
     t1 = _make_turn(db, session_id, Speaker.USER, "I like coffee")
-    c1 = insert_claim(
+    insert_claim(
         db, session_id=session_id, subject="user", predicate="user_preference",
         value="likes coffee", confidence=0.9, source_turn_id=t1.turn_id,
     )
@@ -62,7 +62,7 @@ def test_pass1_low_jaccard_no_supersession(
     db: sqlite3.Connection, session_id: str,
 ):
     t1 = _make_turn(db, session_id, Speaker.USER, "I like coffee")
-    c1 = insert_claim(
+    insert_claim(
         db, session_id=session_id, subject="user", predicate="user_fact",
         value="lives in Toronto Canada", confidence=0.9, source_turn_id=t1.turn_id,
     )
@@ -79,7 +79,7 @@ def test_pass1_edge_type_user_correction(
     db: sqlite3.Connection, session_id: str,
 ):
     t1 = _make_turn(db, session_id, Speaker.USER, "I have two kids")
-    c1 = insert_claim(
+    insert_claim(
         db, session_id=session_id, subject="user", predicate="user_fact",
         value="has two kids", confidence=0.9, source_turn_id=t1.turn_id,
     )
@@ -97,7 +97,7 @@ def test_pass1_edge_type_assistant_confirm(
     db: sqlite3.Connection, session_id: str,
 ):
     t1 = _make_turn(db, session_id, Speaker.USER, "I have two kids")
-    c1 = insert_claim(
+    insert_claim(
         db, session_id=session_id, subject="user", predicate="user_fact",
         value="has two kids", confidence=0.9, source_turn_id=t1.turn_id,
     )
@@ -115,7 +115,7 @@ def test_pass1_same_turn_guard(
     db: sqlite3.Connection, session_id: str,
 ):
     t1 = _make_turn(db, session_id, Speaker.USER, "I have two kids and three dogs")
-    c1 = insert_claim(
+    insert_claim(
         db, session_id=session_id, subject="user", predicate="user_fact",
         value="has two kids", confidence=0.9, source_turn_id=t1.turn_id,
     )

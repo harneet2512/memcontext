@@ -1,330 +1,169 @@
 # MemContext
 
-**Memory and context layer for your AI, via [MCP](https://modelcontextprotocol.io/).**
+**An auditable memory and context substrate for AI agents.**
 
-MemContext gives any AI agent (Claude, ChatGPT, Cursor, or your own) persistent memory that actually works. It watches conversations, browser pages, and tool use; remembers what matters; knows when facts change; and serves the right context back through MCP or REST when your AI needs it.
+MemContext represents remembered information as structured claims with provenance and typed update history, then serves the current relevant state through MCP, HTTP, and Python interfaces. It is not a vector store for chat logs: when a fact changes, the old claim is superseded by a typed edge — `USER_CORRECTION`, `REFINES`, `CONTRADICTS`, `SEMANTIC_REPLACE` — not silently overwritten, and every claim traces back to the exact source turn and character span it came from.
 
-No vector-DB-and-pray. Every fact is a structured claim with provenance, confidence, and a supersession chain that tracks *why* things changed, not just *that* they changed.
-
-> Built inside [RobbyMD](https://github.com/harneet2512/RobbyMD), a clinical diagnostic agent where memory had to be auditable and correct. Now extracted as a standalone layer for any AI.
+> Originated inside [RobbyMD](https://github.com/harneet2512/RobbyMD), a clinical diagnostic agent where memory had to be auditable and correct. Extracted as a standalone, domain-agnostic substrate. AGPL-3.0.
 
 ---
 
-## Demo
+## The problem
 
-<div align="center">
+Agents forget, and naive memory layers make it worse. A vector database over conversation chunks can recall *that something was said* but cannot represent *that a fact changed, why it changed, or which version is current*. It returns stale and current text side by side and lets the model sort it out.
 
-https://github.com/user-attachments/assets/cbd05bcb-d272-4051-b2a7-210f4bcc5777
+MemContext treats memory as state, not search: claims are written once, supersession is explicit and typed, and what an agent sees is the **active projection** — the current known state — plus the evidence trail behind it.
 
-</div>
+## What it does differently
 
----
-
-## The Agent
-
-MemContext ships with an autonomous browser agent that watches what you do, remembers what it sees, and serves that context back to any AI that asks.
-
-### How it works
-
-```
-                  Chrome Extension
-                  (export sessions)
-                        |
-                        v
- +--------------------------------------------------+
- |           Agent Browser (Patchright)              |
- |  - Autonomous Chromium with dedicated profile     |
- |  - Injected overlay UI (mode indicator + toggle)  |
- |  - Session propagation from user's Chrome         |
- +--------------------------------------------------+
-        |                              |
-        v                              v
- +------------------+     +-----------------------+
- | Observe Pages    |     | Overlay UI            |
- | (a11y tree →     |     | - Agent/Human toggle  |
- |  structured      |     | - Orange/green border |
- |  claims)         |     | - Click to take over  |
- +------------------+     +-----------------------+
-        |
-        v
- +--------------------------------------------------+
- |              MemContext Memory                     |
- |  SQLite + claims + supersession + provenance      |
- +--------------------------------------------------+
-        |                    |                |
-        v                    v                v
- +-------------+   +-----------------+   +----------+
- | MCP Server  |   | REST API (:8100)|   | Hooks    |
- | (stdio)     |   | (FastAPI)       |   | (silent  |
- |             |   |                 |   |  context |
- | Claude Code |   | ChatGPT, Gemini|   |  inject) |
- | Cursor      |   | Custom agents  |   |          |
- +-------------+   +-----------------+   +----------+
-```
-
-### Overlay UI
-
-The agent browser injects a floating overlay on every page:
-
-- **Orange border + pill** = agent mode (autonomous, user input blocked)
-- **Green border + pill** = human mode (you're in control, agent watches)
-- Click the toggle button to switch between modes
-- Dark mode detection — overlay adapts to page background
-
-### Session propagation
-
-1. User installs the MemContext Connector extension in their Chrome
-2. Clicks "Export Sessions to Agent" — cookies POST to `localhost:8100`
-3. Agent browser picks up exported cookies and injects them
-4. Sessions persist in a dedicated agent profile across restarts
-
-### Silent context injection (hooks)
-
-The HTTP server exposes hook endpoints that Claude Code calls automatically:
-
-| Hook | What it does |
-|------|-------------|
-| `pre_tool_use` | Injects relevant memory claims as context before tool calls — the AI "just knows" what it saw |
-| `post_tool_use` | Captures meaningful actions (edits, writes, commands) as memory claims |
-| `user_prompt_submit` | Stores user decisions and intent silently |
-
-The agent never interrupts. Context appears in the AI's prompt without the user seeing any API calls.
-
-### Two doors into the same memory
-
-| Interface | Transport | Clients |
-|-----------|-----------|---------|
-| **MCP Server** | stdio / Streamable HTTP | Claude Code, Cursor, any MCP client |
-| **REST API** | HTTP `:8100` | ChatGPT (via GPT Actions), Gemini, browser extensions, custom agents |
-
-Both hit the same SQLite database. An observation made through the REST API is queryable via MCP and vice versa.
-
----
-
-## Why MemContext
-
-- **Provenance-backed claims** — every fact traces back to exact source text, turn, and extraction confidence. Nothing is silently overwritten.
-- **Two-pass supersession** — deterministic structural matching (Pass 1) + semantic embedding similarity (Pass 2). Typed edges explain *why* a fact changed: `USER_CORRECTION`, `REFINES`, `CONTRADICTS`, `SEMANTIC_REPLACE`.
-- **Zero cloud API calls required** — local Ollama inference or regex extractors. Embeddings via sentence-transformers. No mandatory external dependencies.
-- **Composable domain vocabularies** — predicate packs define what a domain cares about. Swap `general` for `developer` or `personal_assistant`, or compose them.
-- **Four-signal hybrid retrieval** — semantic + BM25 + entity + temporal, fused via Reciprocal Rank Fusion.
-- **Browser observation** — accessibility tree extraction from live pages. Diff-based revisits trigger automatic supersession.
-- **Deterministic core** — projections, profiles, digests, chains, provenance, importance scoring all run without LLMs. Reduces cost and variance.
-- **Audit-first design** — full claim lifecycle, supersession history, decision tracking. Built for medical audit in RobbyMD; works for any high-stakes memory.
-
----
-
-## Quick Start
-
-Product retrieval defaults to `BAAI/bge-m3`. Set `MEMCONTEXT_EMBED_MODEL` only
-for explicitly labeled ablations or local experiments.
-
-```bash
-# Install core
-pip install -e .
-
-# With MCP server + embeddings
-pip install -e ".[mcp,embeddings]"
-
-# Initialize a database
-memcontext init --db memory.db
-
-# Store a turn
-memcontext ingest "I prefer dark mode for all my editors" --db memory.db
-
-# Query memory
-memcontext query "what are the user's preferences?" --db memory.db --top-k 5
-
-# Start MCP server (for Claude Code / Cursor)
-memcontext serve --db memory.db --transport stdio
-
-# Start REST API (for ChatGPT / browser agent / hooks)
-memcontext serve-http --db memory.db --port 8100
-```
-
----
+- **Structured claims** — `(subject, predicate, value)` with confidence, temporal validity, and immutable source-turn provenance.
+- **Typed supersession, two passes** — Pass 1: deterministic structural matching (same identity slot, new value). Pass 2: semantic identity via embeddings (`SEMANTIC_REPLACE`). Corrections are first-class: `memory_correct` records the override as an auditable edge.
+- **Active projection** — the "current world state" is rebuilt from non-superseded claims after every write; history is preserved, not lost.
+- **Hybrid retrieval** — Reciprocal Rank Fusion over semantic, BM25, entity, temporal, predicate-alignment, confidence, frequency, importance, usage, and source-trust signals.
+- **Governance built in** — namespace isolation, per-principal read/write tokens (HTTP), source-trust tiers that gate low-trust supersession, provenance-preserving hard delete (`forget`), contradiction surfacing, and a `trust_status` report.
+- **Deterministic core** — the full lifecycle (claims, supersession, projections, profiles, digests) runs without an LLM. Extraction is injected: bring any LLM backend, pass pre-structured claims, or use the bundled regex extractor for development.
+- **Honest degradation** — without embedding dependencies, MemContext runs lexical-only: `status` reports `Semantic memory: OFF`, semantic supersession is skipped, nothing crashes.
 
 ## Architecture
 
 ```
-                     +--------------------------------------+
-                     |           Input Sources               |
-                     |  Conversation  Browser  Documents     |
-                     +-----------------+--------------------+
-                                       |
-                                       v
-                     +--------------------------+
-                     |    Admission Filter       |
-                     |  reject noise, fillers,   |
-                     |  sub-threshold turns      |
-                     +------------+-------------+
-                                  |
-                                  v
-                     +--------------------------+
-                     |    Claim Extraction       |
-                     |  LLMExtractor (Ollama)    |
-                     |  PassthroughExtractor     |
-                     |  SimpleExtractor (regex)  |
-                     +------------+-------------+
-                                  |
-                       +----------+----------+
-                       v                     v
-             +----------------+   +--------------------+
-             |   Pass 1       |   |   Pass 2            |
-             |  Deterministic |   |  Semantic Identity   |
-             |  Supersession  |   |  (embedding cosine)  |
-             +-------+--------+   +----------+----------+
-                     |                       |
-                     +----------+------------+
-                                v
-                     +--------------------------+
-                     |   Active Projection       |
-                     |  current world-state from |
-                     |  non-superseded claims    |
-                     +------------+-------------+
-                                  |
-            +----------+----------+----------+
-            v                     v          v
-  +----------------+   +----------+   +----------+
-  |  MCP Server    |   |  REST    |   |  Hybrid  |
-  |  8 tools over  |   |  API     |   |  Retrieval|
-  |  stdio / HTTP  |   |  :8100   |   |  RRF     |
-  +----------------+   +----------+   +----------+
+   conversation / agent activity / pre-structured claims
+                          |
+                          v
+                +--------------------+
+                |  Admission filter  |   rejects noise, sub-threshold turns
+                +---------+----------+
+                          v
+                +--------------------+
+                |   Extraction       |   injected LLMExtractor · Passthrough
+                |  (subject, pred,   |   · SimpleExtractor (dev fallback)
+                |   value, conf)     |
+                +---------+----------+
+                          v
+             +---------------------------+----------------------------+
+             |  Pass 1 deterministic      |  Pass 2 semantic (optional) |
+             |  same slot, new value      |  embedding cosine identity  |
+             +---------------------------+----------------------------+
+                          v
+                +--------------------+
+                |  Active projection |   current state; superseded kept for audit
+                +---------+----------+
+                          v
+          +---------------+----------------+
+          |  Hybrid retrieval (RRF)        |
+          |  + episode floor               |
+          +---------------+----------------+
+                          |
+        +-----------------+------------------+
+        v                 v                  v
+   +---------+      +-----------+      +-----------+
+   | MCP     |      | REST API  |      | Python /  |
+   | 18 tools|      | /api/*    |      | CLI       |
+   | stdio + |      | bearer +  |      |           |
+   | HTTP/OAuth|    | principals|      |           |
+   +---------+      +-----------+      +-----------+
+
+   Storage: SQLite, WAL mode, 25 tables, nanosecond timestamps.
 ```
 
-Every claim carries a **provenance chain**: source turn, character span, extraction confidence, and full supersession history.
+## Quick start
 
----
-
-## Key Concepts
-
-### Claims
-
-The atomic unit of memory. A claim is a `(subject, predicate, value)` triple with confidence, temporal validity window, and provenance back to the exact source text.
-
-```
-Claim: subject="user", predicate="user_preference", value="prefers dark mode"
-       confidence=0.85, source_turn="tu_3a8f...", status=ACTIVE
+```bash
+pip install -e .
 ```
 
-### Supersession
+```console
+$ memcontext init --db memory.db
+Initialized MemContext database at memory.db
+Active pack: general (12 predicates)
 
-When new information conflicts with old, MemContext doesn't delete — it supersedes with typed edges:
+$ memcontext ingest "I prefer dark mode for all my editors" --db memory.db
+Turn ingested: tu_5136db1574db
+Claims created: 1
+  [user_preference] user: dark mode for all my editors (confidence=0.5)
 
-| Pass | Method | Edge Types |
-|------|--------|------------|
-| **Pass 1** — Deterministic | Same `(session, subject, predicate)` + different value | `USER_CORRECTION`, `REFINES`, `CONTRADICTS`, `ASSISTANT_CONFIRM` |
-| **Pass 2** — Semantic | Embedding cosine > 0.88 on identity text (excluding value) | `SEMANTIC_REPLACE` |
+$ memcontext ingest "I prefer light mode for all my editors" --db memory.db
+Turn ingested: tu_883dcf941d30
+Claims created: 1
+  [user_preference] user: light mode for all my editors (confidence=0.5)
+Supersessions: 1
 
-### Predicate Packs
-
-Closed, composable vocabularies that define what a domain cares about:
-
-- **General** (10 families): `user_fact`, `user_preference`, `user_event`, `user_relationship`, `user_goal`, `user_constraint`, `context`, `action`, `observation`, `metadata`
-- **Developer** (10 families): `decision_made`, `bug_fixed`, `convention_established`, `file_purpose`, `dependency_reason`, `api_contract`, `todo`, `blocker`, `user_preference`, `project_status`
-- **Personal Assistant** (6 families): `user_fact`, `user_preference`, `user_event`, `user_relationship`, `user_goal`, `user_constraint`
-
-### Projections
-
-Current world-state: all claims with status `ACTIVE`, `CONFIRMED`, or `AUDITED`, grouped by subject and predicate. Rebuilds after every turn.
-
----
-
-## Browser Observation
-
-Playwright-based observation pipeline that lets agents watch web pages and remember what they see:
-
-1. **Capture** — `capture_snapshot(page)` grabs URL, title, and full accessibility tree
-2. **Extract** — `AccessibilityTreeExtractor` walks the a11y tree depth-first, pulling structured claims from headings, form fields, links, and text content
-3. **Store** — Claims flow through the standard pipeline (admission, extraction, supersession)
-4. **Revisit** — `diff_snapshots()` compares old vs. new, classifying changes as added/removed/changed. `apply_changes()` writes the delta, triggering supersession automatically
-
-Each observation gets a deterministic `snapshot_id` (SHA-256 of URL + timestamp). Every extracted claim carries its accessibility role and a stable `obs_key` for cross-visit matching.
-
----
-
-## MCP Tools
-
-8 tools over the Model Context Protocol:
-
-| Tool | Purpose |
-|------|---------|
-| `memory_store` | Ingest a turn + optional pre-structured claims |
-| `memory_query` | Retrieve ranked claims by relevance |
-| `memory_trace` | Walk the full provenance and supersession chain for a claim |
-| `memory_correct` | Dismiss a claim or replace it with a corrected value |
-| `memory_observe` | Ingest a browser page snapshot as structured claims |
-| `memory_observe_url` | Observe a URL directly (launches Playwright) |
-| `memory_profile` | Build a deterministic smart profile of a subject |
-| `memory_stats` | Summary stats: sessions, turns, claims, active/superseded counts |
-
-Tool logic lives in `mcp_tools.py` — pure functions, no protocol dependency. Testable without MCP installed.
-
----
-
-## REST API
-
-The same tools are available over HTTP for non-MCP clients:
-
-```
-POST /api/memory/store       — ingest a turn
-POST /api/memory/query       — retrieve claims
-POST /api/memory/trace       — walk provenance chain
-POST /api/memory/observe     — observe a URL
-GET  /api/memory/status      — database stats
-POST /api/sessions/export    — receive cookies from Chrome extension
-POST /api/hooks/pre_tool_use — silent context injection
-POST /api/hooks/post_tool_use — capture tool actions
-POST /api/hooks/user_prompt_submit — capture user intent
+$ memcontext query "what editor theme does the user prefer?" --db memory.db
+Found 3 memory item(s):
+{"kind": "fact", "id": "cl_f33def454b7a", "text": "user user_preference light mode ...", "source_turn_id": "tu_883dcf941d30", ...}
+{"kind": "episode", "id": "tu_5136db1574db", "text": "I prefer dark mode for all my editors", ...}
 ```
 
----
+The dark-mode claim is not deleted — it is `superseded`, still reachable through `memory_trace`, and excluded from the active projection. Every served item carries its `source_turn_id`.
 
-## Retrieval
+### Installation modes
 
-Four-signal hybrid retrieval fused via Reciprocal Rank Fusion (k=60):
+| Extra | Contents | Needed for |
+|-------|----------|-----------|
+| *(none)* | core: claims, supersession, lexical retrieval, CLI | local use |
+| `embeddings` | FlagEmbedding / sentence-transformers / requests | semantic retrieval + Pass-2 supersession (local BGE-M3, or remote via `MODAL_BGE_M3_URL`) |
+| `mcp` | `mcp`, starlette, uvicorn | `memcontext serve` (stdio + Streamable HTTP + optional OAuth) |
+| `http` | fastapi, pydantic, uvicorn | `memcontext serve-http` (REST + hooks) |
+| `share` | pycloudflared | `memcontext share` / `serve-http --share` outbound tunnel |
+| `dev` | pytest, ruff, pyright + all mcp/http deps | development |
+| `all` | everything above | batteries included |
 
-| Signal | Method |
-|--------|--------|
-| **Semantic** | Cosine similarity on all-MiniLM-L6-v2 embeddings (384-dim, local) |
-| **BM25** | Token-level scoring for exact matches |
-| **Entity** | Binary match on normalized subject keys |
-| **Temporal** | Recency ranking via `valid_from_ts` |
-
-Falls back gracefully: without embeddings installed, retrieval uses token-overlap scoring.
-
----
-
-## Data Model
-
-```
-turns ────┐
-          ├──> claims ──> claim_metadata
-          |       |
-          |       ├──> supersession_edges
-          |       ├──> claim_embeddings
-          |       ├──> claim_entities
-          |       └──> output_sentences (provenance)
-          |
-          ├──> event_frames ──> event_frame_claims
-          |                  └──> event_frame_embeddings
-          |
-          └──> decisions (audit trail)
+```bash
+pip install -e ".[mcp,http]"            # both server surfaces
+pip install -e ".[all]"                 # + embeddings + share
 ```
 
-11 SQLite tables. WAL mode, foreign keys enforced, nanosecond timestamps.
+Extraction: no LLM is bundled. Inject your own extractor (Ollama/OpenRouter/Gemini backends via `MEMCONTEXT_EXTRACTOR_BACKEND`), pass `claims=[...]` to `memory_store`, or let the regex `SimpleExtractor` handle dev traffic.
 
----
+## Interfaces
 
-## Benchmark: LongMemEval-S
+### MCP — 18 tools, stdio + Streamable HTTP (+ optional OAuth)
 
-### Recorded — predecessor system (RobbyMD)
+| Group | Tools |
+|-------|-------|
+| Core | `memory_store`, `memory_query`, `memory_trace`, `memory_correct`, `memory_stats` |
+| Serving | `memory_working_context`, `memory_digest`, `memory_profile`, `memory_life_events`, `memory_events`, `memory_output_provenance`, `memory_verify` |
+| Governance | `memory_forget`, `memory_trust_status`, `memory_contradictions`, `memory_entity_graph` |
+| Projection | `brain` |
+| Tool activation | `tool_discover` |
 
-The numbers below were measured on the **predecessor** system,
-[RobbyMD](https://github.com/harneet2512/RobbyMD), from which this substrate was
-extracted — **not** on the standalone `memcontext` package in this repo.
+```bash
+memcontext serve --db memory.db --transport stdio                # local (Claude Code, Cursor)
+memcontext serve --db memory.db --transport http --port 8000     # Streamable HTTP
+```
 
-Reader: GPT-5-mini | Judge: GPT-4o | Scoring: official [LongMemEval](https://github.com/xiaowu0162/LongMemEval) protocol
+Tool handlers are plain functions in `mcp_tools.py` — no protocol dependency, usable without `mcp` installed.
+
+### HTTP API
+
+```bash
+memcontext serve-http --db memory.db --port 8100
+```
+
+- `POST /api/memory/store`, `POST /api/memory/query`, `POST /api/memory/trace`, `GET /api/memory/status`
+- `POST /api/hooks/{pre_tool_use,post_tool_use,user_prompt_submit,stop}` — ambient context injection / capture for hook-capable coding agents (`memcontext hooks install` writes the wiring into `.claude/settings.json`)
+- `GET /health`; the MCP Streamable HTTP app mounts at `/mcp` when the `mcp` extra is installed
+
+All `/api/*` routes require a bearer token — generated and printed on first run, or pinned via `MEMCONTEXT_HTTP_TOKEN`. Tokens can be per-principal with namespace + read/write scoping (`memcontext grant`). CORS is default-deny unless `MEMCONTEXT_HTTP_ORIGINS` is set.
+
+### Python
+
+Everything above calls the same handler functions — `handle_memory_store(conn, ...)`, `handle_memory_query`, `handle_memory_trace`, etc. — usable directly from any Python process with `open_database(path)`.
+
+## Trust and governance
+
+- Every claim has an immutable `source_turn_id`; every fact change is a typed, provenance-linked edge.
+- `memory_forget` / `memcontext forget` performs cascade-consistent hard deletion recorded in an audit log.
+- Namespace isolation bounds retrieval; per-principal tokens enforce read/write scope on the HTTP transport.
+- Source-trust tiers influence ranking and block low-trust content from superseding trusted claims; `memory_verify` checks cited claim IDs against a serve-events ledger.
+
+The stdio MCP transport and CLI are local-operator surfaces. `SECURITY.md` covers the deployment posture; `GOVERNANCE_AUDIT.md` has the graded trust matrix.
+
+## Benchmarks
+
+Results recorded on the predecessor system, [RobbyMD](https://github.com/harneet2512/RobbyMD) — the clinical agent this substrate was extracted from:
+
+Reader: GPT-5-mini · Judge: GPT-4o · Scoring: official [LongMemEval](https://github.com/xiaowu0162/LongMemEval) protocol
 
 | Category | Score | Accuracy |
 |----------|-------|----------|
@@ -337,77 +176,55 @@ Reader: GPT-5-mini | Judge: GPT-4o | Scoring: official [LongMemEval](https://git
 | single-session-preference | 22/30 | 73.3% |
 | **Overall (RobbyMD)** | **442/500** | **88.4%** |
 
-### Reproduced — standalone MemContext (this repo)
+These numbers belong to the predecessor system, not the standalone package in this repo. The `evals/` directory contains the benchmark adapter and a LongMemEval-S smoke workflow for exercising the harness end to end.
 
-**Not yet independently benchmarked.** The extracted `memcontext` package is
-currently proven by a deterministic unit/behavioral test suite (zero model
-downloads in CI), not by a LongMemEval run. A faithful reproduction — extracting a
-LongMemEval slice through *this* engine and scoring it against simpler baselines —
-is pending, and will be reported here with the exact command, raw + task-averaged
-numbers, the subset, and the run artifact. **Until then, the 88.4% above is the
-predecessor's result, not this package's.**
+## Predicate packs
 
----
+Closed, composable vocabularies that define what a domain cares about — swap or compose via `ACTIVE_PACK`:
 
-## Project Structure
+- `general` — 12 predicate families
+- `developer` — 10 families (`decision_made`, `bug_fixed`, `convention_established`, `file_purpose`, `dependency_reason`, `api_contract`, `todo`, `blocker`, `user_preference`, `project_status`)
+- `personal_assistant` — 8 families
+
+## Project structure
 
 ```
 memcontext/
   schema.py                 # SQLite schema, data model, enums
-  claims.py                 # Claim CRUD, validation, active-state queries
-  admission.py              # Noise filtering
-  extractors.py             # LLMExtractor + PassthroughExtractor + SimpleExtractor
-  on_new_turn.py            # Pipeline orchestrator
+  claims.py                 # claim CRUD, validation, active-state queries
+  admission.py              # noise filtering
+  extractors.py             # Passthrough / Simple / LLM extractor backends
+  on_new_turn.py            # pipeline orchestrator
   supersession.py           # Pass 1: deterministic structural supersession
   supersession_semantic.py  # Pass 2: semantic identity via embeddings
-  retrieval.py              # Multi-signal retrieval (semantic, hybrid RRF, BM25)
-  projections.py            # Active-claims projections
-  provenance.py             # Forward/back-link provenance utilities
-  profiles.py               # Deterministic smart profiles (zero LLM)
-  digests.py                # Per-session summaries with importance scoring
-  chains.py                 # Full supersession chain traversal
-  life_events.py            # Temporal event tuples and point-in-time queries
-  importance.py             # Multi-signal importance scoring
-  volatility.py             # Change-frequency tracking
-  entities.py               # Entity extraction and linking
-  entity_graph.py           # Entity relationship graph
-  event_bus.py              # Internal event system
-  predicate_packs.py        # Domain vocabulary management
-  mcp_tools.py              # MCP tool handlers (no protocol dependency)
-  mcp_server.py             # MCP server (stdio + Streamable HTTP)
+  retrieval.py              # multi-signal retrieval, hybrid RRF, BM25
+  projections.py            # active-claims projections
+  provenance.py             # forward/back-link provenance
+  profiles.py               # deterministic subject profiles
+  digests.py                # per-session summaries with importance scoring
+  chains.py                 # supersession chain traversal
+  life_events.py            # temporal event tuples, point-in-time queries
+  importance.py             # multi-signal importance scoring
+  volatility.py             # change-frequency tracking
+  entities.py / entity_graph.py
+  forgetting.py             # cascade-consistent deletion + audit log
+  source_trust.py           # source-trust tiers
+  authz.py                  # per-principal tokens, namespaces, read/write scope
+  trust_report.py           # trust_status observability
+  tool_registry.py / tool_activation.py   # MCP tool curation
+  mcp_tools.py              # tool handlers (no protocol dependency)
+  mcp_server.py             # MCP server (stdio + Streamable HTTP + OAuth)
+  mcp_oauth.py              # password-gated OAuth 2.1 provider
   http_server.py            # REST API (FastAPI) + hook endpoints
-  cli.py                    # CLI: init, status, ingest, query, serve
-  observe/
-    browser.py              # PageSnapshot, capture_snapshot, observe_page
-    extractors.py           # AccessibilityTreeExtractor, DOMExtractor
-    revisit.py              # diff_snapshots, apply_changes
-evals/
-  longmemeval.py            # LongMemEval benchmark integration
-  longmemeval_prompts.py    # Category-specific answer prompts
-  runner.py                 # Suite runner
-  metrics.py                # Scoring functions
-  ceiling.py                # Failure classification
-predicate_packs/
-  general/                  # General-purpose vocabulary (10 families)
-  developer/                # Developer-context vocabulary (10 families)
-  personal_assistant/       # Conversational memory (6 families)
-scripts/
-  smoke/                    # CLI, MCP, browser, memory loop smoke tests
+  serving.py                # remote/local serving plumbing
+  relay.py                  # self-hostable share relay (Ed25519 identity)
+  cli.py                    # init, ingest, query, serve, hooks, grants, ...
+predicate_packs/            # domain vocabularies (general / developer / personal_assistant)
+evals/                      # benchmark adapter + LongMemEval-S smoke workflow
+scripts/smoke/              # CLI, MCP, memory-loop smoke scripts
+sdks/typescript/            # experimental TypeScript client
 ```
-
----
-
-## Development
-
-```bash
-pip install -e ".[dev]"
-python -m pytest tests/ -v
-```
-
-All tests use `:memory:` SQLite and `NullEmbedder`. Zero model downloads in CI.
-
----
 
 ## License
 
-MIT
+[AGPL-3.0-or-later](LICENSE)

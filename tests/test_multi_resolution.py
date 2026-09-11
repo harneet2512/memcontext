@@ -5,7 +5,7 @@ import sqlite3
 
 from memcontext.claims import insert_claim, insert_turn, new_turn_id, now_ns
 from memcontext.retrieval import retrieve_with_fallback, search_raw_turns
-from memcontext.schema import Speaker, Turn, open_database
+from memcontext.schema import Speaker, Turn
 
 
 def _insert_turn(

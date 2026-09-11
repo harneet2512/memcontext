@@ -474,12 +474,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
     if current < 1:
         # v1: importance_score on claim_metadata (previously an ad-hoc ALTER).
-        try:
+        with contextlib.suppress(sqlite3.OperationalError):  # column already present on pre-versioning databases
             conn.execute(
                 "ALTER TABLE claim_metadata ADD COLUMN importance_score REAL DEFAULT 0.5"
             )
-        except sqlite3.OperationalError:
-            pass  # column already present on pre-versioning databases
 
     if current < 2:
         # v2: covering index for list_active_claims (session_id + status filter,
@@ -598,22 +596,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "ALTER TABLE claim_metadata ADD COLUMN access_count INTEGER DEFAULT 0",
             "ALTER TABLE claim_metadata ADD COLUMN last_accessed_ts INTEGER",
         ):
-            try:
+            with contextlib.suppress(sqlite3.OperationalError):  # column already present
                 conn.execute(_col)
-            except sqlite3.OperationalError:
-                pass  # column already present
 
     if current < 6:
         # v6: utility-weighted retention — a reversible 'demoted' flag. Low-utility,
         # old claims are demoted OUT of active retrieval (provenance preserved, never
         # hard-deleted), bounding the active set / token cost. A flag (not a status)
         # avoids a claims-table rebuild against the status CHECK constraint.
-        try:
+        with contextlib.suppress(sqlite3.OperationalError):  # column already present
             conn.execute(
                 "ALTER TABLE claim_metadata ADD COLUMN demoted INTEGER DEFAULT 0"
             )
-        except sqlite3.OperationalError:
-            pass  # column already present
 
     if current < 7:
         # v7: episodic->semantic consolidation. 'consolidated' marks a durable
@@ -623,43 +617,35 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "ALTER TABLE claim_metadata ADD COLUMN consolidated INTEGER DEFAULT 0",
             "ALTER TABLE claim_metadata ADD COLUMN consolidated_sources TEXT",
         ):
-            try:
+            with contextlib.suppress(sqlite3.OperationalError):  # column already present
                 conn.execute(_col)
-            except sqlite3.OperationalError:
-                pass  # column already present
 
     if current < 8:
         # v8: provenance completeness — surface the source claim_ids a digest
         # summarized into a queryable column (previously only buried in digest_data
         # JSON), so every served summary is traceable and cascade-deletable.
-        try:
+        with contextlib.suppress(sqlite3.OperationalError):  # column already present
             conn.execute(
                 "ALTER TABLE session_digests ADD COLUMN source_claim_ids TEXT"
             )
-        except sqlite3.OperationalError:
-            pass  # column already present
 
     if current < 9:
         # v9: source-trust tiering — how much to trust a claim by WHERE it came
         # from (the user vs a tool vs a browsed page vs the assistant). Feeds the
         # retrieval ranking + a supersession guard. Default 0.5 (neutral).
-        try:
+        with contextlib.suppress(sqlite3.OperationalError):  # column already present
             conn.execute(
                 "ALTER TABLE claim_metadata ADD COLUMN source_trust REAL DEFAULT 0.5"
             )
-        except sqlite3.OperationalError:
-            pass  # column already present
 
     if current < 10:
         # v10: tenant/namespace isolation — the scope above session. Retrieval is
         # bounded to the caller's namespace so memory never crosses a tenant
         # boundary. Default 'default' keeps existing single-tenant data intact.
-        try:
+        with contextlib.suppress(sqlite3.OperationalError):  # column already present
             conn.execute(
                 "ALTER TABLE turns ADD COLUMN namespace TEXT NOT NULL DEFAULT 'default'"
             )
-        except sqlite3.OperationalError:
-            pass  # column already present
 
     if current < 11:
         # v11: per-principal access control. A bearer token (stored hashed) maps to
@@ -748,10 +734,8 @@ def open_database(path: str | Path) -> sqlite3.Connection:
 
         if not is_memory:
             # Restrict the DB file to the owner (best-effort; limited on Windows).
-            try:
+            with contextlib.suppress(OSError):
                 os.chmod(str(path), 0o600)
-            except OSError:
-                pass
             conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA busy_timeout=5000")

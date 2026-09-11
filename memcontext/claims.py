@@ -574,7 +574,7 @@ def get_superseded_by(
 
 def get_supersession_chain(
     conn: sqlite3.Connection, claim_id: str
-) -> list[tuple["Claim", str]]:
+) -> list[tuple[Claim, str]]:
     """Walk backwards from a claim through supersession edges.
 
     Returns [(predecessor_claim, edge_type), ...] in chronological order

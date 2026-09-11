@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import sqlite3
 
 from memcontext.claims import get_claim, insert_claim, insert_turn, new_turn_id, now_ns
@@ -103,7 +102,7 @@ def test_semantic_detect_high_threshold_no_match(
     ss = SemanticSupersession(embedder=NullEmbedder(dim=4), threshold=2.0)
 
     t1 = _make_turn(db, session_id, Speaker.USER, "I like coffee")
-    c1 = insert_claim(
+    insert_claim(
         db, session_id=session_id, subject="user", predicate="user_preference",
         value="likes coffee", confidence=0.9, source_turn_id=t1.turn_id,
     )

@@ -16,7 +16,8 @@ def test_subscribe_and_publish():
 def test_unsubscribe():
     bus = EventBus()
     received: list[dict] = []
-    callback = lambda p: received.append(p)
+    def callback(p):
+        received.append(p)
     bus.subscribe(TURN_ADDED, callback)
     bus.unsubscribe(TURN_ADDED, callback)
 

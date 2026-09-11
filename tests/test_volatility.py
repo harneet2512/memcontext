@@ -49,7 +49,7 @@ def test_classify_stable(db, session_id):
 def test_classify_evolving(db, session_id):
     """One supersession event makes the predicate 'evolving'."""
     turn_a = _insert_turn(db, session_id, "My favorite city to live in is Portland")
-    claim_a = insert_claim(
+    insert_claim(
         db,
         session_id=session_id,
         subject="user",
@@ -91,7 +91,7 @@ def test_classify_volatile(db, session_id):
     ]
 
     prev_claim = None
-    for i, loc in enumerate(locations):
+    for loc in locations:
         turn = _insert_turn(db, session_id, f"I moved to {loc}")
         claim = insert_claim(
             db,

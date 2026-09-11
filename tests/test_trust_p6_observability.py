@@ -12,8 +12,8 @@ from memcontext.extractors import PassthroughExtractor
 from memcontext.forgetting import forget
 from memcontext.mcp_tools import handle_memory_store, handle_memory_trust_status
 from memcontext.on_new_turn import on_new_turn
-from memcontext.supersession import detect_pass1
 from memcontext.schema import Speaker, open_database
+from memcontext.supersession import detect_pass1
 
 
 def _conn():

@@ -11,13 +11,11 @@ from memcontext.claims import (
     find_same_identity_claim,
     get_claim,
     insert_claim,
-    insert_turn,
     list_active_claims,
-    new_turn_id,
     now_ns,
     set_claim_status,
 )
-from memcontext.schema import Claim, ClaimStatus, Speaker, Turn
+from memcontext.schema import Claim, ClaimStatus, Turn
 
 
 def test_insert_and_get_claim(db: sqlite3.Connection, session_id: str, sample_turn: Turn):

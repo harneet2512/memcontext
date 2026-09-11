@@ -70,7 +70,7 @@ def test_importance_uniqueness(db, session_id):
 def test_importance_supersession_significance(db, session_id):
     """A claim that supersedes another should have higher importance than one without history."""
     turn_a = _insert_turn(db, session_id, "My favorite city is Portland")
-    claim_a = insert_claim(
+    insert_claim(
         db,
         session_id=session_id,
         subject="user",

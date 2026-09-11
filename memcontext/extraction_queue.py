@@ -89,7 +89,8 @@ class InlineQueue:
         log.debug("substrate.extraction_enqueued", episode_id=episode_id)
 
     def drain(self) -> None:
-        from memcontext.on_new_turn import ExtractionStatus, run_extraction
+        from memcontext.on_new_turn import run_extraction
+        from memcontext.schema import ExtractionStatus
 
         pending, self._jobs = self._jobs, []
         for job in pending:
@@ -166,8 +167,8 @@ class ThreadedQueue:
         self._thread.join()
 
     def _worker(self) -> None:
-        from memcontext.on_new_turn import ExtractionStatus, run_extraction
-        from memcontext.schema import open_database
+        from memcontext.on_new_turn import run_extraction
+        from memcontext.schema import ExtractionStatus, open_database
 
         conn = open_database(self._db_path)
         try:

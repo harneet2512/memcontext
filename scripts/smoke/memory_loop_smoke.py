@@ -31,12 +31,12 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 print("=== Core Memory Loop Smoke Test ===\n")
 
-from memcontext.schema import open_database, Speaker
-from memcontext.on_new_turn import on_new_turn, ExtractedClaim
+from memcontext.claims import get_claim, list_active_claims
 from memcontext.extractors import PassthroughExtractor
-from memcontext.claims import list_active_claims, get_claim
-from memcontext.provenance import span_for_claim, claim_ids_for_turn
-from memcontext.mcp_tools import handle_memory_query, handle_memory_trace, handle_memory_correct
+from memcontext.mcp_tools import handle_memory_correct, handle_memory_query, handle_memory_trace
+from memcontext.on_new_turn import on_new_turn
+from memcontext.provenance import claim_ids_for_turn
+from memcontext.schema import Speaker, open_database
 
 conn = open_database(":memory:")
 conn.row_factory = sqlite3.Row
