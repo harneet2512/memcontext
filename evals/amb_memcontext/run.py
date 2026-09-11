@@ -71,10 +71,10 @@ def _configure_tokenrouter_models() -> None:
         "MEMCONTEXT_EXTRACTOR_ENDPOINT", f"{TOKENROUTER_BASE_URL}/chat/completions"
     )
     os.environ.setdefault("MEMCONTEXT_EXTRACTOR_MODEL", TOKENROUTER_EXTRACTOR_MODEL)
-    os.environ.setdefault("MEMCONTEXT_EXTRACTOR_REASONING_EFFORT", "none")
-    os.environ.setdefault("MEMCONTEXT_EXTRACTOR_REASONING_EXCLUDE", "1")
     extractor_key = (
-        os.environ.get("TOKENROUTER_AMB_EXTRACTOR_KEY")
+        os.environ.get("TOKENROUTER_AMB_GEMINI_KEY")
+        or os.environ.get("TOKENROUTER_AMB_JUDGE_KEY")
+        or os.environ.get("TOKENROUTER_AMB_EXTRACTOR_KEY")
         or os.environ.get("TOKENROUTER_API_KEY")
     )
     if extractor_key and not os.environ.get("MEMCONTEXT_EXTRACTOR_API_KEY"):
@@ -88,7 +88,6 @@ def _configure_tokenrouter_models() -> None:
     os.environ.setdefault("TOKENROUTER_BASE_URL", TOKENROUTER_BASE_URL)
     os.environ.setdefault("OMB_JUDGE_LLM", "tokenrouter-judge")
     os.environ.setdefault("OMB_JUDGE_MODEL", TOKENROUTER_JUDGE_MODEL)
-    os.environ.setdefault("OMB_JUDGE_REASONING_EFFORT", "low")
     os.environ.setdefault("OMB_JUDGE_REASONING_EXCLUDE", "1")
 
 

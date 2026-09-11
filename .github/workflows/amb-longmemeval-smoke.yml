@@ -17,6 +17,7 @@ concurrency:
 
 env:
   PYTHONIOENCODING: utf-8
+  LONGMEMEVAL_DATA_PATH: ${{ github.workspace }}/amb-data/longmemeval_s_cleaned.json
   OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
   TOKENROUTER_BASE_URL: https://api.tokenrouter.com/v1
   OMB_ANSWER_LLM: openrouter-reader
@@ -25,14 +26,12 @@ env:
   OMB_ANSWER_REASONING_EXCLUDE: "1"
   MEMCONTEXT_EXTRACTOR_BACKEND: openrouter
   MEMCONTEXT_EXTRACTOR_ENDPOINT: https://api.tokenrouter.com/v1/chat/completions
-  MEMCONTEXT_EXTRACTOR_MODEL: minimax/MiniMax-M3
-  MEMCONTEXT_EXTRACTOR_REASONING_EFFORT: none
+  MEMCONTEXT_EXTRACTOR_MODEL: google/gemini-3-flash-preview
   MEMCONTEXT_EXTRACTOR_REASONING_EXCLUDE: "1"
   MEMCONTEXT_EXTRACTOR_MAX_TOKENS: "2048"
   MEMCONTEXT_EXTRACTOR_POOL: "128"
   OMB_JUDGE_LLM: tokenrouter-judge
   OMB_JUDGE_MODEL: google/gemini-3-flash-preview
-  OMB_JUDGE_REASONING_EFFORT: low
   OMB_JUDGE_REASONING_EXCLUDE: "1"
   MEMCONTEXT_EMBED_MODEL: BAAI/bge-m3
   MEMCONTEXT_EMBED_EPISODES: "1"
@@ -40,8 +39,50 @@ env:
   SENTENCE_TRANSFORMERS_HOME: ~/.cache/huggingface/sentence-transformers
 
 jobs:
+  dataset:
+    name: Prepare LongMemEval data
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download LongMemEval-S once
+        shell: bash
+        run: |
+          mkdir -p amb-data
+          python - <<'PY'
+          import time
+          import urllib.request
+          from pathlib import Path
+
+          url = (
+              "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned"
+              "/resolve/main/longmemeval_s_cleaned.json"
+          )
+          path = Path("amb-data/longmemeval_s_cleaned.json")
+          for attempt in range(1, 8):
+              try:
+                  urllib.request.urlretrieve(url, path)
+                  break
+              except Exception:
+                  if attempt == 7:
+                      raise
+                  time.sleep(20 * attempt)
+          if path.stat().st_size < 1_000_000:
+              raise SystemExit("LongMemEval download is unexpectedly small.")
+          PY
+
+      - name: Upload LongMemEval data
+        uses: actions/upload-artifact@v4
+        with:
+          name: longmemeval-s-cleaned
+          path: amb-data/longmemeval_s_cleaned.json
+
   category:
     name: ${{ matrix.category }}
+    needs: dataset
     runs-on: ubuntu-latest
     timeout-minutes: 180
     environment: benchmark
@@ -58,10 +99,17 @@ jobs:
           - single-session-preference
     env:
       OPENROUTER_AMB_READER_KEY: ${{ secrets.OPENROUTER_AMB_READER_KEY }}
+      TOKENROUTER_AMB_GEMINI_KEY: ${{ secrets.TOKENROUTER_AMB_GEMINI_KEY }}
       TOKENROUTER_AMB_EXTRACTOR_KEY: ${{ secrets.TOKENROUTER_AMB_EXTRACTOR_KEY }}
       TOKENROUTER_AMB_JUDGE_KEY: ${{ secrets.TOKENROUTER_AMB_JUDGE_KEY }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download LongMemEval data
+        uses: actions/download-artifact@v4
+        with:
+          name: longmemeval-s-cleaned
+          path: amb-data
 
       - uses: actions/setup-python@v5
         with:
@@ -80,8 +128,7 @@ jobs:
         shell: bash
         run: |
           test -n "$OPENROUTER_AMB_READER_KEY"
-          test -n "$TOKENROUTER_AMB_EXTRACTOR_KEY"
-          test -n "$TOKENROUTER_AMB_JUDGE_KEY"
+          test -n "${TOKENROUTER_AMB_GEMINI_KEY:-${TOKENROUTER_AMB_JUDGE_KEY:-}}"
 
       - name: Probe routed APIs
         shell: bash
@@ -93,6 +140,8 @@ jobs:
           import urllib.request
 
           def probe(name, base_url, key, model):
+              if not key:
+                  raise SystemExit(f"{name} preflight failed: missing API key")
               payload = {
                   "model": model,
                   "messages": [{"role": "user", "content": "Return ok."}],
@@ -124,13 +173,20 @@ jobs:
           probe(
               "TokenRouter extractor",
               os.environ["TOKENROUTER_BASE_URL"],
-              os.environ["TOKENROUTER_AMB_EXTRACTOR_KEY"],
+              (
+                  os.environ.get("TOKENROUTER_AMB_GEMINI_KEY")
+                  or os.environ.get("TOKENROUTER_AMB_JUDGE_KEY")
+                  or os.environ.get("TOKENROUTER_AMB_EXTRACTOR_KEY")
+              ),
               os.environ["MEMCONTEXT_EXTRACTOR_MODEL"],
           )
           probe(
               "TokenRouter judge",
               os.environ["TOKENROUTER_BASE_URL"],
-              os.environ["TOKENROUTER_AMB_JUDGE_KEY"],
+              (
+                  os.environ.get("TOKENROUTER_AMB_GEMINI_KEY")
+                  or os.environ.get("TOKENROUTER_AMB_JUDGE_KEY")
+              ),
               os.environ["OMB_JUDGE_MODEL"],
           )
           PY
@@ -161,7 +217,7 @@ jobs:
             --category "${{ matrix.category }}" \
             --query-limit "${{ inputs.query_limit }}" \
             --name "memcontext-full-${{ matrix.category }}" \
-            --description "MemContext AMB smoke: OpenRouter gpt-oss reader, TokenRouter MiniMax extractor, TokenRouter Gemini judge, BGE-M3 embeddings."
+            --description "MemContext AMB smoke: OpenRouter gpt-oss reader, TokenRouter Gemini extractor, TokenRouter Gemini judge, BGE-M3 embeddings."
 
       - name: Confirm AMB checkout stayed clean
         if: always()
