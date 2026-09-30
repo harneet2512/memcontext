@@ -136,14 +136,14 @@
       "name": "assistant_provides_technical_info",
       "scenario": "Assistant looks up and provides specific technical information the user asked about.",
       "prior_turns": [
-        {"speaker": "user", "text": "Can you tell me about the refining processes at CITGO's refineries?"}
+        {"speaker": "user", "text": "How does HTTP/2 multiplexing actually work?"}
       ],
       "current_turn": {
         "speaker": "assistant",
-        "text": "CITGO's three refineries use several key processes: atmospheric distillation, fluid catalytic cracking (FCC), alkylation, and hydrotreating."
+        "text": "HTTP/2 splits each request and response into frames tagged with a stream ID, so many requests share one TCP connection and are reassembled per stream."
       },
       "active_claims_summary": "(no active claims)",
-      "expected_output": "[\n  {\"subject\":\"assistant\",\"predicate\":\"assistant_action\",\"value\":\"provided info on CITGO refinery processes: atmospheric distillation, fluid catalytic cracking (FCC), alkylation, and hydrotreating\",\"confidence\":0.95}\n]"
+      "expected_output": "[\n  {\"subject\":\"assistant\",\"predicate\":\"assistant_action\",\"value\":\"explained HTTP/2 multiplexing: frames tagged with stream IDs share one TCP connection\",\"confidence\":0.95}\n]"
     }
   ]
 }
