@@ -184,7 +184,7 @@ library door (`build_context_briefing`) expose the same safety surface.
 - **Span provenance** (`provenance.py`): `explain_claim` assembles, for any claim, its
   value + source turn (speaker, text, char span) + the typed correction chain it sits on.
 - **Source trust** (`source_trust.py`): every claim carries a trust weight derived from its
-  origin (user > assistant > tool > browser). Served facts carry `trust` + a `quarantined`
+  origin (user > assistant > tool > web content). Served facts carry `trust` + a `quarantined`
   flag (below threshold → citable, not authoritative).
 - **Drift audit**: blocked low-trust overrides are recorded in `decisions`, countable via
   `memory_trust_status`.

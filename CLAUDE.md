@@ -2,7 +2,7 @@
 
 ## Product Definition
 
-MemContext is a domain-agnostic memory and context substrate for AI agents. It observes information from conversations, browser pages, tools, documents, apps, and user workflows; converts that information into provenance-backed structured claims; tracks changes and supersession over time; and serves clean, current, queryable context to agents through MCP.
+MemContext is a domain-agnostic memory and context substrate for AI agents. It observes information from conversations, tools, documents, and agent workflows; converts that information into provenance-backed structured claims; tracks changes and supersession over time; and serves clean, current, queryable context to agents through MCP.
 
 The product is not a benchmark hack. The benchmark is only a diagnostic instrument.
 

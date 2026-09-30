@@ -332,7 +332,7 @@ def share(db: str, port: int, password: str | None) -> None:
 @click.option("--share", is_flag=True, default=False,
               help="Expose via Cloudflare tunnel for remote MCP (ChatGPT, Gemini).")
 def serve_http(db: str, port: int, host: str, share: bool) -> None:
-    """Start the HTTP API server (for ChatGPT, Gemini, browser extensions, any AI)."""
+    """Start the HTTP API server (REST API + Claude Code hook endpoints; for ChatGPT, Gemini, any AI)."""
     try:
         from memcontext.http_server import run_server
     except ImportError:

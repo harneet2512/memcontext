@@ -1,6 +1,6 @@
 """Tier-1 episode tests.
 
-Episodes (turns / tool-call results / browser observations) are the always-on,
+Episodes (turns / tool-call results / fetched web content) are the always-on,
 zero-LLM, synchronous floor: stored at ingest, embedded with a local model (no
 LLM), and immediately retrievable via the hybrid retrieval signals — with no
 structured fields and no fact extraction required.

@@ -88,13 +88,13 @@ class OutputSection(StrEnum):
 class SourceType(StrEnum):
     """Origin of an episode (Tier-1 retrievable unit).
 
-    Every turn / tool-call result / browser observation is stored as an
+    Every turn / tool-call result / fetched web content is stored as an
     episode tagged with one of these. The default is a conversation turn.
     """
 
     CONVERSATION = "conversation"
     TOOL_CALL = "tool_call"
-    BROWSER = "browser"
+    BROWSER = "browser"  # untrusted web content (lowest source-trust tier); value kept for DB compatibility
 
 
 class ExtractionStatus(StrEnum):
@@ -118,7 +118,7 @@ class ExtractionStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Turn:
-    """One episode — a conversation turn, tool-call result, or browser observation.
+    """One episode — a conversation turn, tool-call result, or fetched web content.
 
     `source_type` distinguishes the origin; `source_metadata` carries
     JSON-encoded provenance (url/title/tool_name/...). `extraction_status`

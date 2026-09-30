@@ -1,7 +1,7 @@
 """MemContext HTTP API — REST interface for any AI platform.
 
 MCP is for Claude Code and Cursor. HTTP is for everything else:
-ChatGPT GPTs, Gemini, custom agents, browser extensions.
+ChatGPT GPTs, Gemini, custom agents.
 Also serves Claude Code ambient hooks for silent context capture.
 
 Same database, same memory. Two doors in.

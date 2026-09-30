@@ -130,7 +130,7 @@ def run_server(
             ),
             Tool(
                 name="memory_query",
-                description="Query the user's personal memory -- decisions, observations, bug tracking, project status, and context from their coding sessions, browser observations, and cross-tool workflows. Use this for anything about the user's own projects, preferences, or work history.",
+                description="Query the user's personal memory -- decisions, observations, bug tracking, project status, and context from their coding sessions and cross-tool workflows. Use this for anything about the user's own projects, preferences, or work history.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -492,7 +492,7 @@ def create_http_app(db_path: str = "memcontext.db"):
             return [
                 Tool(name="memory_store", description="Store a conversation turn and extract claims into memory.",
                      inputSchema={"type":"object","properties":{"text":{"type":"string"},"speaker":{"type":"string","enum":["user","assistant"],"default":"user"},"session_id":{"type":"string"},"claims":{"type":"array","items":{"type":"object","properties":{"subject":{"type":"string"},"predicate":{"type":"string"},"value":{"type":"string"},"confidence":{"type":"number"}},"required":["value"]}}},"required":["text"]}),
-                Tool(name="memory_query", description="Query the user's personal memory -- decisions, observations, bug tracking, project status, and context from their coding sessions, browser observations, and cross-tool workflows. Use this for anything about the user's own projects, preferences, or work history.",
+                Tool(name="memory_query", description="Query the user's personal memory -- decisions, observations, bug tracking, project status, and context from their coding sessions and cross-tool workflows. Use this for anything about the user's own projects, preferences, or work history.",
                      inputSchema={"type":"object","properties":{"query":{"type":"string"},"session_id":{"type":"string"},"top_k":{"type":"integer","default":10}},"required":["query"]}),
                 Tool(name="memory_trace", description="Trace a fact's source turn and typed supersession lineage. Pass a claim_id, or a (subject, predicate) pair to trace the current value of that slot.",
                      inputSchema={"type":"object","properties":{"claim_id":{"type":"string"},"subject":{"type":"string"},"predicate":{"type":"string"},"session_id":{"type":"string"}}}),

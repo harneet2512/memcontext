@@ -379,7 +379,7 @@ def insert_fact(
         meta_entity = _normalise_subject(ents[0].text) if ents else ""
         meta_family = "nl"
     # Source trust (Phase 3): intrinsic to the claim, derived from its source
-    # episode's origin (user vs tool vs browser vs assistant) so retrieval and
+    # episode's origin (user vs tool vs web content vs assistant) so retrieval and
     # supersession can weigh how much to trust it.
     from memcontext.source_trust import trust_for_source
     _trow = conn.execute(
