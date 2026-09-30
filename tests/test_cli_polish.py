@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 
+import click
 import pytest
 import structlog
 from click.testing import CliRunner
@@ -67,4 +68,27 @@ def test_cli_invalid_log_level_falls_back_to_warning(tmp_path, monkeypatch):
     r = _runner().invoke(main, ["init", "--db", str(tmp_path / "t.db")])
     assert r.exit_code == 0
     assert not _STRUCTLOG_LINE.search(r.stdout + r.stderr)
+
+
+def _iter_commands(group: click.Group, prefix: list[str]):
+    yield prefix
+    for name, cmd in sorted(group.commands.items()):
+        if isinstance(cmd, click.Group):
+            yield from _iter_commands(cmd, [*prefix, name])
+        else:
+            yield [*prefix, name]
+
+
+def test_every_command_help_is_ascii():
+    runner = _runner()
+    paths = list(_iter_commands(main, []))
+    assert len(paths) > 10
+    for path in paths:
+        r = runner.invoke(main, [*path, "--help"])
+        assert r.exit_code == 0, (path, r.output)
+        try:
+            r.stdout.encode("ascii")
+        except UnicodeEncodeError as exc:
+            bad = r.stdout[max(0, exc.start - 30):exc.end + 10]
+            pytest.fail(f"non-ASCII in `memcontext {' '.join(path)} --help`: {bad!r}")
 

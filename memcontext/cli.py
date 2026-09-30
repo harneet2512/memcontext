@@ -49,7 +49,7 @@ def _configure_cli_logging() -> None:
 
 @click.group()
 def main() -> None:
-    """MemContext — memory and context substrate for AI agents."""
+    """MemContext - memory and context substrate for AI agents."""
     _configure_cli_logging()
 
 
@@ -184,7 +184,7 @@ def ingest(text: str, db: str, session: str, speaker: str, namespace: str) -> No
 @click.option("--top-k", default=10, help="Max results.")
 @click.option("--namespace", default=None, help="Restrict to a tenant namespace (isolation).")
 def query_cmd(query_text: str, db: str, session: str, top_k: int, namespace: str | None) -> None:
-    """Query memory — unified two-tier retrieval (facts + episodes), the same
+    """Query memory - unified two-tier retrieval (facts + episodes), the same
     path the MCP/HTTP door serves (was facts-only via retrieve_hybrid)."""
     from memcontext.mcp_tools import _session_in_namespace
     from memcontext.retrieval import retrieve_memory
@@ -337,7 +337,7 @@ def serve(db: str, transport: str, host: str, port: int, token: str | None,
     " next to the DB; later runs reuse it.",
 )
 def share(db: str, port: int, password: str | None) -> None:
-    """Connect your LOCAL brain to web apps (claude.ai, ChatGPT) — one command.
+    """Connect your LOCAL brain to web apps (claude.ai, ChatGPT) - one command.
 
     Your memory stays in the local SQLite file on this machine. This command dials
     an OUTBOUND tunnel (nothing inbound is opened, nothing is hosted anywhere) and
@@ -490,9 +490,9 @@ def mcp_config(client: str, db: str) -> None:
               help="Also write user config (~/.claude.json), attaching in every project.")
 @click.option("--project-dir", default=".", help="Project dir for Claude Code .mcp.json.")
 def attach(client: str, db: str, user: bool, project_dir: str) -> None:
-    """Attach MemContext to your AI client(s) — writes the config, no manual editing.
+    """Attach MemContext to your AI client(s) - writes the config, no manual editing.
 
-    Claude Code → project .mcp.json (and ~/.claude.json with --user); Codex →
+    Claude Code -> project .mcp.json (and ~/.claude.json with --user); Codex ->
     ~/.codex/config.toml. Idempotent (re-run is a no-op), backs up to *.bak, and
     never touches other servers.
     """
@@ -737,7 +737,7 @@ def reindex_importance_cmd(db: str) -> None:
               help="Only demote claims older than this many days")
 def prune_memory_cmd(db: str, threshold: float, min_age_days: float) -> None:
     """Demote low-utility, old claims out of active retrieval (utility-weighted
-    retention). Reversible, never deletes — bounds the active set / token cost.
+    retention). Reversible, never deletes - bounds the active set / token cost.
     """
     from memcontext.retention import demote_low_utility
     from memcontext.schema import open_database
