@@ -4,7 +4,8 @@ Measured on `master` @ `c79d380` before any HAR-95 product change.
 Reproduce:
 
 ```bash
-python -m pytest tests/test_har95_baseline.py -q -rxX   # 8 passed, 9 xfailed (strict)
+python -m pytest tests/test_har95_baseline.py -q -rxX   # at c79d380: 8 passed, 9 xfailed (strict)
+                                                         # after slice 1: GAP-1a, 2-4 promoted (SLICE1.md)
 python -m tests.test_har95_baseline                      # prints the slot/token matrix below
 ```
 
