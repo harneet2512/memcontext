@@ -19,9 +19,13 @@ from typing import Any, Protocol, cast, runtime_checkable
 
 import structlog
 
-from memcontext.claims import set_claim_status
 from memcontext.schema import Claim, ClaimStatus, EdgeType, SupersessionEdge
-from memcontext.supersession import write_supersession_edge
+from memcontext.supersession import (
+    claim_trust,
+    normalize_value,
+    retire_claim,
+    write_supersession_edge,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -139,15 +143,20 @@ class SemanticSupersession:
         """
         nl_mode = not new_claim.predicate
         if nl_mode:
-            # NL-only identity is fuzzy, so it stays session-scoped.
+            # NL-only identity is fuzzy, so it stays session-scoped — and always
+            # inside the new claim's namespace: a same-named session in another
+            # namespace belongs to a different tenant.
             rows = conn.execute(
-                "SELECT * FROM claims WHERE session_id = ?"
-                " AND status IN ('active','confirmed')"
-                " AND claim_id != ?"
-                " AND source_turn_id != ?"
-                " AND created_ts < ?",
+                "SELECT c.* FROM claims c JOIN turns t ON t.turn_id = c.source_turn_id"
+                " WHERE c.session_id = ?"
+                " AND t.namespace = (SELECT namespace FROM turns WHERE turn_id = ?)"
+                " AND c.status IN ('active','confirmed')"
+                " AND c.claim_id != ?"
+                " AND c.source_turn_id != ?"
+                " AND c.created_ts < ?",
                 (
                     new_claim.session_id,
+                    new_claim.source_turn_id,
                     new_claim.claim_id,
                     new_claim.source_turn_id,
                     new_claim.created_ts,
@@ -178,6 +187,16 @@ class SemanticSupersession:
         from memcontext.claims import row_to_claim
 
         candidates = [row_to_claim(r) for r in rows]
+
+        # An identical restatement is recurrence evidence (Pass 1 keeps both copies
+        # on purpose, and consolidation counts them), not a replacement.
+        def _surface(c: Claim) -> str:
+            return normalize_value(c.value if c.predicate else (c.text or ""))
+
+        new_surface = _surface(new_claim)
+        if any(_surface(c) == new_surface and (not c.predicate or c.subject == new_claim.subject)
+               for c in candidates):
+            return None
 
         if nl_mode:
             new_text = new_claim.text or new_turn_text
@@ -224,6 +243,13 @@ class SemanticSupersession:
         if old_claim.status is ClaimStatus.SUPERSEDED:
             return None
 
+        # Same source-trust guard as Pass 1: a markedly lower-trust source (an
+        # assistant restatement, a web page) never retires a higher-trust fact.
+        if claim_trust(conn, new_claim.claim_id) + 0.2 < claim_trust(conn, old_claim.claim_id):
+            log.info("substrate.supersession_pass2_blocked_low_trust",
+                     old_claim_id=old_claim.claim_id, new_claim_id=new_claim.claim_id)
+            return None
+
         edge = write_supersession_edge(
             conn,
             old_claim_id=old_claim.claim_id,
@@ -231,7 +257,7 @@ class SemanticSupersession:
             edge_type=EdgeType.SEMANTIC_REPLACE,
             identity_score=best_score,
         )
-        set_claim_status(conn, old_claim.claim_id, ClaimStatus.SUPERSEDED)
+        retire_claim(conn, old_claim.claim_id, edge.created_ts)
         log.info(
             "substrate.supersession_pass2",
             session_id=new_claim.session_id,

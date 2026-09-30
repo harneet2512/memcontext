@@ -66,7 +66,7 @@ def _get_speaker(conn: sqlite3.Connection, turn_id: str) -> Speaker:
     return Speaker(row["speaker"])
 
 
-def _claim_trust(conn: sqlite3.Connection, claim_id: str) -> float:
+def claim_trust(conn: sqlite3.Connection, claim_id: str) -> float:
     """Source-trust weight of a claim (0.5 neutral if unset)."""
     row = conn.execute(
         "SELECT COALESCE(source_trust, 0.5) FROM claim_metadata WHERE claim_id = ?",
@@ -157,6 +157,23 @@ def _has_closed_window(value: str) -> bool:
     return _CLOSED_WINDOW_RE.search(value) is not None
 
 
+# Explicit past-tense framing also marks a record as history ("used to live in
+# Denver"). "no longer ..." is deliberately NOT here: it states the current value.
+_PAST_MARKER_RE = __import__("re").compile(
+    r"\b(?:used to|previously|formerly|in the past)\b", __import__("re").IGNORECASE,
+)
+
+
+def _is_historical(value: str) -> bool:
+    """A historical record never supersedes, nor is superseded by, a current value."""
+    return _has_closed_window(value) or _PAST_MARKER_RE.search(value) is not None
+
+
+def normalize_value(value: str) -> str:
+    """Comparison form of a claim value: case/whitespace/trailing-punctuation blind."""
+    return " ".join(value.lower().split()).rstrip(".!?;,: ")
+
+
 def detect_pass1(
     conn: sqlite3.Connection,
     new_claim: Claim,
@@ -199,16 +216,19 @@ def detect_pass1(
     from memcontext.claims import row_to_claim
     from memcontext.predicate_packs import active_pack
 
-    new_value_norm = new_claim.value.strip().lower()
+    new_value_norm = normalize_value(new_claim.value)
+    new_historical = _is_historical(new_claim.value)
     best_match: Claim | None = None
 
-    if new_claim.predicate in active_pack().single_valued:
+    if new_claim.predicate in active_pack().single_valued and not new_historical:
         # Cardinality supersession: a single-valued (subject, predicate) slot holds
         # ONE current value, so a new value supersedes the newest prior active claim
         # regardless of token overlap (e.g. Postgres -> DynamoDB). Deterministic.
         for row in rows:
             candidate = row_to_claim(row)
-            if candidate.value.strip().lower() != new_value_norm:
+            if _is_historical(candidate.value):
+                continue
+            if normalize_value(candidate.value) != new_value_norm:
                 best_match = candidate
                 break
 
@@ -225,18 +245,19 @@ def detect_pass1(
         # "lives in Boston" are both true and must coexist. (CLAUDE.md: over-supersession
         # silently deletes valid memory.)
         new_attr = _attribute_of(new_claim.value)
-        if new_attr is not None and not _has_closed_window(new_claim.value):
+        if new_attr is not None and not new_historical:
             for row in rows:
                 candidate = row_to_claim(row)
-                if candidate.value.strip().lower() == new_value_norm:
+                if normalize_value(candidate.value) == new_value_norm:
                     continue
-                if _has_closed_window(candidate.value):
+                if _is_historical(candidate.value):
                     continue
                 if _attribute_of(candidate.value) == new_attr:
                     best_match = candidate
                     break
 
-    if best_match is None and new_claim.predicate not in active_pack().single_valued:
+    if (best_match is None and not new_historical
+            and new_claim.predicate not in active_pack().single_valued):
         # Multi-valued / undeclared: distinguish a value UPDATE (supersede) from an
         # ADDITIVE fact (keep both) on a shared (subject, predicate).
         import re as _re
@@ -259,7 +280,9 @@ def detect_pass1(
         best_jaccard: float = 0.0
         for row in rows:
             candidate = row_to_claim(row)
-            if candidate.value.strip().lower() == new_value_norm:
+            if normalize_value(candidate.value) == new_value_norm:
+                continue
+            if _is_historical(candidate.value):
                 continue
             old_content = _content(candidate.value)
             if not (old_content and new_content):
@@ -301,7 +324,7 @@ def detect_pass1(
     # a web page overriding what the user stated). Both stay active; the conflict
     # is recorded as a status-neutral CONTRADICTS edge so it is surfaced (memory_
     # contradictions) instead of silently leaving two current values, and audited.
-    if _claim_trust(conn, new_claim.claim_id) + 0.2 < _claim_trust(conn, old_claim.claim_id):
+    if claim_trust(conn, new_claim.claim_id) + 0.2 < claim_trust(conn, old_claim.claim_id):
         _record_drift_blocked(conn, new_claim, old_claim, edge_type)
         edge_type = EdgeType.CONTRADICTS
 
@@ -313,23 +336,23 @@ def detect_pass1(
         identity_score=None,
     )
     if edge_type is not EdgeType.CONTRADICTS:
-        _retire(conn, old_claim.claim_id, edge.created_ts)
+        retire_claim(conn, old_claim.claim_id, edge.created_ts)
         # A fact restated in several sessions has several active copies (kept as
         # recurrence evidence). Replacing the value must retire every copy, or the
         # slot keeps the stale value alongside the new one.
-        old_value_norm = old_claim.value.strip().lower()
-        new_trust = _claim_trust(conn, new_claim.claim_id)
+        old_value_norm = normalize_value(old_claim.value)
+        new_trust = claim_trust(conn, new_claim.claim_id)
         for row in rows:
             copy = row_to_claim(row)
-            if copy.claim_id == old_claim.claim_id or copy.value.strip().lower() != old_value_norm:
+            if copy.claim_id == old_claim.claim_id or normalize_value(copy.value) != old_value_norm:
                 continue
-            if new_trust + 0.2 < _claim_trust(conn, copy.claim_id):
+            if new_trust + 0.2 < claim_trust(conn, copy.claim_id):
                 continue
             copy_edge = write_supersession_edge(
                 conn, old_claim_id=copy.claim_id, new_claim_id=new_claim.claim_id,
                 edge_type=edge_type, identity_score=None,
             )
-            _retire(conn, copy.claim_id, copy_edge.created_ts)
+            retire_claim(conn, copy.claim_id, copy_edge.created_ts)
     log.info(
         "substrate.supersession_pass1",
         session_id=new_claim.session_id,
@@ -340,7 +363,7 @@ def detect_pass1(
     return edge
 
 
-def _retire(conn: sqlite3.Connection, claim_id: str, at_ts: int) -> None:
+def retire_claim(conn: sqlite3.Connection, claim_id: str, at_ts: int) -> None:
     """Mark a claim superseded and close its validity window at ``at_ts``."""
     set_claim_status(conn, claim_id, ClaimStatus.SUPERSEDED)
     conn.execute(
