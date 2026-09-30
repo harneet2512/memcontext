@@ -1,0 +1,3750 @@
+{
+ "_meta": {
+  "schema": "memcontext.supersession_matrix/v1",
+  "author": "hand-written for MemContext product diagnostics (single author); not derived from any benchmark",
+  "labels_from": [
+   "memcontext/supersession.py",
+   "memcontext/supersession_semantic.py",
+   "ARCHITECTURE.md#supersession",
+   "predicate_packs/{general,developer}/predicates.json"
+  ],
+  "active_pack": "general,developer",
+  "label_values": {
+   "normal": "scored",
+   "ambiguous": "intent unclear; reported, excluded from accuracy",
+   "expected_limitation": "documented unsupported behavior; reported, excluded"
+  },
+  "nl_store_convention": "stores with nl=true use an out-of-pack predicate so the public API demotes them to NL-only facts",
+  "split": "dev",
+  "note": "Dev split: may be inspected while developing the harness and product fixes."
+ },
+ "cases": [
+  {
+   "id": "upd-02",
+   "category": "update",
+   "description": "standup time moves",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "daily standup meeting is at 9:30 am",
+     "text": "Our daily standup meeting is at 9:30 am."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "daily standup meeting is at 10:15 am",
+     "text": "Heads up, the daily standup meeting is at 10:15 am from now on."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "User replaces the value of the same fact; truth maintenance retires the stale one."
+  },
+  {
+   "id": "upd-03",
+   "category": "update",
+   "description": "auth token transport changes",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "auth-api",
+     "predicate": "api_contract",
+     "value": "login endpoint returns the JWT in the response body",
+     "text": "The login endpoint returns the JWT in the response body."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "auth-api",
+     "predicate": "api_contract",
+     "value": "login endpoint returns the JWT in an httpOnly cookie",
+     "text": "We changed it: the login endpoint returns the JWT in an httpOnly cookie instead."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "User replaces the value of the same fact; truth maintenance retires the stale one."
+  },
+  {
+   "id": "upd-04",
+   "category": "update",
+   "description": "numpy pin moves",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "analytics",
+     "predicate": "dependency_reason",
+     "value": "pin numpy to 1.26 because of the ABI break",
+     "text": "We pin numpy to 1.26 because of the ABI break."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "analytics",
+     "predicate": "dependency_reason",
+     "value": "pin numpy to 2.1 now that the ABI issue is fixed",
+     "text": "Update: we pin numpy to 2.1 now that the ABI issue is fixed."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "User replaces the value of the same fact; truth maintenance retires the stale one."
+  },
+  {
+   "id": "upd-06",
+   "category": "update",
+   "description": "manager changes (one manager at a time)",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_relationship",
+     "value": "manager is Dana Kim",
+     "text": "My manager is Dana Kim."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_relationship",
+     "value": "manager is now Luis Ortega",
+     "text": "Reorg happened, my manager is now Luis Ortega."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "User replaces the value of the same fact; truth maintenance retires the stale one. A person has one direct manager."
+  },
+  {
+   "id": "upd-07",
+   "category": "update",
+   "description": "meeting-time preference flips (low overlap)",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "prefers morning meetings before 11am",
+     "text": "I prefer morning meetings before 11am."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "prefers afternoon meetings after 2pm",
+     "text": "Actually these days I prefer afternoon meetings after 2pm."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "User replaces the value of the same fact; truth maintenance retires the stale one."
+  },
+  {
+   "id": "upd-09",
+   "category": "update",
+   "description": "python dependency tool preference",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "prefers Poetry for Python dependency management",
+     "text": "I prefer Poetry for Python dependency management."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "prefers uv for Python dependency management",
+     "text": "I moved everything over, I prefer uv for Python dependency management now."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "User replaces the value of the same fact; truth maintenance retires the stale one."
+  },
+  {
+   "id": "upd-10",
+   "category": "update",
+   "description": "sprint focus changes",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "team",
+     "predicate": "context",
+     "value": "current sprint focuses on the checkout redesign",
+     "text": "The current sprint focuses on the checkout redesign."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "team",
+     "predicate": "context",
+     "value": "current sprint focuses on search performance",
+     "text": "New sprint started; the current sprint focuses on search performance."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "User replaces the value of the same fact; truth maintenance retires the stale one."
+  },
+  {
+   "id": "upd-12",
+   "category": "update",
+   "description": "phone number changes",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "phone number ends in 4471",
+     "text": "My phone number ends in 4471."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "new phone number ends in 9082",
+     "text": "I got a new phone, my new phone number ends in 9082."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "User replaces the value of the same fact; truth maintenance retires the stale one."
+  },
+  {
+   "id": "uno-01",
+   "category": "update_no_overlap",
+   "description": "primary datastore decision",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "orders-db",
+     "predicate": "decision_made",
+     "value": "Postgres",
+     "text": "We decided to use Postgres for the orders database."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "orders-db",
+     "predicate": "decision_made",
+     "value": "DynamoDB",
+     "text": "We are switching the orders database to DynamoDB."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Declared single_valued predicate (developer pack): one current value per (subject, predicate), regardless of token overlap."
+  },
+  {
+   "id": "uno-03",
+   "category": "update_no_overlap",
+   "description": "mobile app status",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "mobile-app",
+     "predicate": "project_status",
+     "value": "in beta",
+     "text": "The mobile app is in beta."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "mobile-app",
+     "predicate": "project_status",
+     "value": "shipped to production",
+     "text": "The mobile app shipped to production yesterday."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Declared single_valued predicate (developer pack): one current value per (subject, predicate), regardless of token overlap."
+  },
+  {
+   "id": "uno-04",
+   "category": "update_no_overlap",
+   "description": "file purpose changes",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "src/utils/retry.ts",
+     "predicate": "file_purpose",
+     "value": "exponential backoff helper for HTTP calls",
+     "text": "src/utils/retry.ts is the exponential backoff helper for HTTP calls."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "src/utils/retry.ts",
+     "predicate": "file_purpose",
+     "value": "deprecated, kept only for the legacy importer",
+     "text": "retry.ts is deprecated now, kept only for the legacy importer."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Declared single_valued predicate (developer pack): one current value per (subject, predicate), regardless of token overlap."
+  },
+  {
+   "id": "uno-07",
+   "category": "update_no_overlap",
+   "description": "JSON casing convention",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "public-api",
+     "predicate": "convention_established",
+     "value": "snake_case field names",
+     "text": "The public API uses snake_case field names."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "public-api",
+     "predicate": "convention_established",
+     "value": "camelCase",
+     "text": "We standardised the public API on camelCase."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Declared single_valued predicate (developer pack): one current value per (subject, predicate), regardless of token overlap."
+  },
+  {
+   "id": "uno-10",
+   "category": "update_no_overlap",
+   "description": "seed script repurposed",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "scripts/seed.py",
+     "predicate": "file_purpose",
+     "value": "seeds the local dev database",
+     "text": "scripts/seed.py seeds the local dev database."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "scripts/seed.py",
+     "predicate": "file_purpose",
+     "value": "generates fixture JSON for tests",
+     "text": "seed.py was repurposed; it generates fixture JSON for tests."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Declared single_valued predicate (developer pack): one current value per (subject, predicate), regardless of token overlap."
+  },
+  {
+   "id": "uno-11",
+   "category": "update_no_overlap",
+   "description": "favorite editor on a multi-valued predicate",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "Vim",
+     "text": "My editor of choice is Vim."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "VS Code",
+     "text": "I moved to VS Code as my editor."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "ambiguous",
+   "rationale": "user_preference is multi-valued; bare values give no slot, so update-vs-additive is not decidable from the triple alone."
+  },
+  {
+   "id": "uno-12",
+   "category": "update_no_overlap",
+   "description": "deployment target decision",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "infra",
+     "predicate": "decision_made",
+     "value": "Heroku",
+     "text": "We host everything on Heroku."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "infra",
+     "predicate": "decision_made",
+     "value": "AWS ECS on Fargate",
+     "text": "Infra decision: we are moving to AWS ECS on Fargate."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Declared single_valued predicate (developer pack): one current value per (subject, predicate), regardless of token overlap."
+  },
+  {
+   "id": "add-01",
+   "category": "additive",
+   "description": "food likes",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "likes pizza",
+     "text": "I really like pizza."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "likes sushi",
+     "text": "I also like sushi."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Two distinct facts that are both true; over-supersession would silently delete valid memory."
+  },
+  {
+   "id": "add-02",
+   "category": "additive",
+   "description": "two allergies",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_constraint",
+     "value": "allergic to peanuts",
+     "text": "I'm allergic to peanuts."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_constraint",
+     "value": "allergic to shellfish",
+     "text": "Also, I'm allergic to shellfish."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Two distinct facts that are both true; over-supersession would silently delete valid memory."
+  },
+  {
+   "id": "add-03",
+   "category": "additive",
+   "description": "two siblings",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_relationship",
+     "value": "has a sister named Priya",
+     "text": "I have a sister named Priya."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_relationship",
+     "value": "has a brother named Arjun",
+     "text": "I also have a brother named Arjun."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Two distinct facts that are both true; over-supersession would silently delete valid memory."
+  },
+  {
+   "id": "add-04",
+   "category": "additive",
+   "description": "two migration todos on different tables",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "backend",
+     "predicate": "todo",
+     "value": "write migration tests for the orders table",
+     "text": "TODO: write migration tests for the orders table."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "backend",
+     "predicate": "todo",
+     "value": "write migration tests for the users table",
+     "text": "Another TODO: write migration tests for the users table."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Two distinct facts that are both true; over-supersession would silently delete valid memory. Different tables = different tasks."
+  },
+  {
+   "id": "add-05",
+   "category": "additive",
+   "description": "two unrelated bug fixes",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "api",
+     "predicate": "bug_fixed",
+     "value": "race condition in the session cache",
+     "text": "Fixed the race condition in the session cache."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "api",
+     "predicate": "bug_fixed",
+     "value": "memory leak in the websocket handler",
+     "text": "Also fixed a memory leak in the websocket handler."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Two distinct facts that are both true; over-supersession would silently delete valid memory."
+  },
+  {
+   "id": "add-06",
+   "category": "additive",
+   "description": "two races run",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_event",
+     "value": "ran a 5k race in March",
+     "text": "I ran a 5k race in March."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_event",
+     "value": "ran a 10k race in June",
+     "text": "And I ran a 10k race in June."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Two distinct facts that are both true; over-supersession would silently delete valid memory. Two separate events."
+  },
+  {
+   "id": "add-10",
+   "category": "additive",
+   "description": "two public-API todos",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "public-api",
+     "predicate": "todo",
+     "value": "add rate limiting to the public API",
+     "text": "TODO: add rate limiting to the public API."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "public-api",
+     "predicate": "todo",
+     "value": "add request logging to the public API",
+     "text": "TODO: add request logging to the public API."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Two distinct facts that are both true; over-supersession would silently delete valid memory."
+  },
+  {
+   "id": "add-13",
+   "category": "additive",
+   "description": "two endpoint contracts",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "orders-api",
+     "predicate": "api_contract",
+     "value": "GET /orders supports cursor pagination",
+     "text": "GET /orders supports cursor pagination."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "orders-api",
+     "predicate": "api_contract",
+     "value": "POST /orders requires an idempotency key",
+     "text": "POST /orders requires an idempotency key."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Two distinct facts that are both true; over-supersession would silently delete valid memory."
+  },
+  {
+   "id": "add-14",
+   "category": "additive",
+   "description": "decisions for two different components (same single_valued predicate)",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "orders-db",
+     "predicate": "decision_made",
+     "value": "Postgres",
+     "text": "We picked Postgres for the orders database."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "web-frontend",
+     "predicate": "decision_made",
+     "value": "React",
+     "text": "We picked React for the web frontend."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Two distinct facts that are both true; over-supersession would silently delete valid memory. Different subjects: single_valued is per (subject, predicate)."
+  },
+  {
+   "id": "att-01",
+   "category": "attribute_slot",
+   "description": "NYC -> Boston",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "lives in NYC",
+     "text": "I live in NYC."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "moved to Boston",
+     "text": "I moved to Boston last month."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Single-valued life attribute (residence/employer/...): new value retires the old even with different phrasing."
+  },
+  {
+   "id": "att-03",
+   "category": "attribute_slot",
+   "description": "Brooklyn -> Austin",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "lives in Brooklyn",
+     "text": "I live in Brooklyn."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "relocated to Austin for the new job",
+     "text": "I relocated to Austin for the new job."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Single-valued life attribute (residence/employer/...): new value retires the old even with different phrasing."
+  },
+  {
+   "id": "att-04",
+   "category": "attribute_slot",
+   "description": "employed by -> working at",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "employed by Acme Corp",
+     "text": "I'm employed by Acme Corp."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "working at Globex",
+     "text": "I'm working at Globex these days."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Single-valued life attribute (residence/employer/...): new value retires the old even with different phrasing."
+  },
+  {
+   "id": "att-06",
+   "category": "attribute_slot",
+   "description": "job title promotion",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "is a senior backend engineer",
+     "text": "I'm a senior backend engineer."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "got promoted to staff engineer",
+     "text": "I got promoted to staff engineer."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Single-valued life attribute (residence/employer/...): new value retires the old even with different phrasing. Job title is single-valued."
+  },
+  {
+   "id": "att-07",
+   "category": "attribute_slot",
+   "description": "residence change stored under a different predicate",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "lives in Chicago",
+     "text": "I live in Chicago."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_event",
+     "value": "moved to Denver last month",
+     "text": "I moved to Denver last month."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Single-valued life attribute (residence/employer/...): new value retires the old even with different phrasing. Extractors assign predicates inconsistently; the slot is residence either way."
+  },
+  {
+   "id": "att-09",
+   "category": "attribute_slot",
+   "description": "car replaced",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "drives a 2015 Honda Civic",
+     "text": "I drive a 2015 Honda Civic."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "drives a Tesla Model 3",
+     "text": "I sold the Civic, I drive a Tesla Model 3 now."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Single-valued life attribute (residence/employer/...): new value retires the old even with different phrasing. The utterance says the old car was sold."
+  },
+  {
+   "id": "att-10",
+   "category": "attribute_slot",
+   "description": "residence and employer are different slots",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "lives in Denver",
+     "text": "I live in Denver."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "works at Denver Health",
+     "text": "I work at Denver Health."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Different attribute slots sharing a token; both stay."
+  },
+  {
+   "id": "his-03",
+   "category": "history_window",
+   "description": "worked-until then works-at",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "worked at Google until 2019",
+     "text": "I worked at Google until 2019."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "works at Meta",
+     "text": "I work at Meta."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A closed/past time range is a historical record; it coexists with the current value."
+  },
+  {
+   "id": "his-05",
+   "category": "history_window",
+   "description": "'used to live in' then current",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "used to live in Portland",
+     "text": "I used to live in Portland."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "lives in Seattle",
+     "text": "I live in Seattle."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A closed/past time range is a historical record; it coexists with the current value. 'used to' marks the past explicitly."
+  },
+  {
+   "id": "his-08",
+   "category": "history_window",
+   "description": "current Austin then 'previously lived'",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "lives in Austin",
+     "text": "I live in Austin."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "previously lived in Dallas",
+     "text": "I previously lived in Dallas."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A closed/past time range is a historical record; it coexists with the current value."
+  },
+  {
+   "id": "his-09",
+   "category": "history_window",
+   "description": "'until last year' then current employer",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "worked at Microsoft until last year",
+     "text": "I worked at Microsoft until last year."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "works at Canva",
+     "text": "I work at Canva."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A closed/past time range is a historical record; it coexists with the current value."
+  },
+  {
+   "id": "his-10",
+   "category": "history_window",
+   "description": "current Berlin then university-years Munich",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "lives in Berlin",
+     "text": "I live in Berlin."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "lived in Munich during university from 2012 to 2016",
+     "text": "I lived in Munich during university from 2012 to 2016."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A closed/past time range is a historical record; it coexists with the current value."
+  },
+  {
+   "id": "his-11",
+   "category": "history_window",
+   "description": "current employer then past internship at the same company",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "works at Shopify",
+     "text": "I work at Shopify."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "worked at Shopify from 2016 to 2018 as an intern",
+     "text": "I also worked at Shopify from 2016 to 2018 as an intern."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A closed/past time range is a historical record; it coexists with the current value."
+  },
+  {
+   "id": "his-12",
+   "category": "history_window",
+   "description": "'used to work at' then current",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "used to work at Intel",
+     "text": "I used to work at Intel."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "works at Nvidia",
+     "text": "I work at Nvidia."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A closed/past time range is a historical record; it coexists with the current value. 'used to' marks the past explicitly."
+  },
+  {
+   "id": "qty-01",
+   "category": "quantity",
+   "description": "two kids -> three kids",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "has two kids",
+     "text": "I have two kids."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "has three kids",
+     "text": "We had a baby, I have three kids now."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A count/amount changed for the same thing; the old count is stale."
+  },
+  {
+   "id": "qty-02",
+   "category": "quantity",
+   "description": "team size grows",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "platform-team",
+     "predicate": "context",
+     "value": "team has 5 engineers",
+     "text": "The platform team has 5 engineers."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "platform-team",
+     "predicate": "context",
+     "value": "team has 7 engineers",
+     "text": "After hiring, the platform team has 7 engineers."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A count/amount changed for the same thing; the old count is stale."
+  },
+  {
+   "id": "qty-03",
+   "category": "quantity",
+   "description": "rate limit raised",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "public-api",
+     "predicate": "api_contract",
+     "value": "rate limit is 100 requests per minute",
+     "text": "The rate limit is 100 requests per minute."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "public-api",
+     "predicate": "api_contract",
+     "value": "rate limit is 500 requests per minute",
+     "text": "We raised it; the rate limit is 500 requests per minute."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A count/amount changed for the same thing; the old count is stale."
+  },
+  {
+   "id": "qty-05",
+   "category": "quantity",
+   "description": "running distance",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "runs 3 miles every morning",
+     "text": "I run 3 miles every morning."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "runs 5 miles every morning",
+     "text": "I'm up to running 5 miles every morning."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A count/amount changed for the same thing; the old count is stale."
+  },
+  {
+   "id": "qty-08",
+   "category": "quantity",
+   "description": "timeout unit change",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "gateway",
+     "predicate": "api_contract",
+     "value": "request timeout is 30 seconds",
+     "text": "The gateway request timeout is 30 seconds."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "gateway",
+     "predicate": "api_contract",
+     "value": "request timeout is 2 minutes",
+     "text": "We bumped the gateway request timeout to 2 minutes."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A count/amount changed for the same thing; the old count is stale."
+  },
+  {
+   "id": "qty-10",
+   "category": "quantity",
+   "description": "sleep hours",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "sleeps about 6 hours a night",
+     "text": "I sleep about 6 hours a night."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "sleeps about 8 hours a night",
+     "text": "Lately I sleep about 8 hours a night."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A count/amount changed for the same thing; the old count is stale."
+  },
+  {
+   "id": "qty-11",
+   "category": "quantity",
+   "description": "on-call rotation size",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "sre",
+     "predicate": "context",
+     "value": "on-call rotation has 4 people",
+     "text": "The on-call rotation has 4 people."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "sre",
+     "predicate": "context",
+     "value": "on-call rotation has 6 people",
+     "text": "Two more joined, the on-call rotation has 6 people."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "A count/amount changed for the same thing; the old count is stale."
+  },
+  {
+   "id": "neg-01",
+   "category": "negation",
+   "description": "no longer uses Redis",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "backend",
+     "predicate": "dependency_reason",
+     "value": "uses Redis for caching",
+     "text": "The backend uses Redis for caching."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "backend",
+     "predicate": "dependency_reason",
+     "value": "no longer uses Redis",
+     "text": "The backend no longer uses Redis."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "The user negates/ends a prior fact; the positive fact must no longer be served as current."
+  },
+  {
+   "id": "neg-02",
+   "category": "negation",
+   "description": "stopped drinking coffee",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "drinks coffee every morning",
+     "text": "I drink coffee every morning."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "stopped drinking coffee",
+     "text": "I stopped drinking coffee."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "The user negates/ends a prior fact; the positive fact must no longer be served as current."
+  },
+  {
+   "id": "neg-03",
+   "category": "negation",
+   "description": "not vegetarian anymore",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "is vegetarian",
+     "text": "I am a vegetarian."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "is not vegetarian anymore",
+     "text": "I'm not vegetarian anymore."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "The user negates/ends a prior fact; the positive fact must no longer be served as current."
+  },
+  {
+   "id": "neg-04",
+   "category": "negation",
+   "description": "lodash removed",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "web-client",
+     "predicate": "dependency_reason",
+     "value": "depends on lodash for deep cloning",
+     "text": "The web client depends on lodash for deep cloning."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "web-client",
+     "predicate": "dependency_reason",
+     "value": "removed lodash, uses structuredClone instead",
+     "text": "We removed lodash, the web client uses structuredClone instead."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "The user negates/ends a prior fact; the positive fact must no longer be served as current."
+  },
+  {
+   "id": "neg-06",
+   "category": "negation",
+   "description": "doesn't like spicy food anymore",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "likes spicy food",
+     "text": "I like spicy food."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "doesn't like spicy food anymore",
+     "text": "I don't like spicy food anymore."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "The user negates/ends a prior fact; the positive fact must no longer be served as current."
+  },
+  {
+   "id": "neg-07",
+   "category": "negation",
+   "description": "tennis stopped",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "plays tennis on Sundays",
+     "text": "I play tennis on Sundays."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "doesn't play tennis anymore",
+     "text": "I don't play tennis anymore."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "The user negates/ends a prior fact; the positive fact must no longer be served as current."
+  },
+  {
+   "id": "neg-11",
+   "category": "negation",
+   "description": "todo cancelled",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "data",
+     "predicate": "todo",
+     "value": "migrate the cron jobs to Airflow",
+     "text": "TODO: migrate the cron jobs to Airflow."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "data",
+     "predicate": "todo",
+     "value": "no need to migrate the cron jobs to Airflow anymore",
+     "text": "No need to migrate the cron jobs to Airflow anymore."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "The user negates/ends a prior fact; the positive fact must no longer be served as current."
+  },
+  {
+   "id": "dup-01",
+   "category": "duplicate",
+   "description": "aisle seat preference restated",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "prefers aisle seats",
+     "text": "I prefer aisle seats."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "prefers aisle seats",
+     "text": "Like I said, I prefer aisle seats."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same value restated: both copies stay active (recurrence evidence for consolidation); no edge, no conflict."
+  },
+  {
+   "id": "dup-02",
+   "category": "duplicate",
+   "description": "decision restated in a later session (single_valued)",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "orders-db",
+     "predicate": "decision_made",
+     "value": "Postgres",
+     "text": "We decided to use Postgres for the orders database."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "orders-db",
+     "predicate": "decision_made",
+     "value": "Postgres",
+     "text": "Reminder: the orders database is Postgres."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same value restated: both copies stay active (recurrence evidence for consolidation); no edge, no conflict."
+  },
+  {
+   "id": "dup-03",
+   "category": "duplicate",
+   "description": "case-only variant",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "backend",
+     "predicate": "dependency_reason",
+     "value": "Uses Postgres",
+     "text": "The backend uses Postgres."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "backend",
+     "predicate": "dependency_reason",
+     "value": "uses postgres",
+     "text": "yeah the backend uses postgres"
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same value restated: both copies stay active (recurrence evidence for consolidation); no edge, no conflict."
+  },
+  {
+   "id": "dup-05",
+   "category": "duplicate",
+   "description": "allergy restated across sessions",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_constraint",
+     "value": "allergic to penicillin",
+     "text": "I'm allergic to penicillin."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_constraint",
+     "value": "allergic to penicillin",
+     "text": "Remember I'm allergic to penicillin."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same value restated: both copies stay active (recurrence evidence for consolidation); no edge, no conflict."
+  },
+  {
+   "id": "dup-07",
+   "category": "duplicate",
+   "description": "convention restated (single_valued)",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "repo",
+     "predicate": "convention_established",
+     "value": "conventional commits",
+     "text": "We use conventional commits."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "repo",
+     "predicate": "convention_established",
+     "value": "conventional commits",
+     "text": "Please stick to conventional commits."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same value restated: both copies stay active (recurrence evidence for consolidation); no edge, no conflict."
+  },
+  {
+   "id": "dup-08",
+   "category": "duplicate",
+   "description": "spouse name restated with different wording",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_relationship",
+     "value": "wife's name is Maya",
+     "text": "My wife's name is Maya."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s3",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_relationship",
+     "value": "wife's name is Maya",
+     "text": "Maya, my wife, says hi."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same value restated: both copies stay active (recurrence evidence for consolidation); no edge, no conflict."
+  },
+  {
+   "id": "dup-10",
+   "category": "duplicate",
+   "description": "trailing-punctuation variant",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_goal",
+     "value": "wants to visit Japan next spring.",
+     "text": "I want to visit Japan next spring."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_goal",
+     "value": "wants to visit Japan next spring",
+     "text": "Still planning, I want to visit Japan next spring"
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same value restated: both copies stay active (recurrence evidence for consolidation); no edge, no conflict. Only a trailing period differs."
+  },
+  {
+   "id": "cad-04",
+   "category": "change_after_duplicates",
+   "description": "user A, assistant echo A, user B",
+   "stores": [
+    {
+     "key": "a1",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "repo",
+     "predicate": "convention_established",
+     "value": "squash merges",
+     "text": "We use squash merges."
+    },
+    {
+     "key": "a2",
+     "speaker": "assistant",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "repo",
+     "predicate": "convention_established",
+     "value": "squash merges",
+     "text": "Understood, the repo uses squash merges."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "repo",
+     "predicate": "convention_established",
+     "value": "rebase merges",
+     "text": "Change of policy: we use rebase merges."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Value restated (A, A) then changed (B): every copy of A is retired, B is the one current value."
+  },
+  {
+   "id": "cad-05",
+   "category": "change_after_duplicates",
+   "description": "case variants of A then B",
+   "stores": [
+    {
+     "key": "a1",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "Uses Yarn for package management",
+     "text": "I use Yarn for package management."
+    },
+    {
+     "key": "a2",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "uses yarn for package management",
+     "text": "i use yarn for package management"
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "uses pnpm for package management",
+     "text": "I switched, I use pnpm for package management."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Value restated (A, A) then changed (B): every copy of A is retired, B is the one current value."
+  },
+  {
+   "id": "cad-06",
+   "category": "change_after_duplicates",
+   "description": "user A twice then assistant B",
+   "stores": [
+    {
+     "key": "a1",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "api",
+     "predicate": "decision_made",
+     "value": "REST",
+     "text": "The api is REST."
+    },
+    {
+     "key": "a2",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "api",
+     "predicate": "decision_made",
+     "value": "REST",
+     "text": "We are sticking with REST for the api."
+    },
+    {
+     "key": "b",
+     "speaker": "assistant",
+     "session": "s3",
+     "namespace": "default",
+     "subject": "api",
+     "predicate": "decision_made",
+     "value": "GraphQL",
+     "text": "The api uses GraphQL."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a1",
+     "a2",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": true
+   },
+   "label": "normal",
+   "rationale": "An assistant value must not retire the user's (repeated) fact; the conflict is surfaced."
+  },
+  {
+   "id": "cad-07",
+   "category": "change_after_duplicates",
+   "description": "two kids twice then three",
+   "stores": [
+    {
+     "key": "a1",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "has two kids",
+     "text": "I have two kids."
+    },
+    {
+     "key": "a2",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "has two kids",
+     "text": "Like I said, I have two kids."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s3",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "has three kids",
+     "text": "I have three kids now."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Value restated (A, A) then changed (B): every copy of A is retired, B is the one current value."
+  },
+  {
+   "id": "cad-08",
+   "category": "change_after_duplicates",
+   "description": "beta, beta, GA",
+   "stores": [
+    {
+     "key": "a1",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "mobile-app",
+     "predicate": "project_status",
+     "value": "in beta",
+     "text": "The mobile app is in beta."
+    },
+    {
+     "key": "a2",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "mobile-app",
+     "predicate": "project_status",
+     "value": "in beta",
+     "text": "Mobile app is still in beta."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s3",
+     "namespace": "default",
+     "subject": "mobile-app",
+     "predicate": "project_status",
+     "value": "generally available",
+     "text": "The mobile app is generally available."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Value restated (A, A) then changed (B): every copy of A is retired, B is the one current value."
+  },
+  {
+   "id": "cad-09",
+   "category": "change_after_duplicates",
+   "description": "A, A in one namespace; B in another",
+   "stores": [
+    {
+     "key": "a1",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "acme",
+     "subject": "orders-db",
+     "predicate": "decision_made",
+     "value": "Postgres",
+     "text": "The orders database is Postgres."
+    },
+    {
+     "key": "a2",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "acme",
+     "subject": "orders-db",
+     "predicate": "decision_made",
+     "value": "Postgres",
+     "text": "Still Postgres for the orders database."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "globex",
+     "subject": "orders-db",
+     "predicate": "decision_made",
+     "value": "MongoDB",
+     "text": "The orders database is MongoDB."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a1",
+     "a2",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Namespaces are tenant boundaries; the other tenant's value touches nothing."
+  },
+  {
+   "id": "cad-11",
+   "category": "change_after_duplicates",
+   "description": "manager restated then changed (low overlap)",
+   "stores": [
+    {
+     "key": "a1",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_relationship",
+     "value": "manager is Dana Kim",
+     "text": "My manager is Dana Kim."
+    },
+    {
+     "key": "a2",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_relationship",
+     "value": "manager is Dana Kim",
+     "text": "Dana Kim is still my manager."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s3",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_relationship",
+     "value": "manager is now Luis Ortega",
+     "text": "My manager is now Luis Ortega."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Value restated (A, A) then changed (B): every copy of A is retired, B is the one current value."
+  },
+  {
+   "id": "xs-02",
+   "category": "cross_session",
+   "description": "theme preference across sessions",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "prefers the dark theme in the IDE",
+     "text": "I prefer the dark theme in my IDE."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "prefers the light theme in the IDE",
+     "text": "I prefer the light theme in the IDE now."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same namespace, later session: a changed value supersedes across sessions."
+  },
+  {
+   "id": "xs-03",
+   "category": "cross_session",
+   "description": "residence across sessions",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "lives in NYC",
+     "text": "I live in NYC."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "moved to Boston",
+     "text": "I moved to Boston."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same namespace, later session: a changed value supersedes across sessions."
+  },
+  {
+   "id": "xs-05",
+   "category": "cross_session",
+   "description": "convention across sessions",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "repo",
+     "predicate": "convention_established",
+     "value": "merge commits",
+     "text": "We use merge commits."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "repo",
+     "predicate": "convention_established",
+     "value": "squash merges only",
+     "text": "Repo convention is squash merges only."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same namespace, later session: a changed value supersedes across sessions."
+  },
+  {
+   "id": "xs-06",
+   "category": "cross_session",
+   "description": "assistant then user across sessions",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "assistant",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "works at Stripe",
+     "text": "You mentioned you work at Stripe."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "works at Brex",
+     "text": "Correction, I work at Brex."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same namespace, later session: a changed value supersedes across sessions. User outranks assistant."
+  },
+  {
+   "id": "xs-09",
+   "category": "cross_session",
+   "description": "negation across sessions",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "backend",
+     "predicate": "dependency_reason",
+     "value": "uses Redis for caching",
+     "text": "The backend uses Redis for caching."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "backend",
+     "predicate": "dependency_reason",
+     "value": "no longer uses Redis",
+     "text": "The backend no longer uses Redis."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same namespace, later session: a changed value supersedes across sessions."
+  },
+  {
+   "id": "xs-10",
+   "category": "cross_session",
+   "description": "additive facts across sessions",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "likes pizza",
+     "text": "I really like pizza."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "likes sushi",
+     "text": "I really like sushi."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Additive facts stay additive across sessions."
+  },
+  {
+   "id": "xs-12",
+   "category": "cross_session",
+   "description": "employer change across sessions",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "works at Atlassian",
+     "text": "I work at Atlassian."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "works at Linear",
+     "text": "I work at Linear now."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same namespace, later session: a changed value supersedes across sessions."
+  },
+  {
+   "id": "xn-04",
+   "category": "cross_namespace",
+   "description": "quantity in two tenants",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "shared",
+     "namespace": "tenant-a",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "has two kids",
+     "text": "I have two kids."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "shared",
+     "namespace": "tenant-b",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "has three kids",
+     "text": "I have three kids."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same session id, different namespaces (tenants): one tenant's write never touches another's facts."
+  },
+  {
+   "id": "xn-05",
+   "category": "cross_namespace",
+   "description": "user vs assistant across tenants",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "shared",
+     "namespace": "acme",
+     "subject": "infra",
+     "predicate": "decision_made",
+     "value": "Terraform",
+     "text": "We manage infra with Terraform."
+    },
+    {
+     "key": "b",
+     "speaker": "assistant",
+     "session": "shared",
+     "namespace": "globex",
+     "subject": "infra",
+     "predicate": "decision_made",
+     "value": "Pulumi",
+     "text": "Infra is managed with Pulumi."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same session id, different namespaces (tenants): one tenant's write never touches another's facts. No cross-tenant conflict either."
+  },
+  {
+   "id": "xn-06",
+   "category": "cross_namespace",
+   "description": "identical NL fact in two tenants",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "shared",
+     "namespace": "acme",
+     "subject": "user",
+     "predicate": "deploy_schedule",
+     "value": "The staging deploy runs every Friday at 3pm",
+     "text": "The staging deploy runs every Friday at 3pm.",
+     "nl": true
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "shared",
+     "namespace": "globex",
+     "subject": "user",
+     "predicate": "deploy_schedule",
+     "value": "The staging deploy runs every Friday at 3pm",
+     "text": "The staging deploy runs every Friday at 3pm.",
+     "nl": true
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same session id, different namespaces (tenants): one tenant's write never touches another's facts."
+  },
+  {
+   "id": "xn-07",
+   "category": "cross_namespace",
+   "description": "NL update in another tenant",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "shared",
+     "namespace": "acme",
+     "subject": "user",
+     "predicate": "deploy_schedule",
+     "value": "The staging deploy runs every Friday at 3pm",
+     "text": "The staging deploy runs every Friday at 3pm.",
+     "nl": true
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "shared",
+     "namespace": "globex",
+     "subject": "user",
+     "predicate": "deploy_schedule",
+     "value": "The staging deploy now runs every Thursday at 3pm",
+     "text": "The staging deploy now runs every Thursday at 3pm.",
+     "nl": true
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same session id, different namespaces (tenants): one tenant's write never touches another's facts."
+  },
+  {
+   "id": "xn-08",
+   "category": "cross_namespace",
+   "description": "convention in two tenants",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "shared",
+     "namespace": "acme",
+     "subject": "repo",
+     "predicate": "convention_established",
+     "value": "merge commits",
+     "text": "We use merge commits."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "shared",
+     "namespace": "globex",
+     "subject": "repo",
+     "predicate": "convention_established",
+     "value": "squash merges",
+     "text": "We use squash merges."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same session id, different namespaces (tenants): one tenant's write never touches another's facts."
+  },
+  {
+   "id": "xn-11",
+   "category": "cross_namespace",
+   "description": "negation in another tenant",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "shared",
+     "namespace": "acme",
+     "subject": "backend",
+     "predicate": "dependency_reason",
+     "value": "uses Redis for caching",
+     "text": "The backend uses Redis for caching."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "shared",
+     "namespace": "globex",
+     "subject": "backend",
+     "predicate": "dependency_reason",
+     "value": "no longer uses Redis",
+     "text": "The backend no longer uses Redis."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same session id, different namespaces (tenants): one tenant's write never touches another's facts."
+  },
+  {
+   "id": "xn-12",
+   "category": "cross_namespace",
+   "description": "NL paraphrase in another tenant",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "shared",
+     "namespace": "acme",
+     "subject": "user",
+     "predicate": "team_ritual",
+     "value": "Our retro happens every other Wednesday afternoon",
+     "text": "Our retro happens every other Wednesday afternoon.",
+     "nl": true
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "shared",
+     "namespace": "globex",
+     "subject": "user",
+     "predicate": "team_ritual",
+     "value": "Our retrospective is held every second Wednesday afternoon",
+     "text": "Our retrospective is held every second Wednesday afternoon.",
+     "nl": true
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Same session id, different namespaces (tenants): one tenant's write never touches another's facts."
+  },
+  {
+   "id": "tru-02",
+   "category": "trust_direction",
+   "description": "assistant then user different value",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "assistant",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "orders-db",
+     "predicate": "decision_made",
+     "value": "MySQL",
+     "text": "The orders database uses MySQL."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "orders-db",
+     "predicate": "decision_made",
+     "value": "Postgres",
+     "text": "No, the orders database is Postgres."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "User outranks assistant: user wins."
+  },
+  {
+   "id": "tru-04",
+   "category": "trust_direction",
+   "description": "user then assistant, multi-valued with overlap",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "prefers pytest for unit testing",
+     "text": "I prefer pytest for unit testing."
+    },
+    {
+     "key": "b",
+     "speaker": "assistant",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "prefers unittest for unit testing",
+     "text": "You prefer unittest for unit testing."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": true
+   },
+   "label": "normal",
+   "rationale": "User stays; conflict surfaced."
+  },
+  {
+   "id": "tru-05",
+   "category": "trust_direction",
+   "description": "user A, assistant B, user C",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "infra",
+     "predicate": "decision_made",
+     "value": "Terraform",
+     "text": "We manage infra with Terraform."
+    },
+    {
+     "key": "b",
+     "speaker": "assistant",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "infra",
+     "predicate": "decision_made",
+     "value": "Pulumi",
+     "text": "Infra is managed with Pulumi."
+    },
+    {
+     "key": "c",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "infra",
+     "predicate": "decision_made",
+     "value": "OpenTofu",
+     "text": "We moved infra to OpenTofu."
+    }
+   ],
+   "expected": {
+    "active": [
+     "c"
+    ],
+    "superseded": [
+     "a",
+     "b"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "The user's own correction resolves the slot: exactly one current value, no open conflict."
+  },
+  {
+   "id": "tru-07",
+   "category": "trust_direction",
+   "description": "user count then assistant count",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "has two kids",
+     "text": "I have two kids."
+    },
+    {
+     "key": "b",
+     "speaker": "assistant",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "has three kids",
+     "text": "You have three kids."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": true
+   },
+   "label": "normal",
+   "rationale": "User stays; conflict surfaced."
+  },
+  {
+   "id": "tru-09",
+   "category": "trust_direction",
+   "description": "assistant then user, multi-valued with overlap",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "assistant",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "prefers tabs for indentation",
+     "text": "You prefer tabs for indentation."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_preference",
+     "value": "prefers spaces for indentation",
+     "text": "No, I prefer spaces for indentation."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "User outranks assistant."
+  },
+  {
+   "id": "tru-11",
+   "category": "trust_direction",
+   "description": "user A, assistant B, assistant C",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "api",
+     "predicate": "decision_made",
+     "value": "REST",
+     "text": "Our api is REST."
+    },
+    {
+     "key": "b",
+     "speaker": "assistant",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "api",
+     "predicate": "decision_made",
+     "value": "GraphQL",
+     "text": "The api is GraphQL."
+    },
+    {
+     "key": "c",
+     "speaker": "assistant",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "api",
+     "predicate": "decision_made",
+     "value": "gRPC",
+     "text": "The api is gRPC."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "c"
+    ],
+    "superseded": [
+     "b"
+    ],
+    "contradiction": true
+   },
+   "label": "normal",
+   "rationale": "Assistant C replaces assistant B, but the user's REST still conflicts with the current assistant value and must stay surfaced."
+  },
+  {
+   "id": "tru-12",
+   "category": "trust_direction",
+   "description": "assistant then user, attribute slot",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "assistant",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "works at Oracle",
+     "text": "You work at Oracle."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "works at Salesforce",
+     "text": "I work at Salesforce actually."
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "User outranks assistant."
+  },
+  {
+   "id": "ooo-01",
+   "category": "out_of_order",
+   "description": "old decision backfilled after the newer one",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "orders-db",
+     "predicate": "decision_made",
+     "value": "MySQL",
+     "text": "As of March 2024 the orders database is MySQL."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "import",
+     "namespace": "default",
+     "subject": "orders-db",
+     "predicate": "decision_made",
+     "value": "SQLite",
+     "text": "Importing 2023 notes: the orders database is SQLite."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a"
+    ],
+    "superseded": [
+     "b"
+    ],
+    "contradiction": false
+   },
+   "label": "expected_limitation",
+   "rationale": "handle_memory_store has no event-time/valid-from parameter, so a late-arriving OLDER statement is treated as newest. Intent: the chronologically newer value stays current. Documented limitation; excluded from accuracy."
+  },
+  {
+   "id": "ooo-03",
+   "category": "out_of_order",
+   "description": "stale status report arrives late",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "mobile-app",
+     "predicate": "project_status",
+     "value": "shipped",
+     "text": "The mobile app shipped."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "import",
+     "namespace": "default",
+     "subject": "mobile-app",
+     "predicate": "project_status",
+     "value": "in beta",
+     "text": "Forwarding last month's report: the mobile app is in beta."
+    }
+   ],
+   "expected": {
+    "active": [
+     "a"
+    ],
+    "superseded": [
+     "b"
+    ],
+    "contradiction": false
+   },
+   "label": "expected_limitation",
+   "rationale": "handle_memory_store has no event-time/valid-from parameter, so a late-arriving OLDER statement is treated as newest. Intent: the chronologically newer value stays current. Documented limitation; excluded from accuracy."
+  },
+  {
+   "id": "nl-02",
+   "category": "nl_only",
+   "description": "unrelated NL facts",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "note",
+     "value": "My sister lives in Toronto",
+     "text": "My sister lives in Toronto.",
+     "nl": true
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "note",
+     "value": "The CI pipeline takes about 12 minutes",
+     "text": "The CI pipeline takes about 12 minutes.",
+     "nl": true
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Distinct NL facts: both stay in every mode."
+  },
+  {
+   "id": "nl-03",
+   "category": "nl_only",
+   "description": "two weekend hobbies (NL)",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "hobby",
+     "value": "I enjoy hiking on weekends",
+     "text": "I enjoy hiking on weekends.",
+     "nl": true
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "hobby",
+     "value": "I enjoy cooking Thai food on weekends",
+     "text": "I enjoy cooking Thai food on weekends.",
+     "nl": true
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Distinct NL facts: both stay in every mode."
+  },
+  {
+   "id": "nl-04",
+   "category": "nl_only",
+   "description": "NL update in a later session",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "deploy_schedule",
+     "value": "The staging deploy runs every Friday at 3pm",
+     "text": "The staging deploy runs every Friday at 3pm.",
+     "nl": true
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s2",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "deploy_schedule",
+     "value": "The staging deploy now runs every Thursday at 3pm",
+     "text": "The staging deploy now runs every Thursday at 3pm.",
+     "nl": true
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "NL-only identity is documented as session-scoped (supersession_semantic.py), so a later-session NL update does not retire."
+  },
+  {
+   "id": "nl-05",
+   "category": "nl_only",
+   "description": "exact NL restatement, same session",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "note",
+     "value": "I prefer to get code review feedback in writing",
+     "text": "I prefer to get code review feedback in writing.",
+     "nl": true
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "note",
+     "value": "I prefer to get code review feedback in writing",
+     "text": "I prefer to get code review feedback in writing.",
+     "nl": true
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "ambiguous",
+   "rationale": "Structured duplicates are kept as recurrence evidence, but Pass-2 NL mode is documented to supersede the nearest identical fact; intent conflicts."
+  },
+  {
+   "id": "nl-06",
+   "category": "nl_only",
+   "description": "on-call handoff moves",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "team_ritual",
+     "value": "Our on-call handoff happens Monday at 10am",
+     "text": "Our on-call handoff happens Monday at 10am.",
+     "nl": true
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "team_ritual",
+     "value": "Our on-call handoff now happens Tuesday at 9am",
+     "text": "Our on-call handoff now happens Tuesday at 9am.",
+     "nl": true
+    }
+   ],
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "NL-only update in the same session: Pass-2 NL mode (semantic identity over the fact text) should retire the stale fact. Deterministic mode has no NL matcher (Pass-1 needs a triple), so there it is a documented limitation.",
+   "label_by_mode": {
+    "deterministic": "expected_limitation"
+   }
+  },
+  {
+   "id": "nl-07",
+   "category": "nl_only",
+   "description": "structured fact then unrelated NL fact",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "user_fact",
+     "value": "lives in Chicago",
+     "text": "I live in Chicago."
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "note",
+     "value": "The quarterly planning offsite is in Denver",
+     "text": "The quarterly planning offsite is in Denver.",
+     "nl": true
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Distinct NL facts: both stay in every mode."
+  },
+  {
+   "id": "nl-08",
+   "category": "nl_only",
+   "description": "two platform facts with the same template",
+   "stores": [
+    {
+     "key": "a",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "tech_stack",
+     "value": "The Android app is written in Kotlin",
+     "text": "The Android app is written in Kotlin.",
+     "nl": true
+    },
+    {
+     "key": "b",
+     "speaker": "user",
+     "session": "s1",
+     "namespace": "default",
+     "subject": "user",
+     "predicate": "tech_stack",
+     "value": "The iOS app is written in Swift",
+     "text": "The iOS app is written in Swift.",
+     "nl": true
+    }
+   ],
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "label": "normal",
+   "rationale": "Distinct NL facts: both stay in every mode."
+  }
+ ]
+}
