@@ -3,7 +3,8 @@
 Runs one nuanced business scenario through the real store/query/trace handlers
 (no mocks) and characterizes current behavior before any Memory/evidence layer
 exists. Passing tests pin behavior that already works and must survive HAR-95.
-Strict-xfail tests are confirmed gaps: each one flips to XPASS (and fails) the
+GAP-1a and GAP-2..4 were closed by HAR-95 slice 1 (memcontext/memories.py + grouped serving)
+and are now plain regression tests. Strict-xfail tests are the remaining gaps: each one flips to XPASS (and fails) the
 moment the gap is closed, so it must then be promoted to a plain test.
 
 Scenario (one session, 20 unrelated distractor turns so top_k actually binds):
@@ -218,14 +219,15 @@ def test_low_trust_browser_claim_cannot_retire_user_state(sc):
         (rows["churning"]["claim_id"],),
     ).fetchone()
     assert edge["edge_type"] == "contradicts"
-    # whichever question surfaces the browser claim, it is flagged, never authoritative
-    served = [(c, out) for q in QUESTIONS
-              for out in [handle_memory_query(sc.conn, query=q, session_id=SESSION)]
-              for c in out["claims"]]
-    browser = [c for c, _ in served if c["value"] == "churning"]
+    # whichever question surfaces the browser claim, top-level or nested under its
+    # evidence, it is flagged, never authoritative
+    outs = [handle_memory_query(sc.conn, query=q, session_id=SESSION) for q in QUESTIONS]
+    served = [c for out in outs
+              for c in out["claims"] + [n for e in out["episodes"] for n in e.get("claims", ())]]
+    browser = [c for c in served if c["fact"] == "acme renewal_status churning"]
     assert browser and all(c["quarantined"] for c in browser)
-    assert all(not c["quarantined"] for c, _ in served if c["value"] == "confirmed")
-    assert all(out["contradictions"]["count"] >= 1 for _, out in served)
+    assert all(not c["quarantined"] for c in served if c["fact"] == "acme renewal_status confirmed")
+    assert all(out["contradictions"]["count"] >= 1 for out in outs)
 
 
 def test_default_pack_demotes_renewal_predicates_to_text_only():
@@ -250,11 +252,24 @@ def test_undeclared_cardinality_treats_categorical_update_as_additive(renewal_pa
     assert statuses["probable"] == "active" and statuses["confirmed"] == "active"
 
 
-# ------------------------------------------------------ confirmed gaps (xfail) ---
+# ---------- confirmed gaps: GAP-1a, 2..4 closed by slice 1; GAP-1b, 5..8 still xfail ---
 
 
-@pytest.mark.xfail(strict=True, reason="GAP-1: evidence + derived claims take separate top-k slots")
+# GAP-1a (closed by slice 1): a served evidence object repeated its claims' content
 @pytest.mark.parametrize("question", [Q_WHY, Q_QUOTE])  # the questions that serve T1's evidence
+def test_evidence_links_its_served_claims_instead_of_repeating_them(sc, question):
+    out = handle_memory_query(sc.conn, query=question, session_id=SESSION)
+    items = served_sources(sc, out)
+    assert ("episode", "T1") in items  # precondition: not vacuous
+    t1 = next(e for e in out["episodes"] if e["turn_id"] == sc.turns["T1"])
+    t1_top = {c["claim_id"] for c in out["claims"] if c["source_turn_id"] == sc.turns["T1"]}
+    assert set(t1["linked_claim_ids"]) == t1_top
+    assert not t1_top & {c["claim_id"] for c in t1["claims"]}
+
+
+@pytest.mark.xfail(strict=True, reason="GAP-1b: an episode and its ranked claims still count as "
+                   "separate top-k items; removing that needs a claims-consumer API migration")
+@pytest.mark.parametrize("question", [Q_WHY, Q_QUOTE])
 def test_one_evidence_object_takes_at_most_one_slot(sc, question):
     out = handle_memory_query(sc.conn, query=question, session_id=SESSION)
     items = served_sources(sc, out)
@@ -262,20 +277,20 @@ def test_one_evidence_object_takes_at_most_one_slot(sc, question):
     assert sum(1 for _, lbl in items if lbl == "T1") <= 1
 
 
-@pytest.mark.xfail(strict=True, reason="GAP-2: served episodes carry no source-trust / quarantine flag")
+# GAP-2 (closed by slice 1): served episodes carried no source-trust / quarantine flag
 def test_served_episodes_carry_source_trust(sc):
     out = handle_memory_query(sc.conn, query=Q_STATUS, session_id=SESSION)
     browser = next(e for e in out["episodes"] if e["turn_id"] == sc.turns["TB"])
     assert browser["quarantined"] is True
 
 
-@pytest.mark.xfail(strict=True, reason="GAP-3: served claims do not name their source evidence")
+# GAP-3 (closed by slice 1): served claims did not name their source evidence
 def test_served_claims_name_their_source_evidence(sc):
     out = handle_memory_query(sc.conn, query=Q_STATUS, session_id=SESSION)
     assert all("source_turn_id" in c for c in out["claims"])
 
 
-@pytest.mark.xfail(strict=True, reason="GAP-4: evidence whose state was superseded is served as if current")
+# GAP-4 (closed by slice 1): evidence whose state was superseded was served as if current
 def test_evidence_with_superseded_state_is_marked_historical(sc):
     out = handle_memory_query(sc.conn, query=Q_QUOTE, session_id=SESSION)
     t1 = next(e for e in out["episodes"] if e["turn_id"] == sc.turns["T1"])

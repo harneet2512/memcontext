@@ -22,6 +22,58 @@ from memcontext.brain import brain
 
 log = structlog.get_logger(__name__)
 
+# Historical claims listed inline under one served Memory. A turn rarely yields more;
+# the cap keeps one pathological extraction from turning a single slot into a dump.
+MAX_NESTED_CLAIMS = 8
+
+
+def annotate_served_evidence(
+    conn: sqlite3.Connection, claims: list[dict], episodes: list[dict],
+) -> list[dict]:
+    """Link each served episode (Memory) to the state derived from it (HAR-95).
+
+    Each episode gains its source trust, a quarantine flag, and ``state``: whether
+    the claims derived from it are still current. Derived claims already served
+    in the top-level ``claims`` list are referenced by id (``linked_claim_ids``).
+    Only HISTORICAL derived claims (superseded / dismissed) are listed inline under
+    ``claims``, each with its status, trust and quarantine flag: that is what tells a
+    reader the nuance is outdated. Current unranked claims are not inlined; they would
+    restate the episode's own text, and ``state`` already reports them. So no claim is
+    served twice, and the top-level ``claims`` list stays the complete ranked state
+    existing consumers (hooks, agents) read. At most ``MAX_NESTED_CLAIMS`` historical
+    claims are inlined (newest first); ``historical_claims_omitted`` counts the rest.
+    Returns new dicts; inputs are not mutated.
+    """
+    from memcontext.memories import HISTORICAL_STATUSES, get_memories
+
+    top_level = {c["claim_id"] for c in claims}
+    memories = get_memories(conn, [e["turn_id"] for e in episodes])
+    annotated = []
+    for e in episodes:
+        m = memories.get(e["turn_id"])
+        if m is None:
+            continue  # turn vanished mid-request: cannot vouch for its trust, so skip it
+        historical = [
+            c for c in reversed(m.claims)  # newest first: the latest outdated nuance
+            if c.claim_id not in top_level and c.status in HISTORICAL_STATUSES
+        ]
+        entry = {
+            **e,
+            "trust": round(m.trust, 3),
+            "quarantined": m.quarantined,
+            "state": m.state,
+            "linked_claim_ids": [c.claim_id for c in m.claims if c.claim_id in top_level],
+            "claims": [
+                {"claim_id": c.claim_id, "fact": c.fact, "status": c.status,
+                 "trust": round(c.trust, 3), "quarantined": c.quarantined}
+                for c in historical[:MAX_NESTED_CLAIMS]
+            ],
+        }
+        if len(historical) > MAX_NESTED_CLAIMS:
+            entry["historical_claims_omitted"] = len(historical) - MAX_NESTED_CLAIMS
+        annotated.append(entry)
+    return annotated
+
 
 def session_briefing(
     conn: sqlite3.Connection, *, subject: str = "user", max_tokens: int = 400,

@@ -239,6 +239,7 @@ def handle_memory_query(
                 "confidence": c.confidence,
                 "status": c.status.value,
                 "score": norm,
+                "source_turn_id": c.source_turn_id,
                 # L3: durable instruction / standing preference / ephemeral chatter,
                 # so the agent can weight standing guidance over a passing remark.
                 "durability": detect_durability(c.value),
@@ -254,15 +255,10 @@ def handle_memory_query(
                 "score": norm,
             })
 
-    # Usage reinforcement: the fact claims we served are now "accessed".
-    served_claim_ids = [c["claim_id"] for c in claims_out]
-    bump_access(conn, served_claim_ids)
-    serve_event_ids = _record_serve_events(
-        conn,
-        request_session_id=session_id or "__cross_session__",
-        claim_ids=served_claim_ids,
-        query=query,
-    )
+    # Usage reinforcement: the fact claims that RANKED are now "accessed" (claims only
+    # shown as context under their evidence below are not relevance signals).
+    ranked_claim_ids = [c["claim_id"] for c in claims_out]
+    bump_access(conn, ranked_claim_ids)
 
     # Consolidation marker + source-trust spotlight: each served fact carries its
     # trust and a 'quarantined' flag (low-trust origin -- citable, not authoritative),
@@ -284,16 +280,36 @@ def handle_memory_query(
             c["trust"] = round(trust, 3)
             c["quarantined"] = trust < QUARANTINE_THRESHOLD
 
+    # Evidence <-> state link: each served episode says what became of the claims
+    # derived from it, referencing already-served claims by id (no claim twice).
+    from memcontext.serving import annotate_served_evidence
+
+    episodes_out = annotate_served_evidence(conn, claims_out, episodes_out)
+    nested_claims = [c for e in episodes_out for c in e.get("claims", ())]
+
+    # Verification ledger: every claim the caller was shown, top-level or nested.
+    serve_event_ids = _record_serve_events(
+        conn,
+        request_session_id=session_id or "__cross_session__",
+        claim_ids=[c["claim_id"] for c in claims_out] + [c["claim_id"] for c in nested_claims],
+        query=query,
+    )
+
     # Token accounting (zero-LLM, ~chars/4) for what we serve, by source type.
     def _toks(text: str) -> int:
         return max(1, len(text or "") // 4)
     fact_tokens = sum(_toks(c.get("fact") or c.get("value") or "") for c in claims_out)
+    fact_tokens += sum(_toks(c["fact"]) for c in nested_claims)
     episode_tokens = sum(_toks(e.get("text") or "") for e in episodes_out)
     token_report = {
         "fact_tokens": fact_tokens,
         "episode_tokens": episode_tokens,
         "total_tokens": fact_tokens + episode_tokens,
         "served_items": len(claims_out) + len(episodes_out),
+        # distinct evidence objects behind the served items (claims + episodes)
+        "served_memories": len({c["source_turn_id"] for c in claims_out}
+                               | {e["turn_id"] for e in episodes_out}),
+        "nested_claims": len(nested_claims),
     }
 
     _READER_HINTS = {
@@ -350,8 +366,7 @@ def handle_memory_query(
             pass
 
     if debug and explain is not None:
-        served = [c["claim_id"] for c in claims_out]
-        result["ranking"] = {cid: explain[cid] for cid in served if cid in explain}
+        result["ranking"] = {cid: explain[cid] for cid in ranked_claim_ids if cid in explain}
     return result
 
 
@@ -830,10 +845,12 @@ def handle_memory_trace(
             "confidence": claim.confidence,
             "status": claim.status.value,
         },
+        # The Memory this claim was derived from, and where that evidence came from.
         "source_turn": {
             "turn_id": source_turn.turn_id,
             "speaker": source_turn.speaker.value,
             "text": source_turn.text,
+            "source_type": source_turn.source_type.value,
         } if source_turn else None,
         "char_span": {
             "start": span.char_start,
