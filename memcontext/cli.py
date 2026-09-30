@@ -8,10 +8,49 @@ import sys
 
 import click
 
+_LOG_LEVEL_ENV = "MEMCONTEXT_LOG_LEVEL"
+_DEFAULT_LOG_LEVEL = "WARNING"
+
+
+class _StderrLoggerFactory:
+    """structlog logger factory that resolves ``sys.stderr`` at call time.
+
+    Binding the stream lazily (instead of ``PrintLoggerFactory(file=sys.stderr)``)
+    keeps logging correct when stderr is swapped after configuration, e.g. by
+    click's CliRunner or a test harness.
+    """
+
+    def __call__(self, *args: object) -> object:
+        import structlog
+
+        return structlog.PrintLogger(file=sys.stderr)
+
+
+def _configure_cli_logging() -> None:
+    """Route structlog to STDERR, filtered below WARNING by default.
+
+    Without this, structlog's default config prints every debug/info event to
+    STDOUT, interleaving it with command output. ``MEMCONTEXT_LOG_LEVEL``
+    (e.g. DEBUG, INFO) lowers the threshold; an unknown name falls back to
+    WARNING.
+    """
+    import logging
+
+    import structlog
+
+    name = os.environ.get(_LOG_LEVEL_ENV, _DEFAULT_LOG_LEVEL).strip().upper()
+    level = logging.getLevelNamesMapping().get(name, logging.WARNING)
+    structlog.configure(
+        wrapper_class=structlog.make_filtering_bound_logger(level),
+        logger_factory=_StderrLoggerFactory(),
+        cache_logger_on_first_use=False,
+    )
+
 
 @click.group()
 def main() -> None:
     """MemContext — memory and context substrate for AI agents."""
+    _configure_cli_logging()
 
 
 @main.command()
