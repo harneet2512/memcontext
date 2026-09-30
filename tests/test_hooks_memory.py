@@ -129,3 +129,36 @@ def test_prompt_submit_latency_with_500_claims_is_under_a_second(conn, client):
     elapsed = time.perf_counter() - start
     assert "library42" in _injected(r)
     assert elapsed < 1.0, f"user_prompt_submit took {elapsed:.3f}s"
+
+
+# ── B: PreToolUse keywords come from the file, not its directory path ───────
+
+def _pre_tool(client, tool_name: str, tool_input: dict, tok: str = "tokA"):
+    return client.post("/api/hooks/pre_tool_use", headers=_h(tok),
+                       json={"tool_name": tool_name, "tool_input": tool_input})
+
+
+def test_pre_tool_use_injects_decision_not_path_noise(conn, client):
+    for n in range(50):
+        _store(conn, f"file{n}.py", "action", f"Write on D:/proj/src/pkg{n}/file{n}.py",
+               session=f"s{n}")
+    _store(conn, "orders service", "decision_made", "use SQLite", session="decisions")
+    r = _pre_tool(client, "Write", {"file_path": "D:/proj/src/orders/orders_service.py",
+                                    "content": "print('hi')"})
+    ctx = _injected(r)
+    assert "use SQLite" in ctx
+    assert "Write on" not in ctx
+    assert "None" not in ctx  # NL-only facts render their text, not a null triple
+
+
+def test_query_keywords_drop_directory_prefixes():
+    kw = http_server._extract_query_keywords(
+        "Edit", {"file_path": "C:\\Users\\me\\AppData\\Local\\Temp\\claude\\billing_invoice.py"})
+    assert kw is not None
+    assert set(kw.split()) == {"billing", "invoice"}
+
+
+def test_query_keywords_combine_basename_and_command_text():
+    kw = http_server._extract_query_keywords("Bash", {"command": "pytest tests/orders -k refund"})
+    assert kw is not None
+    assert {"pytest", "orders", "refund"} <= set(kw.split())

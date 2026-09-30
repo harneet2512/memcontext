@@ -228,6 +228,30 @@ def memory_status(request: Request):
     }
 
 
+_CONTEXT_MAX_CHARS = 1500
+_PROMPT_CONTEXT_TOP_K = 8
+_PROMPT_CONTEXT_MAX_LINES = 6
+_PROMPT_QUERY_MAX_CHARS = 1000
+_LIVE_STATUSES = frozenset({"active", "confirmed", "audited"})
+_TOOL_ACTION_PREDICATE = "action"  # tool-use log entries: never useful as injected context
+
+# Words that carry no topical signal, for the lexical relevance gate.
+_STOPWORDS = frozenset({
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "to", "for", "and", "or",
+    "of", "in", "on", "at", "it", "my", "our", "we", "you", "me", "this", "that", "these",
+    "those", "with", "from", "by", "as", "do", "does", "did", "can", "could", "should",
+    "would", "will", "what", "which", "who", "how", "why", "when", "where", "there", "here",
+    "have", "has", "had", "use", "uses", "used", "using", "know", "about", "let", "lets",
+    "please", "tell", "some", "any", "all", "not", "now", "then", "into", "out", "get",
+    "import", "def", "class", "return", "if", "else", "true", "false", "none", "self",
+})
+
+
+def _content_tokens(text: str) -> set[str]:
+    return {t for t in re.findall(r"[a-z0-9]+", (text or "").lower())
+            if len(t) > 2 and t not in _STOPWORDS}
+
+
 # ── Hook filtering ───────────────────────────────────────
 
 _HOOK_SKIP_TOOLS: set[str] = {
@@ -271,30 +295,43 @@ def _summarize_tool(tool_name: str, tool_input: dict | str) -> tuple[str, str]:
     return tool_name, str(tool_input)[:200]
 
 
+# Directory / file-type words that appear in almost every path and say nothing
+# about what is being worked on (they only ever matched other path-bearing text).
+_GENERIC_PATH_TOKENS = frozenset({
+    "users", "home", "tmp", "temp", "appdata", "local", "roaming", "documents",
+    "desktop", "downloads", "src", "lib", "libs", "bin", "usr", "var", "opt", "etc",
+    "proj", "project", "projects", "repo", "repos", "workspace", "worktrees", "claude",
+    "node", "modules", "site", "packages", "dist", "build", "venv", "scripts",
+    "txt", "json", "yaml", "yml", "toml", "html", "css", "tsx", "jsx", "exe",
+})
+_MAX_QUERY_KEYWORDS = 8
+
+
+def _tool_query_text(tool_input: dict | str) -> str:
+    """The parts of a tool call that name its topic: file basename + command/prompt/query."""
+    if not isinstance(tool_input, dict):
+        return str(tool_input)
+    parts: list[str] = []
+    fp = tool_input.get("file_path")
+    if isinstance(fp, str) and fp:
+        base = re.split(r"[\\/]", fp)[-1]
+        parts.append(base.rsplit(".", 1)[0] if "." in base else base)
+    for key in ("command", "prompt", "query"):
+        val = tool_input.get(key)
+        if isinstance(val, str) and val:
+            parts.append(val)
+    return " ".join(parts)
+
+
 def _extract_query_keywords(tool_name: str, tool_input: dict | str) -> str | None:
     if _should_skip_tool(tool_name, tool_input):
         return None
-    if isinstance(tool_input, dict):
-        raw = (tool_input.get("file_path", "") or
-               tool_input.get("command", "") or
-               tool_input.get("prompt", "") or
-               tool_input.get("query", "") or
-               str(tool_input))
-    else:
-        raw = str(tool_input)
-    tokens = re.findall(r"[a-zA-Z_][a-zA-Z0-9_]*", raw)
-    noise = {"the", "a", "an", "is", "are", "to", "for", "and", "or", "of",
-             "in", "on", "at", "it", "my", "this", "that", "with", "from",
-             "import", "def", "class", "return", "if", "else", "true",
-             "false", "none", "self", "not"}
-    seen: set[str] = set()
     keywords: list[str] = []
-    for t in tokens:
-        tl = t.lower()
-        if tl not in noise and len(t) > 2 and tl not in seen:
-            seen.add(tl)
-            keywords.append(t)
-        if len(keywords) >= 5:
+    for tok in re.findall(r"[a-z0-9]+", _tool_query_text(tool_input).lower()):
+        if (len(tok) > 2 and not tok.isdigit() and tok not in _STOPWORDS
+                and tok not in _GENERIC_PATH_TOKENS and tok not in keywords):
+            keywords.append(tok)
+        if len(keywords) >= _MAX_QUERY_KEYWORDS:
             break
     return " ".join(keywords) if keywords else None
 
@@ -366,30 +403,6 @@ def _capture_tool_use(body: dict, namespace: str) -> dict:
         }],
     )
     return {"status": "ok"}
-
-
-_CONTEXT_MAX_CHARS = 1500
-_PROMPT_CONTEXT_TOP_K = 8
-_PROMPT_CONTEXT_MAX_LINES = 6
-_PROMPT_QUERY_MAX_CHARS = 1000
-_LIVE_STATUSES = frozenset({"active", "confirmed", "audited"})
-_TOOL_ACTION_PREDICATE = "action"  # tool-use log entries: never useful as injected context
-
-# Words that carry no topical signal, for the lexical relevance gate.
-_STOPWORDS = frozenset({
-    "the", "a", "an", "is", "are", "was", "were", "be", "been", "to", "for", "and", "or",
-    "of", "in", "on", "at", "it", "my", "our", "we", "you", "me", "this", "that", "these",
-    "those", "with", "from", "by", "as", "do", "does", "did", "can", "could", "should",
-    "would", "will", "what", "which", "who", "how", "why", "when", "where", "there", "here",
-    "have", "has", "had", "use", "uses", "used", "using", "know", "about", "let", "lets",
-    "please", "tell", "some", "any", "all", "not", "now", "then", "into", "out", "get",
-    "import", "def", "class", "return", "if", "else", "true", "false", "none", "self",
-})
-
-
-def _content_tokens(text: str) -> set[str]:
-    return {t for t in re.findall(r"[a-z0-9]+", (text or "").lower())
-            if len(t) > 2 and t not in _STOPWORDS}
 
 
 def _claim_line(subject: str | None, predicate: str | None, fact: str) -> str:
@@ -473,19 +486,23 @@ def _capture_prompt(body: dict, namespace: str | None) -> dict:
     return _hook_context("UserPromptSubmit", context)
 
 
+_TOOL_CONTEXT_MAX_LINES = 5
+_TOOL_CONTEXT_ROW_LIMIT = 500
+
+
 def _active_claim_rows(namespace: str | None) -> list:
+    """Most recent live claims, minus tool-action log entries (they only restate paths)."""
     conn = get_conn()
+    live = "c.status IN ('active','confirmed','audited') AND (c.predicate IS NULL OR c.predicate != ?)"
     if namespace is None:  # single shared token = unrestricted
         return conn.execute(
-            "SELECT * FROM claims"
-            " WHERE status IN ('active','confirmed','audited')"
-            " ORDER BY created_ts DESC LIMIT 500",
+            f"SELECT c.* FROM claims c WHERE {live} ORDER BY c.created_ts DESC LIMIT ?",
+            (_TOOL_ACTION_PREDICATE, _TOOL_CONTEXT_ROW_LIMIT),
         ).fetchall()
     return conn.execute(
         "SELECT c.* FROM claims c JOIN turns t ON t.turn_id = c.source_turn_id"
-        " WHERE c.status IN ('active','confirmed','audited') AND t.namespace = ?"
-        " ORDER BY c.created_ts DESC LIMIT 500",
-        (namespace,),
+        f" WHERE {live} AND t.namespace = ? ORDER BY c.created_ts DESC LIMIT ?",
+        (_TOOL_ACTION_PREDICATE, namespace, _TOOL_CONTEXT_ROW_LIMIT),
     ).fetchall()
 
 
@@ -505,43 +522,24 @@ def _context_for_tool(body: dict, namespace: str | None) -> dict:
     if time.monotonic() - start > 0.15:
         return {}
 
-    query_tokens = set(re.findall(r"[a-z0-9]+", keywords.lower()))
-    scored = []
+    query_tokens = set(keywords.split())
+    scored: list[tuple[float, str]] = []
     for row in rows:
         c = row_to_claim(row)
-        claim_text = f"{c.subject} {c.predicate} {c.value}".lower()
-        claim_tokens = set(re.findall(r"[a-z0-9]+", claim_text))
-        overlap = len(query_tokens & claim_tokens)
+        line = _claim_line(c.subject, c.predicate, c.text or c.value or "")
+        overlap = len(query_tokens & _content_tokens(line))
         if overlap > 0:
-            score = overlap / max(len(query_tokens), 1)
-            scored.append((c, score))
+            scored.append((overlap / len(query_tokens), line))
 
     if time.monotonic() - start > 0.2:
         return {}
 
-    if not scored:
-        return {}
-
-    scored.sort(key=lambda x: -x[1])
-    lines = []
-    char_count = 0
-    for c, _score in scored[:5]:
-        line = f"- {c.subject}: {c.value}"
-        if char_count + len(line) > 1500:
-            break
-        lines.append(line)
-        char_count += len(line)
-
-    if not lines:
-        return {}
-
-    context = "[MemContext] Relevant context:\n" + "\n".join(lines)
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "additionalContext": context,
-        }
-    }
+    scored.sort(key=lambda x: -x[0])  # stable: ties keep newest-first order
+    lines = list(dict.fromkeys(line for _score, line in scored))
+    return _hook_context(
+        "PreToolUse",
+        _render_context("[MemContext] Relevant context:", lines, _TOOL_CONTEXT_MAX_LINES),
+    )
 
 
 async def _hook_body(request: Request) -> dict:
