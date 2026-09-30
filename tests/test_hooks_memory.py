@@ -162,3 +162,25 @@ def test_query_keywords_combine_basename_and_command_text():
     kw = http_server._extract_query_keywords("Bash", {"command": "pytest tests/orders -k refund"})
     assert kw is not None
     assert {"pytest", "orders", "refund"} <= set(kw.split())
+
+
+# ── C: PostToolUse keeps tool actions as episodes, never as claims ──────────
+
+def _post_tool(client, tool_name: str, tool_input: dict, tok: str = "tokA"):
+    return client.post("/api/hooks/post_tool_use", headers=_h(tok),
+                       json={"tool_name": tool_name, "tool_input": tool_input, "session_id": "s1"})
+
+
+def test_post_tool_use_stores_episodes_not_action_claims(conn, client):
+    write = {"file_path": "D:/proj/src/orders/orders_service.py", "content": "x = 1"}
+    for _ in range(3):
+        assert _post_tool(client, "Write", write).status_code == 200
+    assert _post_tool(client, "Bash", {"command": "npm run build --prefix web"}).status_code == 200
+    assert _post_tool(client, "Bash", {"command": "python manage.py migrate orders"}).status_code == 200
+    actions = conn.execute("SELECT COUNT(*) FROM claims WHERE predicate = 'action'").fetchone()[0]
+    assert actions == 0
+    assert conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0] == 0
+    turns = conn.execute("SELECT namespace, text FROM turns").fetchall()
+    assert len(turns) == 5
+    assert {t[0] for t in turns} == {"tenantA"}
+    assert any("python manage.py migrate orders" in t[1] for t in turns)

@@ -282,17 +282,16 @@ def _should_skip_tool(tool_name: str, tool_input: dict | str) -> bool:
     return False
 
 
-def _summarize_tool(tool_name: str, tool_input: dict | str) -> tuple[str, str]:
-    """Return (subject, value) for a tool use claim."""
+def _summarize_tool(tool_name: str, tool_input: dict | str) -> str:
+    """One-line description of a tool use, for its episode text."""
     if isinstance(tool_input, dict):
         fp = tool_input.get("file_path", "")
         cmd = tool_input.get("command", "")
         if fp:
-            return fp, f"{tool_name} on {fp}"
+            return f"{tool_name} on {fp}"
         if cmd:
-            return tool_name, cmd[:200]
-        return tool_name, str(tool_input)[:200]
-    return tool_name, str(tool_input)[:200]
+            return str(cmd)[:200]
+    return str(tool_input)[:200]
 
 
 # Directory / file-type words that appear in almost every path and say nothing
@@ -347,6 +346,11 @@ def _extract_query_keywords(tool_name: str, tool_input: dict | str) -> str | Non
 _hook_extractor = None
 
 
+def _episode_only(_turn: object) -> list:
+    """Extractor that keeps the turn as an episode and derives no claims from it."""
+    return []
+
+
 def _get_hook_extractor():
     """Select the text extractor once per process, not once per hook call.
 
@@ -378,7 +382,7 @@ def _capture_tool_use(body: dict, namespace: str) -> dict:
     if _should_skip_tool(tool_name, tool_input):
         return {"status": "skipped"}
 
-    subject, value = _summarize_tool(tool_name, tool_input)
+    value = _summarize_tool(tool_name, tool_input)
 
     from memcontext import admission
     if not admission.admit(value).admitted:
@@ -388,6 +392,9 @@ def _capture_tool_use(body: dict, namespace: str) -> dict:
     if tool_name not in ("Edit", "Write", "Bash", "PowerShell"):
         return {"status": "skipped"}
 
+    # Episode only: the turn is the searchable, provenance-bearing record of what
+    # was done. A structured "action" claim per call duplicated identical writes
+    # and let unrelated commands supersede each other on token overlap.
     from memcontext import mcp_tools
     mcp_tools.handle_memory_store(
         get_conn(),
@@ -395,12 +402,7 @@ def _capture_tool_use(body: dict, namespace: str) -> dict:
         speaker="assistant",
         session_id=session_id,
         namespace=namespace,
-        claims=[{
-            "subject": subject.lower().replace("\\", "/").split("/")[-1] if "/" in subject or "\\" in subject else subject.lower(),
-            "predicate": "action",
-            "value": f"{tool_name}: {value}"[:200],
-            "confidence": 0.7,
-        }],
+        extractor=_episode_only,
     )
     return {"status": "ok"}
 
