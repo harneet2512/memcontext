@@ -356,11 +356,25 @@ def _get_hook_extractor():
 
     auto_extractor() probes for a local Ollama with a network timeout, which cost
     seconds on every captured prompt.
+
+    With no LLM backend, auto_extractor() falls back to the regex SimpleExtractor,
+    which turns free-form prompts into junk claims (subject "we"/"the", values cut
+    at the first '.', so "MySQL 5.7" -> "MySQL 5"). Prompts are then kept as
+    episodes only — still searchable, no fabricated facts.
     """
     global _hook_extractor
     if _hook_extractor is None:
         from memcontext import mcp_tools
-        _hook_extractor = mcp_tools.auto_extractor()
+        from memcontext.extractors import SimpleExtractor
+        selected = mcp_tools.auto_extractor()
+        if isinstance(selected, SimpleExtractor):
+            log.warning(
+                "hook.prompt_claims_disabled",
+                reason="no LLM extractor; prompts are stored as episodes only",
+                fix="set MEMCONTEXT_EXTRACTOR_BACKEND to enable claim extraction from prompts",
+            )
+            selected = _episode_only
+        _hook_extractor = selected
     return _hook_extractor
 
 

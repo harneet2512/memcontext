@@ -184,3 +184,37 @@ def test_post_tool_use_stores_episodes_not_action_claims(conn, client):
     assert len(turns) == 5
     assert {t[0] for t in turns} == {"tenantA"}
     assert any("python manage.py migrate orders" in t[1] for t in turns)
+
+
+# ── D: no regex-extracted junk claims from prompts ──────────────────────────
+
+def test_prompt_capture_with_regex_fallback_stores_episode_only(conn, client, monkeypatch):
+    from structlog.testing import capture_logs
+
+    from memcontext import extractors, mcp_tools
+    monkeypatch.setattr(http_server, "_hook_extractor", None)
+    monkeypatch.setattr(mcp_tools, "auto_extractor", extractors.SimpleExtractor)
+    with capture_logs() as logs:
+        _prompt(client, "We decided we will use MySQL 5.7 for the orders database.")
+        assert conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0] == 1
+        _prompt(client, "The team prefers tabs over spaces in the billing service.")
+    assert conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0] == 0
+    warned = [e for e in logs if e["log_level"] == "warning"
+              and "MEMCONTEXT_EXTRACTOR_BACKEND" in str(e)]
+    assert len(warned) == 1
+
+
+def test_prompt_capture_uses_a_real_extractor_when_one_is_selected(conn, client, monkeypatch):
+    from memcontext import mcp_tools
+    from memcontext.on_new_turn import ExtractedClaim
+
+    def llm_like(_turn):
+        return [ExtractedClaim(subject="orders service", predicate="user_fact",
+                               value="database is MySQL 5.7", confidence=0.9)]
+
+    monkeypatch.setattr(http_server, "_hook_extractor", None)
+    monkeypatch.setattr(mcp_tools, "auto_extractor", lambda: llm_like)
+    _prompt(client, "We decided we will use MySQL 5.7 for the orders database.")
+    values = [r[0] for r in conn.execute("SELECT value FROM claims")]
+    assert values == ["database is MySQL 5.7"]
