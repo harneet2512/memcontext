@@ -9,6 +9,7 @@ import structlog
 from click.testing import CliRunner
 
 from memcontext.cli import main
+from memcontext.trace_view import format_world_state, render_trace_table
 
 # A structlog ConsoleRenderer line: "<ts> [debug    ] event ..." / "[info     ]".
 _STRUCTLOG_LINE = re.compile(r"\[(debug|info)\s*\]")
@@ -92,3 +93,44 @@ def test_every_command_help_is_ascii():
             bad = r.stdout[max(0, exc.start - 30):exc.end + 10]
             pytest.fail(f"non-ASCII in `memcontext {' '.join(path)} --help`: {bad!r}")
 
+
+def _trace(char_start=None, char_end=None) -> dict:
+    return {
+        "subject": "user",
+        "predicate": "user_preference",
+        "lineage": [
+            {"status": "active", "value": "light mode", "edge_type": "active",
+             "source_turn_id": "tu_2", "speaker": "user", "confidence": 0.5,
+             "char_start": char_start, "char_end": char_end},
+            {"status": "superseded", "value": "dark mode", "edge_type": "semantic_replace",
+             "source_turn_id": "tu_1", "speaker": "user", "confidence": 0.5,
+             "char_start": None, "char_end": None},
+        ],
+    }
+
+
+def test_render_trace_table_omits_null_span():
+    out = render_trace_table(_trace())
+    assert "[no span]" not in out
+    assert "span" not in out
+    assert "turn tu_2 (user)" in out
+
+
+def test_render_trace_table_keeps_present_span():
+    out = render_trace_table(_trace(char_start=2, char_end=12))
+    assert "span [2:12]" in out
+    assert "[no span]" not in out
+
+
+def test_format_world_state_omits_null_span():
+    ws = {"session_id": "s", "pack": "general", "subjects": {"user": {"facts": [
+        {"predicate": "user_preference", "value": "light mode", "status": "active",
+         "confidence": 0.5, "provenance": {"source_turn_id": "tu_2",
+                                           "char_start": None, "char_end": None}},
+        {"predicate": "user_name", "value": "Ada", "status": "active",
+         "confidence": 0.9, "provenance": {"source_turn_id": "tu_3",
+                                           "char_start": 0, "char_end": 3}},
+    ]}}}
+    out = format_world_state(ws)
+    assert "[no span]" not in out
+    assert "span [0:3]" in out

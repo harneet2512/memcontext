@@ -7,10 +7,11 @@ so it renders cleanly on a Windows console.
 from __future__ import annotations
 
 
-def _span_str(char_start: int | None, char_end: int | None) -> str:
+def _span_part(char_start: int | None, char_end: int | None) -> str:
+    """``"  span [s:e]"`` when a char span exists, else ``""`` (omit the noise)."""
     if char_start is None or char_end is None:
-        return "[no span]"
-    return f"[{char_start}:{char_end}]"
+        return ""
+    return f"  span [{char_start}:{char_end}]"
 
 
 def format_world_state(ws: dict) -> str:
@@ -38,7 +39,7 @@ def format_world_state(ws: dict) -> str:
             )
             lines.append(
                 f"        source: turn {prov.get('source_turn_id')}"
-                f"  span {_span_str(prov.get('char_start'), prov.get('char_end'))}{quote_str}"
+                f"{_span_part(prov.get('char_start'), prov.get('char_end'))}{quote_str}"
             )
         gaps = block.get("gaps", [])
         if gaps:
@@ -85,6 +86,6 @@ def render_trace_table(trace: dict) -> str:
         conf_str = f"conf {conf:.2f}  " if isinstance(conf, (int, float)) else ""
         lines.append(
             f"              {conf_str}turn {row.get('source_turn_id')}{speaker_str}"
-            f"  span {_span_str(row.get('char_start'), row.get('char_end'))}{quote_str}"
+            f"{_span_part(row.get('char_start'), row.get('char_end'))}{quote_str}"
         )
     return "\n".join(lines)
