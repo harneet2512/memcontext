@@ -313,13 +313,23 @@ def detect_pass1(
         identity_score=None,
     )
     if edge_type is not EdgeType.CONTRADICTS:
-        set_claim_status(conn, old_claim.claim_id, ClaimStatus.SUPERSEDED)
-        conn.execute(
-            "UPDATE claims SET valid_until_ts = ?"
-            " WHERE claim_id = ?"
-            " AND (valid_from_ts IS NULL OR valid_from_ts < ?)",
-            (edge.created_ts, old_claim.claim_id, edge.created_ts),
-        )
+        _retire(conn, old_claim.claim_id, edge.created_ts)
+        # A fact restated in several sessions has several active copies (kept as
+        # recurrence evidence). Replacing the value must retire every copy, or the
+        # slot keeps the stale value alongside the new one.
+        old_value_norm = old_claim.value.strip().lower()
+        new_trust = _claim_trust(conn, new_claim.claim_id)
+        for row in rows:
+            copy = row_to_claim(row)
+            if copy.claim_id == old_claim.claim_id or copy.value.strip().lower() != old_value_norm:
+                continue
+            if new_trust + 0.2 < _claim_trust(conn, copy.claim_id):
+                continue
+            copy_edge = write_supersession_edge(
+                conn, old_claim_id=copy.claim_id, new_claim_id=new_claim.claim_id,
+                edge_type=edge_type, identity_score=None,
+            )
+            _retire(conn, copy.claim_id, copy_edge.created_ts)
     log.info(
         "substrate.supersession_pass1",
         session_id=new_claim.session_id,
@@ -328,6 +338,17 @@ def detect_pass1(
         edge_type=edge_type.value,
     )
     return edge
+
+
+def _retire(conn: sqlite3.Connection, claim_id: str, at_ts: int) -> None:
+    """Mark a claim superseded and close its validity window at ``at_ts``."""
+    set_claim_status(conn, claim_id, ClaimStatus.SUPERSEDED)
+    conn.execute(
+        "UPDATE claims SET valid_until_ts = ?"
+        " WHERE claim_id = ?"
+        " AND (valid_from_ts IS NULL OR valid_from_ts < ?)",
+        (at_ts, claim_id, at_ts),
+    )
 
 
 def write_supersession_edge(

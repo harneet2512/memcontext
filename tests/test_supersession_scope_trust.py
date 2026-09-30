@@ -137,3 +137,33 @@ def test_pass2_older_claim_never_replaces_a_newer_one(db: sqlite3.Connection):
     newer, _ = _claim(db, "s1", "use SQLite", subject="db", predicate="context", detect=False)
     assert _semantic(db, older) is None
     assert _status(db, newer) is ClaimStatus.ACTIVE
+
+
+# ── duplicate copies of the replaced value ──────────────────────────────────
+
+def test_restating_the_same_fact_keeps_both_copies(db: sqlite3.Connection):
+    # Repeats are recurrence evidence (consolidation counts them) — not collapsed.
+    first, _ = _claim(db, "s1", "use SQLite")
+    second, edge = _claim(db, "s2", "use SQLite")
+    assert edge is None
+    assert _status(db, first) is ClaimStatus.ACTIVE and _status(db, second) is ClaimStatus.ACTIVE
+
+
+def test_a_change_retires_every_copy_of_the_old_value(db: sqlite3.Connection):
+    first, _ = _claim(db, "s1", "use SQLite")
+    second, _ = _claim(db, "s2", "use SQLite")
+    changed, _ = _claim(db, "s3", "use PostgreSQL")
+    assert _status(db, first) is ClaimStatus.SUPERSEDED
+    assert _status(db, second) is ClaimStatus.SUPERSEDED
+    assert _status(db, changed) is ClaimStatus.ACTIVE
+    edges = db.execute(
+        "SELECT COUNT(*) FROM supersession_edges WHERE new_claim_id = ?", (changed.claim_id,)
+    ).fetchone()[0]
+    assert edges == 2  # each retired copy stays traceable to the change
+
+
+def test_lower_trust_change_retires_no_copy(db: sqlite3.Connection):
+    first, _ = _claim(db, "s1", "use SQLite")
+    second, _ = _claim(db, "s2", "use SQLite")
+    _claim(db, "s3", "use PostgreSQL", speaker=Speaker.ASSISTANT)
+    assert _status(db, first) is ClaimStatus.ACTIVE and _status(db, second) is ClaimStatus.ACTIVE
