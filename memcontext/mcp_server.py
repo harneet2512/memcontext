@@ -103,7 +103,7 @@ def run_server(
         return [
             Tool(
                 name="memory_store",
-                description="Store a conversation turn and extract claims into memory.",
+                description=memory_store_description(),
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -409,6 +409,22 @@ def run_server(
             store_queue.close()  # drain in-flight extraction + join the worker
 
 
+def memory_store_description() -> str:
+    """memory_store tool description, naming the active pack's predicates.
+
+    A claim whose predicate is outside the pack is stored as text only and can
+    never supersede, so the client must be told the vocabulary up front.
+    """
+    from memcontext.predicate_packs import active_pack
+
+    predicates = ", ".join(sorted(active_pack().predicate_families))
+    return (
+        "Store a conversation turn and extract claims into memory. Structured claims "
+        f"need a predicate from the active pack ({predicates}); others are stored as "
+        "text only and never supersede. Reuse the same subject + predicate to update a fact."
+    )
+
+
 def prewarm_embedder() -> None:
     """Load and exercise the configured embedder once, at startup.
 
@@ -489,7 +505,7 @@ def create_http_app(db_path: str = "memcontext.db"):
         @server.list_tools()
         async def list_tools():
             return [
-                Tool(name="memory_store", description="Store a conversation turn and extract claims into memory.",
+                Tool(name="memory_store", description=memory_store_description(),
                      inputSchema={"type":"object","properties":{"text":{"type":"string"},"speaker":{"type":"string","enum":["user","assistant"],"default":"user"},"session_id":{"type":"string"},"claims":{"type":"array","items":{"type":"object","properties":{"subject":{"type":"string"},"predicate":{"type":"string"},"value":{"type":"string"},"confidence":{"type":"number"}},"required":["value"]}}},"required":["text"]}),
                 Tool(name="memory_query", description="Query the user's personal memory -- decisions, observations, bug tracking, project status, and context from their coding sessions and cross-tool workflows. Use this for anything about the user's own projects, preferences, or work history.",
                      inputSchema={"type":"object","properties":{"query":{"type":"string"},"session_id":{"type":"string"},"top_k":{"type":"integer","default":10}},"required":["query"]}),

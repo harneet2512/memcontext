@@ -84,7 +84,7 @@ def handle_memory_store(
     from memcontext.anomaly import check_write
     check_write(conn, sid, text, episode_embedder())
 
-    return {
+    out = {
         "turn_id": result.turn.turn_id if result.turn else None,
         "session_id": sid,
         "admitted": result.admitted,
@@ -92,6 +92,31 @@ def handle_memory_store(
         "claim_ids": [c.claim_id for c in result.created_claims],
         "supersessions": len(result.supersession_edges),
     }
+    warnings = _demoted_predicate_warnings(claims) if claims and result.admitted else []
+    if warnings:
+        out["warnings"] = warnings
+    return out
+
+
+def _demoted_predicate_warnings(claims: list[dict]) -> list[str]:
+    """Tell the caller when an out-of-vocab predicate demoted a claim to NL-only.
+
+    The fact is still stored (as text), but it has no structured slot, so it
+    cannot supersede or be superseded by a later value.
+    """
+    from memcontext.claims import predicate_in_vocab
+    from memcontext.predicate_packs import active_pack
+
+    predicates = {c.get("predicate") for c in claims}
+    unknown = sorted(p for p in predicates if isinstance(p, str) and p and not predicate_in_vocab(p))
+    if not unknown:
+        return []
+    allowed = ", ".join(sorted(active_pack().predicate_families))
+    return [
+        f"predicate {p!r} is not in the active pack; stored as text only, so it will not "
+        f"supersede earlier values. Use one of: {allowed}"
+        for p in unknown
+    ]
 
 
 def _session_in_namespace(conn: sqlite3.Connection, session_id: str, namespace: str) -> bool:
@@ -207,6 +232,7 @@ def handle_memory_query(
                 "subject": c.subject,
                 "predicate": c.predicate,
                 "value": c.value,
+                "fact": c.text,
                 "confidence": c.confidence,
                 "status": c.status.value,
                 "score": norm,
@@ -258,7 +284,7 @@ def handle_memory_query(
     # Token accounting (zero-LLM, ~chars/4) for what we serve, by source type.
     def _toks(text: str) -> int:
         return max(1, len(text or "") // 4)
-    fact_tokens = sum(_toks(c.get("value") or "") for c in claims_out)
+    fact_tokens = sum(_toks(c.get("fact") or c.get("value") or "") for c in claims_out)
     episode_tokens = sum(_toks(e.get("text") or "") for e in episodes_out)
     token_report = {
         "fact_tokens": fact_tokens,
@@ -763,6 +789,7 @@ def handle_memory_trace(
         lineage.append({
             "claim_id": step.claim_id,
             "value": step.value,
+            "fact": step_claim.text if step_claim else None,
             "status": step_claim.status.value if step_claim else "unknown",
             "edge_type": step.edge_type,
             "confidence": step_claim.confidence if step_claim else None,
@@ -796,6 +823,7 @@ def handle_memory_trace(
             "subject": claim.subject,
             "predicate": claim.predicate,
             "value": claim.value,
+            "fact": claim.text,
             "confidence": claim.confidence,
             "status": claim.status.value,
         },

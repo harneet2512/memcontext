@@ -32,6 +32,7 @@ def _fact(turn: Turn | None, claim: Claim) -> dict:
         "subject": claim.subject,
         "predicate": claim.predicate,
         "value": claim.value,
+        "fact": claim.text,
         "status": claim.status.value,
         "confidence": claim.confidence,
         "provenance": {

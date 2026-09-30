@@ -69,7 +69,8 @@ def render_trace_table(trace: dict) -> str:
     lines: list[str] = [header, ""]
     for row in lineage:
         status = str(row.get("status", "")).upper()
-        value = row.get("value", "")
+        # NL-only facts (out-of-vocab predicate) have no structured value.
+        value = row.get("value") or row.get("fact") or ""
         edge = row.get("edge_type", "")
         if status == "ACTIVE" or edge == "active":
             lines.append(f"  ACTIVE      {value}")
