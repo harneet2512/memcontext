@@ -477,20 +477,11 @@ def uninstall(client: str, db: str, user: bool, purge: bool, project_dir: str) -
             settings = {}
         hooks_cfg = settings.get("hooks")
         if isinstance(hooks_cfg, dict):
-            changed = False
-            for event in list(hooks_cfg):
-                groups = [
-                    g for g in hooks_cfg[event]
-                    if not any("/api/hooks/" in (h.get("url", "")) for h in g.get("hooks", []))
-                ]
-                if groups != hooks_cfg[event]:
-                    changed = True
-                    if groups:
-                        hooks_cfg[event] = groups
-                    else:
-                        del hooks_cfg[event]
-            if changed:
-                if not hooks_cfg:
+            remaining = _strip_memcontext_hooks(hooks_cfg)
+            if remaining != hooks_cfg:
+                if remaining:
+                    settings["hooks"] = remaining
+                else:
                     settings.pop("hooks", None)
                 with open(settings_path, "w", encoding="utf-8") as f:
                     json.dump(settings, f, indent=2)
@@ -509,6 +500,26 @@ def uninstall(client: str, db: str, user: bool, purge: bool, project_dir: str) -
         click.echo(f"[memcontext] purged database {db_abs}")
     elif os.path.exists(db_abs):
         click.echo(f"[memcontext] your data is preserved at {db_abs} (use --purge to delete).")
+
+
+_HOOK_TOKEN_ENV = "MEMCONTEXT_HTTP_TOKEN"
+
+
+def _strip_memcontext_hooks(hooks_cfg: dict) -> dict:
+    """Return a copy of a Claude Code ``hooks`` object without MemContext's entries.
+
+    MemContext hooks are identified by their ``/api/hooks/`` URL; every other hook
+    group is kept untouched and events left empty are dropped.
+    """
+    out: dict = {}
+    for event, groups in hooks_cfg.items():
+        kept = [
+            g for g in groups
+            if not any("/api/hooks/" in h.get("url", "") for h in g.get("hooks", []))
+        ]
+        if kept:
+            out[event] = kept
+    return out
 
 
 @main.group()
@@ -532,26 +543,35 @@ def install(port: int, project_dir: str) -> None:
             settings = json.load(f)
 
     base = f"http://localhost:{port}"
-    settings["hooks"] = {
-        "PostToolUse": [{"matcher": "", "hooks": [
-            {"type": "http", "url": f"{base}/api/hooks/post_tool_use", "timeout": 10}
-        ]}],
-        "UserPromptSubmit": [{"matcher": "", "hooks": [
-            {"type": "http", "url": f"{base}/api/hooks/user_prompt_submit", "timeout": 10}
-        ]}],
-        "PreToolUse": [{"matcher": "", "hooks": [
-            {"type": "http", "url": f"{base}/api/hooks/pre_tool_use", "timeout": 5}
-        ]}],
-        "Stop": [{"matcher": "", "hooks": [
-            {"type": "http", "url": f"{base}/api/hooks/stop", "timeout": 5}
-        ]}],
+    # Every /api/* route requires a bearer token; Claude Code expands only
+    # allow-listed env vars in hook headers, so the token itself never lands on disk.
+    auth = {
+        "headers": {"Authorization": f"Bearer ${_HOOK_TOKEN_ENV}"},
+        "allowedEnvVars": [_HOOK_TOKEN_ENV],
     }
+    ours = {
+        "PostToolUse": ("post_tool_use", 10),
+        "UserPromptSubmit": ("user_prompt_submit", 10),
+        "PreToolUse": ("pre_tool_use", 5),
+        "Stop": ("stop", 5),
+    }
+    # Merge, never replace: drop only our previous entries, keep the user's hooks.
+    hooks_cfg = _strip_memcontext_hooks(settings.get("hooks") or {})
+    for event, (endpoint, timeout) in ours.items():
+        hook = {"type": "http", "url": f"{base}/api/hooks/{endpoint}", "timeout": timeout, **auth}
+        hooks_cfg[event] = [*hooks_cfg.get(event, []), {"matcher": "", "hooks": [hook]}]
+    settings["hooks"] = hooks_cfg
 
-    with open(settings_path, "w") as f:
+    with open(settings_path, "w", encoding="utf-8") as f:
         json.dump(settings, f, indent=2)
 
     click.echo(f"Hooks installed in {os.path.abspath(settings_path)}")
     click.echo(f"HTTP server: {base}")
+    if not os.environ.get(_HOOK_TOKEN_ENV, "").strip():
+        click.echo(
+            f"WARNING: {_HOOK_TOKEN_ENV} is not set. Set the same value in the environment "
+            "of both `memcontext serve-http` and Claude Code, or every hook call is rejected (401)."
+        )
     click.echo("Restart Claude Code to activate. Run 'memcontext serve-http' first.")
 
 
@@ -564,16 +584,24 @@ def hooks_uninstall(project_dir: str) -> None:
         click.echo("No .claude/settings.json found.")
         return
 
-    with open(settings_path) as f:
+    with open(settings_path, encoding="utf-8") as f:
         settings = json.load(f)
 
-    if "hooks" in settings:
-        del settings["hooks"]
-        with open(settings_path, "w") as f:
-            json.dump(settings, f, indent=2)
-        click.echo("Hooks removed.")
-    else:
+    hooks_cfg = settings.get("hooks")
+    if not isinstance(hooks_cfg, dict):
         click.echo("No hooks configured.")
+        return
+    remaining = _strip_memcontext_hooks(hooks_cfg)
+    if remaining == hooks_cfg:
+        click.echo("No MemContext hooks configured.")
+        return
+    if remaining:
+        settings["hooks"] = remaining
+    else:
+        settings.pop("hooks", None)
+    with open(settings_path, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+    click.echo("MemContext hooks removed (other hooks kept).")
 
 
 main.add_command(hooks)
