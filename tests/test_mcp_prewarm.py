@@ -62,3 +62,12 @@ def test_prewarm_is_noop_in_lexical_mode(monkeypatch, capsys):
     monkeypatch.setattr(retrieval, "episode_embedder", lambda: None)
     mcp_server.prewarm_embedder()
     assert capsys.readouterr().err == ""
+
+
+def test_prewarm_survives_embedder_construction_failure(monkeypatch, capsys):
+    def broken():
+        raise ImportError("half-installed torch")
+
+    monkeypatch.setattr(retrieval, "episode_embedder", broken)
+    mcp_server.prewarm_embedder()
+    assert "warmup failed (ImportError)" in capsys.readouterr().err

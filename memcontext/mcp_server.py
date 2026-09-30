@@ -397,13 +397,12 @@ def run_server(
         async with mcp.server.stdio.stdio_server() as (read, write):
             await server.run(read, write, server.create_initialization_options())
 
-    # Load the embedding model BEFORE the stdio loop starts. On Windows the stdio
-    # transport's reader thread blocks in ReadFile(stdin); a lazy model load inside
-    # the first tool call (DLL loads) then waits on that handle until the client
-    # sends another message, so the first memory_store hung for minutes.
-    prewarm_embedder()
-
     try:
+        # Load the embedding model BEFORE the stdio loop starts. On Windows the stdio
+        # transport's reader thread blocks in ReadFile(stdin); a lazy model load inside
+        # the first tool call (DLL loads) then waits on that handle until the client
+        # sends another message, so the first memory_store hung for minutes.
+        prewarm_embedder()
         asyncio.run(_run())
     finally:
         if store_queue is not None:
@@ -419,14 +418,14 @@ def prewarm_embedder() -> None:
     import sys
     import time
 
-    from memcontext.retrieval import episode_embedder
-
-    embedder = episode_embedder()
-    if embedder is None:
-        return
     start = time.monotonic()
-    print("[memcontext] loading embedding model...", file=sys.stderr, flush=True)
     try:
+        from memcontext.retrieval import episode_embedder
+
+        embedder = episode_embedder()
+        if embedder is None:
+            return
+        print("[memcontext] loading embedding model...", file=sys.stderr, flush=True)
         embedder.embed(["warmup"])
     except Exception as exc:
         print(f"[memcontext] embedding warmup failed ({type(exc).__name__}); "
