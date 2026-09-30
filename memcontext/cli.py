@@ -418,7 +418,7 @@ def serve_http(db: str, port: int, host: str, share: bool) -> None:
         f"[memcontext] Semantic memory: {'ON' if semantic_enabled() else 'OFF (degraded lexical-only)'}"
     )
     enforce_semantic_policy()
-    click.echo(f"[memcontext] HTTP API ready: http://localhost:{port}  (MCP at /mcp)")
+    click.echo(f"[memcontext] HTTP API starting: http://localhost:{port}  (MCP at /mcp)")
     click.echo(f"[memcontext] Database: {db}")
 
     if share:

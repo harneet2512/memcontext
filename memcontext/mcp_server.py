@@ -421,7 +421,10 @@ def memory_store_description() -> str:
     return (
         "Store a conversation turn and extract claims into memory. Structured claims "
         f"need a predicate from the active pack ({predicates}); others are stored as "
-        "text only and never supersede. Reuse the same subject + predicate to update a fact."
+        "text only and never supersede. Reuse the same subject + predicate to update a fact. "
+        "Use a specific subject per fact (e.g. 'orders service database', not 'orders "
+        "service'): single-valued predicates such as decision_made keep ONE current value "
+        "per subject, so unrelated decisions under one subject replace each other."
     )
 
 

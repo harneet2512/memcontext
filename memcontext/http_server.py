@@ -681,6 +681,7 @@ def run_server(*, db_path: str = "memcontext.db", port: int = 8100, host: str = 
     from memcontext.mcp_server import prewarm_embedder
     prewarm_embedder()
     _get_hook_extractor()
+    print("[memcontext] HTTP API ready (models loaded)", file=sys.stderr, flush=True)
 
     # Mount MCP Streamable HTTP endpoint — ChatGPT connects here via Developer Mode
     try:
