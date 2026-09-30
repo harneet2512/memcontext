@@ -305,6 +305,18 @@ def episode_embedder() -> EmbeddingClient | None:
     return client
 
 
+def _query_embedder(client: EmbeddingClient | None) -> EmbeddingClient | None:
+    """Embedder for query-time semantic scoring, or None in lexical-only mode.
+
+    An explicit client wins; otherwise the configured episode embedder, which is
+    None when MEMCONTEXT_EMBED_EPISODES=0 or no backend is installed. Vectors that
+    another (semantic) process stored in a shared DB must never make a lexical
+    process load the model mid-request: on Windows that load deadlocks the stdio
+    MCP transport.
+    """
+    return client if client is not None else episode_embedder()
+
+
 def semantic_supersession():
     """Pass-2 semantic supersession for the production ingest path, reusing the
     episode embedder. Returns None when no real embedder is configured —
@@ -703,7 +715,9 @@ def retrieve_relevant_claims(
     if not question or not question.strip():
         return []
 
-    effective = client or _default_embedding_client()
+    effective = _query_embedder(client)
+    if effective is None:  # lexical-only mode: never load a model at query time
+        return []
     model_version = effective.model_version
 
     active = list_active_claims(conn, session_id)
@@ -1034,8 +1048,8 @@ def retrieve_hybrid(
 
     weights = weights or _default_weights()
 
-    effective = embedding_client or _default_embedding_client()
-    model_version = effective.model_version
+    effective = _query_embedder(embedding_client)
+    model_version = effective.model_version if effective is not None else None
 
     if include_superseded:
         from memcontext.claims import list_claims_with_lifecycle
@@ -1061,8 +1075,8 @@ def retrieve_hybrid(
             continue
         embedding_by_id[row["claim_id"]] = (vec, row["embedding_model_version"])
 
-    has_embeddings = bool(embedding_by_id)
-    if has_embeddings:
+    has_embeddings = effective is not None and bool(embedding_by_id)
+    if has_embeddings and effective is not None:
         q_vec: list[float] | None = effective.embed([apply_query_prefix(query)])[0]
     else:
         q_vec = None
@@ -1297,8 +1311,8 @@ def retrieve_episodes(
     if not episodes:
         return []
 
-    effective = embedding_client or _default_embedding_client()
-    model_version = effective.model_version
+    effective = _query_embedder(embedding_client)
+    model_version = effective.model_version if effective is not None else None
 
     ids = tuple(t.turn_id for t in episodes)
     placeholders = ",".join("?" for _ in ids)
@@ -1315,8 +1329,11 @@ def retrieve_episodes(
             continue
         embedding_by_id[row["turn_id"]] = (vec, row["embedding_model_version"])
 
-    has_embeddings = bool(embedding_by_id)
-    q_vec = effective.embed([apply_query_prefix(query)])[0] if has_embeddings else None
+    has_embeddings = effective is not None and bool(embedding_by_id)
+    q_vec = (
+        effective.embed([apply_query_prefix(query)])[0]
+        if has_embeddings and effective is not None else None
+    )
 
     sem_scores: list[float] = []
     for t in episodes:
@@ -1850,8 +1867,8 @@ def retrieve_event_frames(
     if not query or not query.strip():
         return []
 
-    effective = embedding_client or episode_embedder()
-    if effective is None:
+    effective = _query_embedder(embedding_client)
+    if effective is None:  # lexical-only mode: never load a model at query time
         return []
     frames = list_event_frames(conn, session_id)
     if not frames:
