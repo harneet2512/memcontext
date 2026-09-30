@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "description": "Cross-session Claude Code recall scenarios. Each step runs as a NEW headless `claude -p` session against the same project + MemContext DB. Labels come from the scenario's intent (what the user decided), written before any run. Value keys map to case-insensitive regexes; the harness wraps each in alnum boundaries (underscore counts as a separator). Kinds: capture/change (user states or changes a decision; DB state is checked after), suggest (assistant proposes an alternative; user's decision must stay current), other (unrelated work), recall (answer scored on its final `CURRENT:` line), act (a file assignment is scored, plus the `CURRENT:` line).",
+  "scenarios": [
+    {
+      "id": "db_engine_change",
+      "split": "dev",
+      "tests": ["capture", "cross-session recall", "supersession", "stale action"],
+      "project": {"name": "billing-api", "description": "HTTP service that issues invoices and records payments."},
+      "values": {"postgres": "postgres(?:ql)?", "sqlite": "sqlite3?"},
+      "steps": [
+        {"kind": "capture", "prompt": "We've made a call on storage: this service will use PostgreSQL as its database. Please record that decision.", "current": "postgres"},
+        {"kind": "recall", "prompt": "Which database engine does this service use?", "current": "postgres"},
+        {"kind": "change", "prompt": "Change of plan: we're moving this service's database from PostgreSQL to SQLite to keep deployment simple. Please record the new decision.", "current": "sqlite", "stale": ["postgres"]},
+        {"kind": "act", "prompt": "Create config/db.py containing a single line DB_ENGINE = \"<engine>\" with the lowercase name of the database engine we currently use.", "file": "config/db.py", "var": "DB_ENGINE", "current": "sqlite", "stale": ["postgres"]}
+      ]
+    },
+    {
+      "id": "broker_changed_twice",
+      "split": "dev",
+      "tests": ["decision changed twice", "supersession chain", "stale action"],
+      "project": {"name": "order-events", "description": "Publishes order lifecycle events for downstream consumers."},
+      "values": {"rabbitmq": "rabbit(?:mq)?", "kafka": "kafka", "nats": "nats"},
+      "steps": [
+        {"kind": "capture", "prompt": "Decision: we'll use RabbitMQ as the message broker for publishing order events. Please record it.", "current": "rabbitmq"},
+        {"kind": "change", "prompt": "We've reconsidered the message broker: switching from RabbitMQ to Kafka for its replay support. Please update the decision.", "current": "kafka", "stale": ["rabbitmq"]},
+        {"kind": "recall", "prompt": "What message broker are we publishing order events to?", "current": "kafka", "stale": ["rabbitmq"]},
+        {"kind": "change", "prompt": "One more change on the broker: Kafka is too heavy for our ops team, so we're going with NATS instead. Record that.", "current": "nats", "stale": ["kafka", "rabbitmq"]},
+        {"kind": "act", "prompt": "Write config/broker.py with one line BROKER = \"<name>\" (lowercase) for the message broker we currently use.", "file": "config/broker.py", "var": "BROKER", "current": "nats", "stale": ["kafka", "rabbitmq"]}
+      ]
+    },
+    {
+      "id": "two_topics_no_interference",
+      "split": "dev",
+      "tests": ["two unrelated decisions", "no cross-subject supersession", "subject convention"],
+      "project": {"name": "inventory-ui", "description": "Web front end for browsing and adjusting warehouse stock."},
+      "values": {"svelte": "svelte(?:kit)?", "flyio": "fly(?:\\.io)?", "render": "render(?:\\.com)?"},
+      "steps": [
+        {"kind": "capture", "prompt": "Frontend decision: the UI will be built with Svelte. Please record it.", "current": "svelte"},
+        {"kind": "capture", "prompt": "Separate decision, about hosting: we'll deploy this app on Fly.io. Please record it.", "current": "flyio", "also_live": ["svelte"]},
+        {"kind": "change", "prompt": "Hosting update: we're moving deployment from Fly.io to Render. Please record the change.", "current": "render", "stale": ["flyio"], "also_live": ["svelte"]},
+        {"kind": "act", "prompt": "Create config/frontend.py with one line UI_FRAMEWORK = \"<name>\" (lowercase) naming the frontend framework we decided on.", "file": "config/frontend.py", "var": "UI_FRAMEWORK", "current": "svelte"},
+        {"kind": "recall", "prompt": "Where are we deploying this app now?", "current": "render", "stale": ["flyio"]}
+      ]
+    },
+    {
+      "id": "user_vs_assistant_suggestion",
+      "split": "dev",
+      "tests": ["user decision vs assistant suggestion", "trust direction", "stale action"],
+      "project": {"name": "notes-api", "description": "Small JSON API for creating and searching notes."},
+      "values": {"fastapi": "fast\\s?api", "flask": "flask"},
+      "steps": [
+        {"kind": "capture", "prompt": "We've decided to build this API with FastAPI. Please record that decision.", "current": "fastapi"},
+        {"kind": "suggest", "prompt": "Play devil's advocate for a moment: make the strongest case, in three sentences, for switching this API to Flask. This is only a thought exercise, not a decision; don't change anything.", "current": "fastapi", "stale": ["flask"]},
+        {"kind": "recall", "prompt": "Which web framework is this API built on?", "current": "fastapi", "stale": ["flask"]},
+        {"kind": "act", "prompt": "Create config/web.py with one line WEB_FRAMEWORK = \"<name>\" (lowercase) for the web framework we're using.", "file": "config/web.py", "var": "WEB_FRAMEWORK", "current": "fastapi", "stale": ["flask"]}
+      ]
+    },
+    {
+      "id": "low_overlap_wording",
+      "split": "heldout",
+      "tests": ["lexical injection limit", "tool fallback", "supersession"],
+      "project": {"name": "photo-share", "description": "Lets people share photo albums with friends."},
+      "values": {"s3": "(?:amazon\\s+|aws\\s+)?s3", "r2": "(?:cloudflare\\s+)?r2"},
+      "steps": [
+        {"kind": "capture", "prompt": "Decision: user-uploaded images will be stored in Amazon S3. Please record it.", "current": "s3"},
+        {"kind": "recall", "prompt": "Where do the pictures people send us end up living?", "current": "s3"},
+        {"kind": "change", "prompt": "Actually, let's keep uploaded images on Cloudflare R2 instead of S3, for cheaper egress. Please record that.", "current": "r2", "stale": ["s3"]},
+        {"kind": "act", "prompt": "Write config/blobs.py with one line BLOB_PROVIDER = \"<id>\" where the id is \"s3\" or \"r2\", matching where those pictures should go.", "file": "config/blobs.py", "var": "BLOB_PROVIDER", "current": "r2", "stale": ["s3"]}
+      ]
+    },
+    {
+      "id": "actually_correction",
+      "split": "dev",
+      "tests": ["'actually' correction without explicit record request", "capture", "stale action"],
+      "project": {"name": "chat-relay", "description": "Relays chat messages between rooms over WebSockets."},
+      "values": {"jwt": "jwts?|json\\s+web\\s+tokens?", "cookie": "(?:session[\\s_-]?)?cookies?"},
+      "steps": [
+        {"kind": "capture", "prompt": "For authentication we'll use JWTs (JSON Web Tokens). Please record that decision.", "current": "jwt"},
+        {"kind": "change", "prompt": "Actually, scratch that: we'll use server-side session cookies for auth, not JWTs.", "current": "cookie", "stale": ["jwt"]},
+        {"kind": "act", "prompt": "Create config/auth.py with one line AUTH_METHOD = \"<method>\" where the method is \"jwt\" or \"session_cookie\", per our auth decision.", "file": "config/auth.py", "var": "AUTH_METHOD", "current": "cookie", "stale": ["jwt"]},
+        {"kind": "recall", "prompt": "How do users authenticate with this service?", "current": "cookie", "stale": ["jwt"]}
+      ]
+    },
+    {
+      "id": "python_version_bump",
+      "split": "heldout",
+      "tests": ["numeric value", "supersession", "stale action"],
+      "project": {"name": "etl-jobs", "description": "Nightly batch jobs that load sales data into the warehouse."},
+      "values": {"py311": "(?:python\\s*)?3\\.11", "py312": "(?:python\\s*)?3\\.12"},
+      "steps": [
+        {"kind": "capture", "prompt": "We target Python 3.11 for this project. Please record that decision.", "current": "py311"},
+        {"kind": "change", "prompt": "We're bumping the project to Python 3.12 now that our base image supports it. Record the new target.", "current": "py312", "stale": ["py311"]},
+        {"kind": "act", "prompt": "Create config/runtime.py with one line PYTHON_VERSION = \"<major.minor>\" for the Python version we target.", "file": "config/runtime.py", "var": "PYTHON_VERSION", "current": "py312", "stale": ["py311"]},
+        {"kind": "recall", "prompt": "Which Python version are we targeting?", "current": "py312", "stale": ["py311"]}
+      ]
+    },
+    {
+      "id": "stable_control",
+      "split": "dev",
+      "tests": ["control: no change", "recall after unrelated session"],
+      "project": {"name": "docs-site", "description": "Public documentation site for the product."},
+      "values": {"mkdocs": "mk\\s?docs"},
+      "steps": [
+        {"kind": "capture", "prompt": "We'll build the documentation site with MkDocs. Please record that decision.", "current": "mkdocs"},
+        {"kind": "other", "prompt": "Add a CONTRIBUTING.md file with three short lines of contribution guidelines.", "current": "mkdocs"},
+        {"kind": "act", "prompt": "Create config/docs.py with one line DOCS_TOOL = \"<name>\" (lowercase) for the documentation generator we chose.", "file": "config/docs.py", "var": "DOCS_TOOL", "current": "mkdocs"}
+      ]
+    },
+    {
+      "id": "logging_paraphrase",
+      "split": "heldout",
+      "tests": ["implicit change without record request", "paraphrased question", "stale action"],
+      "project": {"name": "api-gateway", "description": "Routes and rate-limits requests to internal services."},
+      "values": {"structlog": "structlog", "loguru": "loguru"},
+      "steps": [
+        {"kind": "capture", "prompt": "Logging decision: we'll use structlog for all logging in this service. Please record it.", "current": "structlog"},
+        {"kind": "change", "prompt": "Let's drop structlog; loguru is our logging library going forward.", "current": "loguru", "stale": ["structlog"]},
+        {"kind": "recall", "prompt": "What should I import to emit log lines here?", "current": "loguru", "stale": ["structlog"]},
+        {"kind": "act", "prompt": "Create config/logs.py with one line LOG_LIBRARY = \"<name>\" (lowercase) naming the logging library we use.", "file": "config/logs.py", "var": "LOG_LIBRARY", "current": "loguru", "stale": ["structlog"]}
+      ]
+    },
+    {
+      "id": "buried_change",
+      "split": "heldout",
+      "tests": ["decision change buried in an unrelated request", "capture", "stale action"],
+      "project": {"name": "ci-toolkit", "description": "Shared scripts for building and testing our repositories."},
+      "values": {"gha": "github(?:\\s+|_)?actions|gha", "gitlab": "gitlab(?:[\\s_-]?ci)?"},
+      "steps": [
+        {"kind": "capture", "prompt": "CI decision: we run CI on GitHub Actions. Please record it.", "current": "gha"},
+        {"kind": "change", "prompt": "Add a .gitignore that ignores __pycache__/ and .venv/. Also, FYI, we've moved CI from GitHub Actions to GitLab CI; that's decided.", "current": "gitlab", "stale": ["gha"]},
+        {"kind": "act", "prompt": "Create config/ci.py with one line CI_PROVIDER = \"<id>\" where the id is \"github_actions\" or \"gitlab_ci\", for our CI decision.", "file": "config/ci.py", "var": "CI_PROVIDER", "current": "gitlab", "stale": ["gha"]},
+        {"kind": "recall", "prompt": "Which CI system do we use?", "current": "gitlab", "stale": ["gha"]}
+      ]
+    }
+  ]
+}
