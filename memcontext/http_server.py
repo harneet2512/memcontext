@@ -368,16 +368,98 @@ def _capture_tool_use(body: dict, namespace: str) -> dict:
     return {"status": "ok"}
 
 
-def _capture_prompt(body: dict, namespace: str) -> dict:
+_CONTEXT_MAX_CHARS = 1500
+_PROMPT_CONTEXT_TOP_K = 8
+_PROMPT_CONTEXT_MAX_LINES = 6
+_PROMPT_QUERY_MAX_CHARS = 1000
+_LIVE_STATUSES = frozenset({"active", "confirmed", "audited"})
+_TOOL_ACTION_PREDICATE = "action"  # tool-use log entries: never useful as injected context
+
+# Words that carry no topical signal, for the lexical relevance gate.
+_STOPWORDS = frozenset({
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "to", "for", "and", "or",
+    "of", "in", "on", "at", "it", "my", "our", "we", "you", "me", "this", "that", "these",
+    "those", "with", "from", "by", "as", "do", "does", "did", "can", "could", "should",
+    "would", "will", "what", "which", "who", "how", "why", "when", "where", "there", "here",
+    "have", "has", "had", "use", "uses", "used", "using", "know", "about", "let", "lets",
+    "please", "tell", "some", "any", "all", "not", "now", "then", "into", "out", "get",
+    "import", "def", "class", "return", "if", "else", "true", "false", "none", "self",
+})
+
+
+def _content_tokens(text: str) -> set[str]:
+    return {t for t in re.findall(r"[a-z0-9]+", (text or "").lower())
+            if len(t) > 2 and t not in _STOPWORDS}
+
+
+def _claim_line(subject: str | None, predicate: str | None, fact: str) -> str:
+    """One context line: ``subject / predicate: <fact>`` for structured facts, else the fact."""
+    fact = " ".join((fact or "").split())
+    if not (subject and predicate):
+        return fact
+    synthesized = f"{subject} {predicate} "  # structured facts' NL text is "s p v"
+    body = fact[len(synthesized):] if fact.startswith(synthesized) else fact
+    return f"{subject} / {predicate}: {body}"
+
+
+def _render_context(header: str, lines: list[str], max_lines: int) -> str | None:
+    out: list[str] = []
+    size = len(header)
+    for line in lines[:max_lines]:
+        entry = f"\n- {line}"
+        if size + len(entry) > _CONTEXT_MAX_CHARS:
+            break
+        out.append(entry)
+        size += len(entry)
+    return header + "".join(out) if out else None
+
+
+def _hook_context(event: str, context: str | None) -> dict:
+    if not context:
+        return {}
+    return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": context}}
+
+
+def _prompt_context(prompt: str, namespace: str | None) -> str | None:
+    """Current (non-superseded) facts relevant to the prompt, across all sessions.
+
+    Goes through the real query path (namespace-scoped), then keeps only live fact
+    claims that share a content word with the prompt: the ranked list always has
+    *something* in it, and injecting unrelated memory is worse than injecting none.
+    Episodes are skipped — raw text can restate a superseded value.
+    """
+    from memcontext import mcp_tools
+    result = mcp_tools.handle_memory_query(
+        get_conn(), query=prompt[:_PROMPT_QUERY_MAX_CHARS], session_id=None,
+        top_k=_PROMPT_CONTEXT_TOP_K, namespace=namespace, include_resolved=False,
+    )
+    prompt_tokens = _content_tokens(prompt)
+    lines: list[str] = []
+    for c in result.get("claims", []):
+        if c.get("status") not in _LIVE_STATUSES or c.get("predicate") == _TOOL_ACTION_PREDICATE:
+            continue
+        line = _claim_line(c.get("subject"), c.get("predicate"), c.get("fact") or c.get("value") or "")
+        if line and line not in lines and prompt_tokens & _content_tokens(line):
+            lines.append(line)
+    return _render_context(
+        "[MemContext] Current project memory relevant to this prompt:",
+        lines, _PROMPT_CONTEXT_MAX_LINES,
+    )
+
+
+def _capture_prompt(body: dict, namespace: str | None) -> dict:
     prompt = body.get("prompt", "")
     session_id = body.get("session_id", "hooks")
 
-    if not prompt or prompt.startswith("/"):
-        return {"status": "skipped"}
+    if not isinstance(prompt, str) or not prompt or prompt.startswith("/"):
+        return {}
 
     from memcontext import admission
     if not admission.admit(prompt).admitted:
-        return {"status": "skipped"}
+        return {}  # never query with (and so never log) text admission rejected
+
+    # Retrieve before storing, so the prompt never retrieves itself.
+    context = _prompt_context(prompt, namespace)
 
     from memcontext import mcp_tools
     mcp_tools.handle_memory_store(
@@ -385,10 +467,10 @@ def _capture_prompt(body: dict, namespace: str) -> dict:
         text=prompt[:2000],
         speaker="user",
         session_id=session_id,
-        namespace=namespace,
+        namespace=namespace or "default",
         extractor=_get_hook_extractor(),
     )
-    return {"status": "ok"}
+    return _hook_context("UserPromptSubmit", context)
 
 
 def _active_claim_rows(namespace: str | None) -> list:
@@ -488,13 +570,13 @@ async def hook_post_tool_use(request: Request):
 
 @app.post("/api/hooks/user_prompt_submit")
 async def hook_user_prompt_submit(request: Request):
-    """Capture user decisions and intent silently."""
+    """Capture the prompt and inject current memory relevant to it."""
     namespace, can_write = _hook_scope(request)
     if not can_write:
         return _FORBIDDEN
     try:
         body = await _hook_body(request)
-        return await run_in_threadpool(_capture_prompt, body, namespace or "default")
+        return await run_in_threadpool(_capture_prompt, body, namespace)
     except Exception as exc:
         _hook_failed("user_prompt_submit", exc)
         return {"status": "error"}
