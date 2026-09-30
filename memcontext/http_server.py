@@ -21,6 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 log = structlog.get_logger(__name__)
 
@@ -269,137 +270,215 @@ def _extract_query_keywords(tool_name: str, tool_input: dict | str) -> str | Non
 
 
 # ── Hook endpoints ───────────────────────────────────────
+#
+# Each handler parses the (possibly malformed) body on the event loop, then runs
+# the blocking work — extraction, embedding, SQLite — in the threadpool so one slow
+# hook never stalls the server (Claude Code cancels hooks after 5-10s).
+# Hooks honour the caller's principal exactly like /api/memory/*: writes need
+# can_write, and both reads and writes are confined to the caller's namespace.
+
+_hook_extractor = None
+
+
+def _get_hook_extractor():
+    """Select the text extractor once per process, not once per hook call.
+
+    auto_extractor() probes for a local Ollama with a network timeout, which cost
+    seconds on every captured prompt.
+    """
+    global _hook_extractor
+    if _hook_extractor is None:
+        from memcontext import mcp_tools
+        _hook_extractor = mcp_tools.auto_extractor()
+    return _hook_extractor
+
+
+def _hook_scope(request: Request) -> tuple[str | None, bool]:
+    return (
+        getattr(request.state, "namespace", None),
+        getattr(request.state, "can_write", True),
+    )
+
+
+_FORBIDDEN = JSONResponse({"status": "forbidden"}, status_code=403)
+
+
+def _capture_tool_use(body: dict, namespace: str) -> dict:
+    tool_name = body.get("tool_name", "")
+    tool_input = body.get("tool_input", {})
+    session_id = body.get("session_id", "hooks")
+
+    if _should_skip_tool(tool_name, tool_input):
+        return {"status": "skipped"}
+
+    subject, value = _summarize_tool(tool_name, tool_input)
+
+    from memcontext import admission
+    if not admission.admit(value).admitted:
+        return {"status": "filtered"}
+
+    # Only store edits/writes — the actions that change state
+    if tool_name not in ("Edit", "Write", "Bash", "PowerShell"):
+        return {"status": "skipped"}
+
+    from memcontext import mcp_tools
+    mcp_tools.handle_memory_store(
+        get_conn(),
+        text=f"[source: tool] {tool_name}: {value}"[:500],
+        speaker="assistant",
+        session_id=session_id,
+        namespace=namespace,
+        claims=[{
+            "subject": subject.lower().replace("\\", "/").split("/")[-1] if "/" in subject or "\\" in subject else subject.lower(),
+            "predicate": "action",
+            "value": f"{tool_name}: {value}"[:200],
+            "confidence": 0.7,
+        }],
+    )
+    return {"status": "ok"}
+
+
+def _capture_prompt(body: dict, namespace: str) -> dict:
+    prompt = body.get("prompt", "")
+    session_id = body.get("session_id", "hooks")
+
+    if not prompt or prompt.startswith("/"):
+        return {"status": "skipped"}
+
+    from memcontext import admission
+    if not admission.admit(prompt).admitted:
+        return {"status": "skipped"}
+
+    from memcontext import mcp_tools
+    mcp_tools.handle_memory_store(
+        get_conn(),
+        text=prompt[:2000],
+        speaker="user",
+        session_id=session_id,
+        namespace=namespace,
+        extractor=_get_hook_extractor(),
+    )
+    return {"status": "ok"}
+
+
+def _active_claim_rows(namespace: str | None) -> list:
+    conn = get_conn()
+    if namespace is None:  # single shared token = unrestricted
+        return conn.execute(
+            "SELECT * FROM claims"
+            " WHERE status IN ('active','confirmed','audited')"
+            " ORDER BY created_ts DESC LIMIT 500",
+        ).fetchall()
+    return conn.execute(
+        "SELECT c.* FROM claims c JOIN turns t ON t.turn_id = c.source_turn_id"
+        " WHERE c.status IN ('active','confirmed','audited') AND t.namespace = ?"
+        " ORDER BY c.created_ts DESC LIMIT 500",
+        (namespace,),
+    ).fetchall()
+
+
+def _context_for_tool(body: dict, namespace: str | None) -> dict:
+    tool_name = body.get("tool_name", "")
+    tool_input = body.get("tool_input", {})
+
+    keywords = _extract_query_keywords(tool_name, tool_input)
+    if not keywords:
+        return {}
+
+    start = time.monotonic()
+
+    from memcontext.claims import row_to_claim
+    rows = _active_claim_rows(namespace)
+
+    if time.monotonic() - start > 0.15:
+        return {}
+
+    query_tokens = set(re.findall(r"[a-z0-9]+", keywords.lower()))
+    scored = []
+    for row in rows:
+        c = row_to_claim(row)
+        claim_text = f"{c.subject} {c.predicate} {c.value}".lower()
+        claim_tokens = set(re.findall(r"[a-z0-9]+", claim_text))
+        overlap = len(query_tokens & claim_tokens)
+        if overlap > 0:
+            score = overlap / max(len(query_tokens), 1)
+            scored.append((c, score))
+
+    if time.monotonic() - start > 0.2:
+        return {}
+
+    if not scored:
+        return {}
+
+    scored.sort(key=lambda x: -x[1])
+    lines = []
+    char_count = 0
+    for c, _score in scored[:5]:
+        line = f"- {c.subject}: {c.value}"
+        if char_count + len(line) > 1500:
+            break
+        lines.append(line)
+        char_count += len(line)
+
+    if not lines:
+        return {}
+
+    context = "[MemContext] Relevant context:\n" + "\n".join(lines)
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "additionalContext": context,
+        }
+    }
+
+
+async def _hook_body(request: Request) -> dict:
+    body = await request.json()
+    return body if isinstance(body, dict) else {}
+
+
+def _hook_failed(hook: str, exc: Exception) -> None:
+    # Type only (never the message): hook payloads carry user content.
+    log.warning("hook.failed", hook=hook, error_type=type(exc).__name__)
+
 
 @app.post("/api/hooks/post_tool_use")
 async def hook_post_tool_use(request: Request):
     """Capture meaningful tool actions silently."""
+    namespace, can_write = _hook_scope(request)
+    if not can_write:
+        return _FORBIDDEN
     try:
-        body = await request.json()
-        tool_name = body.get("tool_name", "")
-        tool_input = body.get("tool_input", {})
-        session_id = body.get("session_id", "hooks")
-
-        if _should_skip_tool(tool_name, tool_input):
-            return {"status": "skipped"}
-
-        subject, value = _summarize_tool(tool_name, tool_input)
-
-        from memcontext import admission
-        if not admission.admit(value).admitted:
-            return {"status": "filtered"}
-
-        # Only store edits/writes — the actions that change state
-        if tool_name not in ("Edit", "Write", "Bash", "PowerShell"):
-            return {"status": "skipped"}
-
-        from memcontext.mcp_tools import handle_memory_store
-        handle_memory_store(
-            get_conn(),
-            text=f"[source: tool] {tool_name}: {value}"[:500],
-            speaker="assistant",
-            session_id=session_id,
-            claims=[{
-                "subject": subject.lower().replace("\\", "/").split("/")[-1] if "/" in subject or "\\" in subject else subject.lower(),
-                "predicate": "action",
-                "value": f"{tool_name}: {value}"[:200],
-                "confidence": 0.7,
-            }],
-        )
-        return {"status": "ok"}
-    except Exception:
+        body = await _hook_body(request)
+        return await run_in_threadpool(_capture_tool_use, body, namespace or "default")
+    except Exception as exc:
+        _hook_failed("post_tool_use", exc)
         return {"status": "error"}
 
 
 @app.post("/api/hooks/user_prompt_submit")
 async def hook_user_prompt_submit(request: Request):
     """Capture user decisions and intent silently."""
+    namespace, can_write = _hook_scope(request)
+    if not can_write:
+        return _FORBIDDEN
     try:
-        body = await request.json()
-        prompt = body.get("prompt", "")
-        session_id = body.get("session_id", "hooks")
-
-        if not prompt or prompt.startswith("/"):
-            return {"status": "skipped"}
-
-        from memcontext import admission
-        if not admission.admit(prompt).admitted:
-            return {"status": "skipped"}
-
-        from memcontext.mcp_tools import handle_memory_store
-        handle_memory_store(
-            get_conn(),
-            text=prompt[:2000],
-            speaker="user",
-            session_id=session_id,
-        )
-        return {"status": "ok"}
-    except Exception:
+        body = await _hook_body(request)
+        return await run_in_threadpool(_capture_prompt, body, namespace or "default")
+    except Exception as exc:
+        _hook_failed("user_prompt_submit", exc)
         return {"status": "error"}
 
 
 @app.post("/api/hooks/pre_tool_use")
 async def hook_pre_tool_use(request: Request):
     """Inject relevant memory context before tool calls."""
+    namespace, _ = _hook_scope(request)
     try:
-        body = await request.json()
-        tool_name = body.get("tool_name", "")
-        tool_input = body.get("tool_input", {})
-
-        keywords = _extract_query_keywords(tool_name, tool_input)
-        if not keywords:
-            return {}
-
-        start = time.monotonic()
-
-        from memcontext.claims import row_to_claim
-        conn = get_conn()
-        rows = conn.execute(
-            "SELECT * FROM claims"
-            " WHERE status IN ('active','confirmed','audited')"
-            " ORDER BY created_ts DESC LIMIT 500",
-        ).fetchall()
-
-        if time.monotonic() - start > 0.15:
-            return {}
-
-        query_tokens = set(re.findall(r"[a-z0-9]+", keywords.lower()))
-        scored = []
-        for row in rows:
-            c = row_to_claim(row)
-            claim_text = f"{c.subject} {c.predicate} {c.value}".lower()
-            claim_tokens = set(re.findall(r"[a-z0-9]+", claim_text))
-            overlap = len(query_tokens & claim_tokens)
-            if overlap > 0:
-                score = overlap / max(len(query_tokens), 1)
-                scored.append((c, score))
-
-        if time.monotonic() - start > 0.2:
-            return {}
-
-        if not scored:
-            return {}
-
-        scored.sort(key=lambda x: -x[1])
-        lines = []
-        char_count = 0
-        for c, _score in scored[:5]:
-            line = f"- {c.subject}: {c.value}"
-            if char_count + len(line) > 1500:
-                break
-            lines.append(line)
-            char_count += len(line)
-
-        if not lines:
-            return {}
-
-        context = "[MemContext] Relevant context:\n" + "\n".join(lines)
-        return {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "additionalContext": context,
-            }
-        }
-    except Exception:
+        body = await _hook_body(request)
+        return await run_in_threadpool(_context_for_tool, body, namespace)
+    except Exception as exc:
+        _hook_failed("pre_tool_use", exc)
         return {}
 
 
