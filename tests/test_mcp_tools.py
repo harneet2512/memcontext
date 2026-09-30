@@ -55,8 +55,9 @@ def test_store_returns_structure(conn):
 
 
 def test_store_auto_session(conn):
+    # No session given -> the shared default, the same one query/trace/brain use.
     result = handle_memory_store(conn, text="I am a developer")
-    assert result["session_id"].startswith("session_")
+    assert result["session_id"] == "default"
 
 
 def test_query_finds_stored(conn):

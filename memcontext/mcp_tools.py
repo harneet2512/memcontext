@@ -37,6 +37,25 @@ if TYPE_CHECKING:
 log = structlog.get_logger(__name__)
 
 
+DEFAULT_SESSION_ID = "default"
+
+
+def _newest_active_for_slot(conn: sqlite3.Connection, subject: str, predicate: str):
+    """Newest active claim for (subject, predicate) in ANY session.
+
+    Supersession is namespace-wide, so the current value of a slot may live in a
+    different session than the caller names (every Claude Code session differs).
+    """
+    from memcontext.claims import _normalise_subject, row_to_claim
+
+    row = conn.execute(
+        "SELECT * FROM claims WHERE subject = ? AND predicate = ?"
+        " AND status IN ('active','confirmed') ORDER BY created_ts DESC LIMIT 1",
+        (_normalise_subject(subject), predicate),
+    ).fetchone()
+    return row_to_claim(row) if row is not None else None
+
+
 def handle_memory_store(
     conn: sqlite3.Connection,
     *,
@@ -49,7 +68,9 @@ def handle_memory_store(
     queue: ExtractionQueue | None = None,
     namespace: str = "default",
 ) -> dict:
-    sid = session_id or f"session_{uuid.uuid4().hex[:8]}"
+    # Same default as memory_query / memory_trace / brain, so a fact stored without
+    # a session is found by the calls that also omit it.
+    sid = session_id or DEFAULT_SESSION_ID
     sp = Speaker.USER if speaker == "user" else Speaker.ASSISTANT
 
     # Pre-structured claims extract inline (Passthrough is never deferred). With
@@ -776,7 +797,7 @@ def handle_memory_trace(
             return {"error": "Provide claim_id, or both subject and predicate."}
         head = find_same_identity_claim(
             conn, session_id=session_id, subject=subject, predicate=predicate
-        )
+        ) or _newest_active_for_slot(conn, subject, predicate)
         if head is None:
             return {
                 "error": f"No active claim for {subject}/{predicate} in {session_id}",
