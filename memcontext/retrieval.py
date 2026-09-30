@@ -254,8 +254,11 @@ class EmbeddingClient:
             return_colbert_vecs=False,
         )
         vectors = raw.get("dense_vecs") if isinstance(raw, dict) else raw
+        if vectors is None:
+            return []
         out: list[list[float]] = []
-        for v in vectors or []:
+        # Never truth-test ``vectors``: it is a numpy array, whose bool() raises.
+        for v in vectors:
             out.append([float(x) for x in v])
         return out
 
