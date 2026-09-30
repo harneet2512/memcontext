@@ -294,6 +294,11 @@ def _content_tokens(text: str) -> set[str]:
             if len(t) > 2 and t not in _STOPWORDS}
 
 
+def _claim_match_tokens(predicate: str | None, line: str) -> set[str]:
+    """Content words of a context line, minus the predicate label ("user_fact" is not content)."""
+    return _content_tokens(line) - _content_tokens(predicate or "")
+
+
 # ── Hook filtering ───────────────────────────────────────
 
 _HOOK_SKIP_TOOLS: set[str] = {
@@ -511,7 +516,7 @@ def _prompt_context(prompt: str, namespace: str | None) -> str | None:
         if c.get("status") not in _LIVE_STATUSES or c.get("predicate") == _TOOL_ACTION_PREDICATE:
             continue
         line = _claim_line(c.get("subject"), c.get("predicate"), c.get("fact") or c.get("value") or "")
-        if line and line not in lines and prompt_tokens & _content_tokens(line):
+        if line and line not in lines and prompt_tokens & _claim_match_tokens(c.get("predicate"), line):
             lines.append(line)
     return _render_context(
         "[MemContext] Current project memory relevant to this prompt:",
@@ -588,7 +593,7 @@ def _context_for_tool(body: dict, namespace: str | None) -> dict:
     for row in rows:
         c = row_to_claim(row)
         line = _claim_line(c.subject, c.predicate, c.text or c.value or "")
-        overlap = len(query_tokens & _content_tokens(line))
+        overlap = len(query_tokens & _claim_match_tokens(c.predicate, line))
         if overlap > 0:
             scored.append((overlap / len(query_tokens), line))
 

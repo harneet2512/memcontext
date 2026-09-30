@@ -91,6 +91,16 @@ def test_prompt_submit_injects_nothing_when_nothing_is_relevant(conn, client):
     assert "hookSpecificOutput" not in r.json()
 
 
+def test_relevance_ignores_predicate_names(conn, client):
+    # "user_fact" is a label, not content: a prompt mentioning "user" or "fact"
+    # must not pull in every user_* claim.
+    _store(conn, "orders service", "user_fact", "primary database is PostgreSQL")
+    r = _prompt(client, "What should the user see as a fact sheet on login?")
+    assert "hookSpecificOutput" not in r.json()
+    r = _pre_tool(client, "Bash", {"command": "grep-user fact-check login"})
+    assert "hookSpecificOutput" not in r.json()
+
+
 def test_prompt_submit_injection_is_namespace_scoped(conn, client):
     _store(conn, "orders service", "user_fact", "uses PostgreSQL", namespace="tenantA")
     ctx_b = _injected(_prompt(client, "Which database does the orders service use?", tok="tokB"))
