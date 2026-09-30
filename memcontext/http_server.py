@@ -45,7 +45,9 @@ app.add_middleware(
 )
 
 
-# ── Auth: bearer token on every /api/* route (memory, hooks, sessions) ────────
+# ── Auth: bearer token on every route except /health ─────────────────────────
+# Covers /api/* (memory, hooks), the MCP app mounted at /mcp, and the OpenAPI docs.
+_PUBLIC_PATHS = frozenset({"/health"})
 _http_token: str | None = None
 
 
@@ -72,7 +74,8 @@ def _configure_auth() -> str:
 
 @app.middleware("http")
 async def _require_bearer(request: Request, call_next):
-    if request.url.path.startswith("/api/"):
+    path = request.url.path
+    if path not in _PUBLIC_PATHS:
         header = request.headers.get("authorization", "")
         provided = header[7:].strip() if header[:7].lower() == "bearer " else ""
         # Per-principal access control once any principal is registered; otherwise
@@ -94,6 +97,11 @@ async def _require_bearer(request: Request, call_next):
             request.state.namespace = None  # single shared key = unrestricted
             request.state.can_write = True
             request.state.principal = "shared"
+        # The MCP app mounted at /mcp is not namespace-bound, so a tenant-scoped
+        # principal must never reach it (it would read every namespace).
+        if (path == "/mcp" or path.startswith("/mcp/")) and request.state.namespace is not None:
+            return JSONResponse({"error": "MCP over HTTP is single-tenant; use the shared token"},
+                                status_code=403)
     return await call_next(request)
 
 
@@ -175,21 +183,43 @@ def memory_query(req: QueryRequest, request: Request):
     )
 
 
+def _claim_in_namespace(conn, claim_id: str, namespace: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM claims c JOIN turns t ON t.turn_id = c.source_turn_id"
+        " WHERE c.claim_id = ? AND t.namespace = ?",
+        (claim_id, namespace),
+    ).fetchone() is not None
+
+
 @app.post("/api/memory/trace")
-def memory_trace(req: TraceRequest):
+def memory_trace(req: TraceRequest, request: Request):
     from memcontext.mcp_tools import handle_memory_trace
-    return handle_memory_trace(get_conn(), claim_id=req.claim_id)
+    conn = get_conn()
+    ns = getattr(request.state, "namespace", None)
+    if ns is not None and not _claim_in_namespace(conn, req.claim_id, ns):
+        # Same answer as a missing id: never confirm another tenant's claim exists.
+        return {"error": f"Claim {req.claim_id} not found"}
+    return handle_memory_trace(conn, claim_id=req.claim_id)
 
 
 @app.get("/api/memory/status")
-def memory_status():
+def memory_status(request: Request):
     conn = get_conn()
-    total = conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0]
+    ns = getattr(request.state, "namespace", None)
+    if ns is None:  # single shared token = whole database
+        claims_from, turns_where, args = "claims c", "", ()
+    else:
+        claims_from = "claims c JOIN turns t ON t.turn_id = c.source_turn_id AND t.namespace = ?"
+        turns_where, args = " WHERE namespace = ?", (ns,)
+    total = conn.execute(f"SELECT COUNT(*) FROM {claims_from}", args).fetchone()[0]
     active = conn.execute(
-        "SELECT COUNT(*) FROM claims WHERE status IN ('active','confirmed','audited')"
+        f"SELECT COUNT(*) FROM {claims_from}"
+        " WHERE c.status IN ('active','confirmed','audited')", args
     ).fetchone()[0]
-    sessions = conn.execute("SELECT COUNT(DISTINCT session_id) FROM claims").fetchone()[0]
-    turns = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
+    sessions = conn.execute(
+        f"SELECT COUNT(DISTINCT c.session_id) FROM {claims_from}", args
+    ).fetchone()[0]
+    turns = conn.execute(f"SELECT COUNT(*) FROM turns{turns_where}", args).fetchone()[0]
     return {
         "total_claims": total,
         "active_claims": active,

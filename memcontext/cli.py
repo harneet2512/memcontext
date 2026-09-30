@@ -328,7 +328,8 @@ def share(db: str, port: int, password: str | None) -> None:
 @main.command("serve-http")
 @click.option("--db", default="memcontext.db", help="Database file path.")
 @click.option("--port", default=8100, help="HTTP port.")
-@click.option("--host", default="0.0.0.0", help="Bind address.")
+@click.option("--host", default="127.0.0.1",
+              help="Bind address (loopback by default; --share tunnels from loopback).")
 @click.option("--share", is_flag=True, default=False,
               help="Expose via Cloudflare tunnel for remote MCP (ChatGPT, Gemini).")
 def serve_http(db: str, port: int, host: str, share: bool) -> None:
@@ -347,8 +348,7 @@ def serve_http(db: str, port: int, host: str, share: bool) -> None:
         f"[memcontext] Semantic memory: {'ON' if semantic_enabled() else 'OFF (degraded lexical-only)'}"
     )
     enforce_semantic_policy()
-    click.echo("[memcontext] Local MCP ready (stdio)")
-    click.echo(f"[memcontext] HTTP API ready: http://localhost:{port}")
+    click.echo(f"[memcontext] HTTP API ready: http://localhost:{port}  (MCP at /mcp)")
     click.echo(f"[memcontext] Database: {db}")
 
     if share:
