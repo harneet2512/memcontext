@@ -10,11 +10,15 @@ Same database, same memory. Two doors in.
 """
 from __future__ import annotations
 
+import functools
 import os
 import re
 import secrets
 import sys
+import threading
 import time
+from collections.abc import Callable
+from typing import TYPE_CHECKING, ParamSpec, TypeVar
 
 import structlog
 from fastapi import FastAPI, HTTPException, Request
@@ -23,7 +27,31 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+if TYPE_CHECKING:
+    from memcontext.authz import Principal
+
 log = structlog.get_logger(__name__)
+
+# ── Shared-connection serialization ──────────────────────────────────────────
+# The server holds ONE sqlite3 connection (check_same_thread=False, autocommit)
+# and FastAPI runs sync endpoints / hook workers on a threadpool. A sqlite3
+# Connection is not safe for interleaved use from several threads (concurrent
+# writers got InterfaceError "bad parameter or other API misuse" and rows read
+# mid-write, e.g. "None is not a valid ClaimStatus"), so every use of it goes
+# through this lock. Reentrant so a locked helper may call another.
+_db_lock = threading.RLock()
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _serialized(fn: Callable[_P, _R]) -> Callable[_P, _R]:
+    """Run ``fn`` holding the shared-connection lock (sync callables only)."""
+    @functools.wraps(fn)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        with _db_lock:
+            return fn(*args, **kwargs)
+    return wrapper
 
 app = FastAPI(
     title="MemContext",
@@ -79,12 +107,11 @@ async def _require_bearer(request: Request, call_next):
         header = request.headers.get("authorization", "")
         provided = header[7:].strip() if header[:7].lower() == "bearer " else ""
         # Per-principal access control once any principal is registered; otherwise
-        # the single shared token applies (backward compatible).
-        from memcontext.authz import any_principals, resolve_principal
-
-        conn = _conn
-        if conn is not None and any_principals(conn):
-            principal = resolve_principal(conn, provided)
+        # the single shared token applies (backward compatible). The lookup runs in
+        # the threadpool: it takes the connection lock, which must never block the
+        # event loop while a slow hook holds it.
+        enforced, principal = await run_in_threadpool(_lookup_principal, provided)
+        if enforced:
             if principal is None:
                 return JSONResponse({"error": "unauthorized"}, status_code=401)
             request.state.namespace = principal.namespace
@@ -103,6 +130,17 @@ async def _require_bearer(request: Request, call_next):
             return JSONResponse({"error": "MCP over HTTP is single-tenant; use the shared token"},
                                 status_code=403)
     return await call_next(request)
+
+
+@_serialized
+def _lookup_principal(provided: str) -> tuple[bool, Principal | None]:
+    """(per-principal auth enforced?, principal for the token or None)."""
+    from memcontext.authz import any_principals, resolve_principal
+
+    conn = _conn
+    if conn is None or not any_principals(conn):
+        return False, None
+    return True, resolve_principal(conn, provided)
 
 
 @app.exception_handler(Exception)
@@ -159,6 +197,7 @@ class TraceRequest(BaseModel):
 # ── Endpoints ────────────────────────────────────────────
 
 @app.post("/api/memory/store")
+@_serialized
 def memory_store(req: StoreRequest, request: Request):
     if not getattr(request.state, "can_write", True):
         raise HTTPException(403, "read-only principal")
@@ -173,6 +212,7 @@ def memory_store(req: StoreRequest, request: Request):
 
 
 @app.post("/api/memory/query")
+@_serialized
 def memory_query(req: QueryRequest, request: Request):
     from memcontext.mcp_tools import handle_memory_query
     ns = getattr(request.state, "namespace", None)
@@ -192,6 +232,7 @@ def _claim_in_namespace(conn, claim_id: str, namespace: str) -> bool:
 
 
 @app.post("/api/memory/trace")
+@_serialized
 def memory_trace(req: TraceRequest, request: Request):
     from memcontext.mcp_tools import handle_memory_trace
     conn = get_conn()
@@ -203,6 +244,7 @@ def memory_trace(req: TraceRequest, request: Request):
 
 
 @app.get("/api/memory/status")
+@_serialized
 def memory_status(request: Request):
     conn = get_conn()
     ns = getattr(request.state, "namespace", None)
@@ -388,6 +430,7 @@ def _hook_scope(request: Request) -> tuple[str | None, bool]:
 _FORBIDDEN = JSONResponse({"status": "forbidden"}, status_code=403)
 
 
+@_serialized
 def _capture_tool_use(body: dict, namespace: str) -> dict:
     tool_name = body.get("tool_name", "")
     tool_input = body.get("tool_input", {})
@@ -476,6 +519,7 @@ def _prompt_context(prompt: str, namespace: str | None) -> str | None:
     )
 
 
+@_serialized
 def _capture_prompt(body: dict, namespace: str | None) -> dict:
     prompt = body.get("prompt", "")
     session_id = body.get("session_id", "hooks")
@@ -522,6 +566,7 @@ def _active_claim_rows(namespace: str | None) -> list:
     ).fetchall()
 
 
+@_serialized
 def _context_for_tool(body: dict, namespace: str | None) -> dict:
     tool_name = body.get("tool_name", "")
     tool_input = body.get("tool_input", {})
