@@ -324,6 +324,39 @@ def semantic_enabled() -> bool:
     return episode_embedder() is not None
 
 
+@dataclass(frozen=True, slots=True)
+class EmbedProbe:
+    """Outcome of one real embed call against the configured embedder."""
+
+    ok: bool
+    seconds: float
+    dim: int = 0
+    error: str | None = None  # exception type name when not ok
+
+
+def probe_embedder() -> EmbedProbe | None:
+    """Embed one string with the configured embedder to prove it actually works.
+
+    ``backend_available`` / ``semantic_enabled`` are cheap *import* checks (they
+    sit on hot paths and must not load a model); only a real embed proves the
+    weights load and the backend answers. This loads the model (can take tens of
+    seconds), so call it only on explicit request (``memcontext status --verify``).
+    Returns None when semantic memory is off (no embedder configured).
+    """
+    client = episode_embedder()
+    if client is None:
+        return None
+    started = time.perf_counter()
+    try:
+        vectors = client.embed(["probe"])
+    except Exception as exc:  # noqa: BLE001 - any failure means "broken", reported by type
+        return EmbedProbe(ok=False, seconds=time.perf_counter() - started, error=type(exc).__name__)
+    elapsed = time.perf_counter() - started
+    if len(vectors) != 1 or not vectors[0]:
+        return EmbedProbe(ok=False, seconds=elapsed, error="EmptyEmbedding")
+    return EmbedProbe(ok=True, seconds=elapsed, dim=len(vectors[0]))
+
+
 def enforce_semantic_policy() -> bool:
     """Serving guard: MemContext IS semantic memory, so running without an embedder
     is a DEGRADED lexical-only mode, not normal operation. Returns True when

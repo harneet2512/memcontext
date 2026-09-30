@@ -33,9 +33,39 @@ def init(db: str, pack: str) -> None:
     click.echo(f"Active pack: {ap.pack_id} ({len(ap.predicate_families)} predicates)")
 
 
+def _semantic_status_line(verify: bool) -> tuple[str, bool]:
+    """The `Semantic memory:` status line, and whether the embedder is broken.
+
+    Without ``verify`` this is an import-level check only (no model load), so an
+    ON is explicitly reported as unverified. ``verify`` performs one real embed.
+    """
+    from memcontext.retrieval import probe_embedder, semantic_enabled
+
+    if not verify:
+        if not semantic_enabled():
+            return "Semantic memory: OFF -- lexical-only (BM25)", False
+        return (
+            "Semantic memory: ON (backend installed; not verified -- "
+            "run `memcontext status --verify`)",
+            False,
+        )
+    probe = probe_embedder()
+    if probe is None:
+        return "Semantic memory: OFF -- lexical-only (BM25)", False
+    if not probe.ok:
+        return f"Semantic memory: BROKEN ({probe.error}) -- running lexical-only", True
+    return f"Semantic memory: ON (verified, {probe.dim}-d, {probe.seconds:.2f}s)", False
+
+
 @main.command()
 @click.option("--db", default="memcontext.db", help="Database file path.")
-def status(db: str) -> None:
+@click.option(
+    "--verify",
+    is_flag=True,
+    default=False,
+    help="Run one real embedding to prove semantic memory works (loads the model).",
+)
+def status(db: str, verify: bool) -> None:
     """Show database status."""
     from memcontext.schema import open_database
 
@@ -52,15 +82,16 @@ def status(db: str) -> None:
     total_turns = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
     sessions = conn.execute("SELECT COUNT(DISTINCT session_id) FROM turns").fetchone()[0]
 
-    from memcontext.retrieval import semantic_enabled
+    conn.close()
+
+    semantic_line, broken = _semantic_status_line(verify)
     click.echo(f"Database: {os.path.abspath(db)}")
-    click.echo(
-        f"Semantic memory: {'ON (embeddings)' if semantic_enabled() else 'OFF -- lexical-only (BM25)'}"
-    )
+    click.echo(semantic_line)
     click.echo(f"Sessions: {sessions}")
     click.echo(f"Turns: {total_turns}")
     click.echo(f"Claims: {total_claims} total, {active_claims} active")
-    conn.close()
+    if broken:
+        raise SystemExit(1)
 
 
 @main.command()
