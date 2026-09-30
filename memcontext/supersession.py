@@ -44,6 +44,8 @@ def _classify_edge(
     """Return the typed edge kind for a Pass-1 supersession.
 
     Order: REFINES → ASSISTANT_CONFIRM → USER_CORRECTION → CONTRADICTS.
+    Whether the edge may retire the old claim is decided by the source-trust
+    guard in ``detect_pass1``, not by the edge type.
     """
     old_tokens = _tokens(old_claim.value)
     new_tokens = _tokens(new_claim.value)
@@ -51,10 +53,8 @@ def _classify_edge(
         return EdgeType.REFINES
     if new_turn_speaker is Speaker.ASSISTANT:
         return EdgeType.ASSISTANT_CONFIRM
-    if (
-        new_turn_speaker is Speaker.USER
-        and old_turn_speaker is Speaker.USER
-    ):
+    if new_turn_speaker is Speaker.USER:
+        # A user restating a slot corrects it, whoever said the old value.
         return EdgeType.USER_CORRECTION
     return EdgeType.CONTRADICTS
 
@@ -172,17 +172,25 @@ def detect_pass1(
     """
     if not new_claim.subject or not new_claim.predicate:
         return None
+    # Scope is the namespace (project/tenant) of the new claim's episode, not the
+    # session: a decision restated in a later session must retire the old one, and
+    # a same-named session in another namespace must never touch it. Only claims
+    # created BEFORE the new one are candidates, so near-concurrent writers can't
+    # supersede each other in both directions.
     rows = conn.execute(
-        "SELECT * FROM claims WHERE session_id = ? AND subject = ? AND predicate = ?"
-        " AND status IN ('active','confirmed') AND claim_id != ?"
-        " AND source_turn_id != ?"
-        " ORDER BY created_ts DESC",
+        "SELECT c.* FROM claims c JOIN turns t ON t.turn_id = c.source_turn_id"
+        " WHERE t.namespace = (SELECT namespace FROM turns WHERE turn_id = ?)"
+        " AND c.subject = ? AND c.predicate = ?"
+        " AND c.status IN ('active','confirmed') AND c.claim_id != ?"
+        " AND c.source_turn_id != ? AND c.created_ts < ?"
+        " ORDER BY c.created_ts DESC",
         (
-            new_claim.session_id,
+            new_claim.source_turn_id,
             new_claim.subject,
             new_claim.predicate,
             new_claim.claim_id,
             new_claim.source_turn_id,
+            new_claim.created_ts,
         ),
     ).fetchall()
     if not rows:
@@ -288,14 +296,14 @@ def detect_pass1(
         old_turn_speaker=old_speaker,
     )
 
-    # Source-trust guard (Phase 3): a markedly lower-trust source must NOT REPLACE
-    # or REFUTE a higher-trust fact (e.g. a browsed-page value overriding what the
-    # user stated). Confirmations / refinements are unaffected.
-    if edge_type in (EdgeType.USER_CORRECTION, EdgeType.CONTRADICTS) and (
-        _claim_trust(conn, new_claim.claim_id) + 0.2 < _claim_trust(conn, old_claim.claim_id)
-    ):
+    # Source-trust guard (Phase 3): a markedly lower-trust source must never retire
+    # a higher-trust fact, whatever the edge type (e.g. an assistant restatement or
+    # a web page overriding what the user stated). Both stay active; the conflict
+    # is recorded as a status-neutral CONTRADICTS edge so it is surfaced (memory_
+    # contradictions) instead of silently leaving two current values, and audited.
+    if _claim_trust(conn, new_claim.claim_id) + 0.2 < _claim_trust(conn, old_claim.claim_id):
         _record_drift_blocked(conn, new_claim, old_claim, edge_type)
-        return None
+        edge_type = EdgeType.CONTRADICTS
 
     edge = write_supersession_edge(
         conn,

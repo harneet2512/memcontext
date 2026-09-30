@@ -59,7 +59,9 @@ def test_memory_query_records_serve_events_and_verify_checks_them() -> None:
 
 def test_contradiction_keeps_both_claims_active_and_is_reported() -> None:
     conn = _conn()
-    t1 = _turn(conn, "s1", Speaker.ASSISTANT, "You live in Seattle")
+    # A lower-trust source (assistant) disagrees with what the user stated: the
+    # user's fact must stay current and the conflict must be reported.
+    t1 = _turn(conn, "s1", Speaker.USER, "I live in Seattle")
     old = insert_claim(
         conn,
         session_id="s1",
@@ -69,7 +71,7 @@ def test_contradiction_keeps_both_claims_active_and_is_reported() -> None:
         confidence=0.8,
         source_turn_id=t1.turn_id,
     )
-    t2 = _turn(conn, "s1", Speaker.USER, "No, I live in Portland")
+    t2 = _turn(conn, "s1", Speaker.ASSISTANT, "You live in Portland")
     new = insert_claim(
         conn,
         session_id="s1",

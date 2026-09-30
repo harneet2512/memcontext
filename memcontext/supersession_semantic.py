@@ -139,29 +139,37 @@ class SemanticSupersession:
         """
         nl_mode = not new_claim.predicate
         if nl_mode:
+            # NL-only identity is fuzzy, so it stays session-scoped.
             rows = conn.execute(
                 "SELECT * FROM claims WHERE session_id = ?"
                 " AND status IN ('active','confirmed')"
                 " AND claim_id != ?"
-                " AND source_turn_id != ?",
+                " AND source_turn_id != ?"
+                " AND created_ts < ?",
                 (
                     new_claim.session_id,
                     new_claim.claim_id,
                     new_claim.source_turn_id,
+                    new_claim.created_ts,
                 ),
             ).fetchall()
         else:
+            # Structured claims share Pass-1's scope: the namespace (project) of the
+            # new claim's episode, across sessions; only strictly older candidates.
             rows = conn.execute(
-                "SELECT * FROM claims WHERE session_id = ?"
-                " AND predicate = ?"
-                " AND status IN ('active','confirmed')"
-                " AND claim_id != ?"
-                " AND source_turn_id != ?",
+                "SELECT c.* FROM claims c JOIN turns t ON t.turn_id = c.source_turn_id"
+                " WHERE t.namespace = (SELECT namespace FROM turns WHERE turn_id = ?)"
+                " AND c.predicate = ?"
+                " AND c.status IN ('active','confirmed')"
+                " AND c.claim_id != ?"
+                " AND c.source_turn_id != ?"
+                " AND c.created_ts < ?",
                 (
-                    new_claim.session_id,
+                    new_claim.source_turn_id,
                     new_claim.predicate,
                     new_claim.claim_id,
                     new_claim.source_turn_id,
+                    new_claim.created_ts,
                 ),
             ).fetchall()
         if not rows:

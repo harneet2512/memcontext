@@ -13,7 +13,7 @@ from memcontext.claims import insert_claim
 from memcontext.extractors import PassthroughExtractor
 from memcontext.mcp_tools import handle_memory_query
 from memcontext.on_new_turn import on_new_turn
-from memcontext.schema import Speaker, open_database
+from memcontext.schema import EdgeType, Speaker, open_database
 from memcontext.supersession import detect_pass1
 
 
@@ -81,6 +81,12 @@ def test_blocked_low_trust_override_is_recorded_as_drift():
     low = insert_claim(conn, session_id="s1", subject="user", predicate="user_fact",
                        value="lives in Denver", confidence=0.9, source_turn_id="tu_web")
 
-    assert detect_pass1(conn, low) is None  # blocked by the trust guard
+    edge = detect_pass1(conn, low)
+    # Blocked by the trust guard: the user's fact stays current, and the conflict is
+    # surfaced as a status-neutral CONTRADICTS edge rather than applied.
+    assert edge is not None and edge.edge_type == EdgeType.CONTRADICTS
+    user_fact = conn.execute(
+        "SELECT status FROM claims WHERE value = 'lives in Portland'").fetchone()[0]
+    assert user_fact == "active"
     n = conn.execute("SELECT COUNT(*) FROM decisions WHERE kind='drift_blocked'").fetchone()[0]
     assert n == 1, "the blocked override is auditable as a drift event"

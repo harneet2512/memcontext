@@ -96,7 +96,8 @@ def test_pass1_edge_type_user_correction(
 def test_pass1_edge_type_assistant_confirm(
     db: sqlite3.Connection, session_id: str,
 ):
-    t1 = _make_turn(db, session_id, Speaker.USER, "I have two kids")
+    # The assistant revising its OWN earlier statement (equal source trust).
+    t1 = _make_turn(db, session_id, Speaker.ASSISTANT, "You have two kids")
     insert_claim(
         db, session_id=session_id, subject="user", predicate="user_fact",
         value="has two kids", confidence=0.9, source_turn_id=t1.turn_id,
