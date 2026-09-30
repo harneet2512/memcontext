@@ -397,11 +397,43 @@ def run_server(
         async with mcp.server.stdio.stdio_server() as (read, write):
             await server.run(read, write, server.create_initialization_options())
 
+    # Load the embedding model BEFORE the stdio loop starts. On Windows the stdio
+    # transport's reader thread blocks in ReadFile(stdin); a lazy model load inside
+    # the first tool call (DLL loads) then waits on that handle until the client
+    # sends another message, so the first memory_store hung for minutes.
+    prewarm_embedder()
+
     try:
         asyncio.run(_run())
     finally:
         if store_queue is not None:
             store_queue.close()  # drain in-flight extraction + join the worker
+
+
+def prewarm_embedder() -> None:
+    """Load and exercise the configured embedder once, at startup.
+
+    No-op in lexical-only mode. Never fatal: a failing embedder is reported on
+    stderr and the server keeps serving lexically.
+    """
+    import sys
+    import time
+
+    from memcontext.retrieval import episode_embedder
+
+    embedder = episode_embedder()
+    if embedder is None:
+        return
+    start = time.monotonic()
+    print("[memcontext] loading embedding model...", file=sys.stderr, flush=True)
+    try:
+        embedder.embed(["warmup"])
+    except Exception as exc:
+        print(f"[memcontext] embedding warmup failed ({type(exc).__name__}); "
+              "semantic memory will be unavailable", file=sys.stderr, flush=True)
+        return
+    print(f"[memcontext] embedding model ready ({time.monotonic() - start:.1f}s)",
+          file=sys.stderr, flush=True)
 
 
 def create_http_app(db_path: str = "memcontext.db"):

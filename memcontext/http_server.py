@@ -500,6 +500,12 @@ def run_server(*, db_path: str = "memcontext.db", port: int = 8100, host: str = 
     init_db(db_path)
     _configure_auth()  # resolve/print the bearer token before serving
 
+    # Pay model load + extractor selection once at startup, not inside the first
+    # hook call (Claude Code cancels hooks after 5-10s).
+    from memcontext.mcp_server import prewarm_embedder
+    prewarm_embedder()
+    _get_hook_extractor()
+
     # Mount MCP Streamable HTTP endpoint — ChatGPT connects here via Developer Mode
     try:
         from memcontext.mcp_server import create_http_app
