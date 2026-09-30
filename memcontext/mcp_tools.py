@@ -18,13 +18,16 @@ from memcontext.claims import (
     get_superseded_by,
     get_turn,
     insert_fact,
+    insert_turn,
     list_active_claims,
+    new_turn_id,
+    now_ns,
     set_claim_status,
 )
 from memcontext.extractors import PassthroughExtractor, auto_extractor
 from memcontext.on_new_turn import on_new_turn
 from memcontext.provenance import span_for_claim
-from memcontext.schema import ClaimStatus, EdgeType, Speaker
+from memcontext.schema import Claim, ClaimStatus, EdgeType, ExtractionStatus, Speaker, Turn
 from memcontext.supersession import write_supersession_edge
 
 if TYPE_CHECKING:
@@ -864,44 +867,125 @@ def handle_memory_correct(
         if not new_value:
             return {"error": "new_value is required for correction"}
 
+        # "Correct this fact" means correct the slot's CURRENT value: a superseded
+        # target is redirected to its active head, never forked into a 2nd value.
+        target = _resolve_correction_target(conn, claim)
+        if isinstance(target, str):
+            return {"error": target}
+
+        turn = _insert_correction_turn(conn, target, new_value)
+        span_start = turn.text.rfind(new_value)
+        span_end = span_start + len(new_value)
         # Correct in kind: a structured claim keeps its triple (new value); an
         # NL-only fact is corrected as NL text (it has no triple to carry).
-        if claim.predicate:
+        if target.predicate:
             new_claim = insert_fact(
                 conn,
-                session_id=claim.session_id,
-                source_turn_id=claim.source_turn_id,
+                session_id=target.session_id,
+                source_turn_id=turn.turn_id,
                 confidence=1.0,
-                subject=claim.subject,
-                predicate=claim.predicate,
+                subject=target.subject,
+                predicate=target.predicate,
                 value=new_value,
+                char_start=span_start,
+                char_end=span_end,
             )
         else:
             new_claim = insert_fact(
                 conn,
-                session_id=claim.session_id,
-                source_turn_id=claim.source_turn_id,
+                session_id=target.session_id,
+                source_turn_id=turn.turn_id,
                 confidence=1.0,
                 text=new_value,
+                char_start=span_start,
+                char_end=span_end,
             )
         edge = write_supersession_edge(
             conn,
-            old_claim_id=claim_id,
+            old_claim_id=target.claim_id,
             new_claim_id=new_claim.claim_id,
             edge_type=EdgeType.USER_CORRECTION,
             identity_score=None,
         )
-        set_claim_status(conn, claim_id, ClaimStatus.SUPERSEDED)
+        set_claim_status(conn, target.claim_id, ClaimStatus.SUPERSEDED)
+        # Close the old value's validity window exactly as Pass 1 does.
+        conn.execute(
+            "UPDATE claims SET valid_until_ts = ?"
+            " WHERE claim_id = ?"
+            " AND (valid_from_ts IS NULL OR valid_from_ts < ?)",
+            (edge.created_ts, target.claim_id, edge.created_ts),
+        )
 
         return {
             "action": "corrected",
-            "old_claim_id": claim_id,
+            "requested_claim_id": claim_id,
+            "corrected_claim_id": target.claim_id,
+            "old_claim_id": target.claim_id,
             "new_claim_id": new_claim.claim_id,
+            "source_turn_id": turn.turn_id,
             "edge_id": edge.edge_id,
             "new_value": new_value,
         }
 
     return {"error": f"Unknown action: {action}"}
+
+
+_CORRECTABLE_STATUSES = frozenset(
+    {ClaimStatus.ACTIVE, ClaimStatus.CONFIRMED, ClaimStatus.AUDITED}
+)
+
+
+def _resolve_correction_target(conn: sqlite3.Connection, claim: Claim) -> Claim | str:
+    """The claim a correction of ``claim`` must supersede, or an error message.
+
+    A superseded claim is followed forward along its supersession chain to the
+    slot's current (active) head. A dismissed / draft claim — or a chain whose
+    head is no longer active — has no current value to correct.
+    """
+    current = claim
+    visited: set[str] = set()
+    while current.status is ClaimStatus.SUPERSEDED:
+        visited.add(current.claim_id)
+        next_id = get_superseded_by(conn, current.claim_id)
+        nxt = get_claim(conn, next_id) if next_id and next_id not in visited else None
+        if nxt is None:
+            return (
+                f"Claim {claim.claim_id} is superseded and its supersession chain"
+                " has no current claim to correct"
+            )
+        current = nxt
+    if current.status not in _CORRECTABLE_STATUSES:
+        if current.claim_id == claim.claim_id:
+            return f"Claim {claim.claim_id} is {current.status.value}; it cannot be corrected"
+        return (
+            f"Claim {claim.claim_id} was superseded by {current.claim_id}, which is"
+            f" {current.status.value}; there is no current claim to correct"
+        )
+    return current
+
+
+def _insert_correction_turn(conn: sqlite3.Connection, target: Claim, new_value: str) -> Turn:
+    """Record the correction as its own user episode (the new claim's provenance),
+    in the same session and namespace as the corrected claim's source turn."""
+    ns_row = conn.execute(
+        "SELECT namespace FROM turns WHERE turn_id = ?", (target.source_turn_id,)
+    ).fetchone()
+    namespace = ns_row[0] if ns_row is not None and ns_row[0] else "default"
+    text = (
+        f"Correction: {target.subject} {target.predicate} is {new_value}"
+        if target.predicate
+        else f"Correction: {new_value}"
+    )
+    turn = Turn(
+        turn_id=new_turn_id(),
+        session_id=target.session_id,
+        speaker=Speaker.USER,
+        text=text,
+        ts=now_ns(),
+        extraction_status=ExtractionStatus.STRUCTURED,
+    )
+    insert_turn(conn, turn, namespace=namespace)
+    return turn
 
 
 def handle_tool_discover(
