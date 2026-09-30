@@ -1839,13 +1839,20 @@ def retrieve_event_frames(
     top_k: int = 8,
     embedding_client: EmbeddingClient | None = None,
 ) -> list[tuple[EventFrame, float]]:
-    """Retrieve event frames ranked by query-frame cosine similarity."""
+    """Retrieve event frames ranked by query-frame cosine similarity.
+
+    Returns [] (the caller falls back to the unranked list) in lexical-only mode or
+    when no frame has an embedding for this model: embedding the query then could
+    rank nothing, and on the query path it would load the model for no result.
+    """
     from memcontext.event_frames import list_event_frames
 
     if not query or not query.strip():
         return []
 
-    effective = embedding_client or _default_embedding_client()
+    effective = embedding_client or episode_embedder()
+    if effective is None:
+        return []
     frames = list_event_frames(conn, session_id)
     if not frames:
         return []
@@ -1864,6 +1871,8 @@ def retrieve_event_frames(
             embedding_by_id[row["event_id"]] = _decode_vector(row["embedding"])
         except ValueError:
             continue
+    if not embedding_by_id:
+        return []
 
     q_vec = effective.embed([apply_query_prefix(query)])[0]
 
