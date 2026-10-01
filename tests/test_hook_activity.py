@@ -63,7 +63,7 @@ def test_every_memory_hook_call_is_recorded(client):
     assert [e["event"] for e in events] == ["UserPromptSubmit", "PreToolUse", "PostToolUse"]
     pre = events[1]
     assert pre["tool"] == "Edit" and pre["target"] == "retrieval.py"
-    assert "ranking" in pre["query"] and pre["injected"] and pre["ms"] >= 0
+    assert "ranking" in pre["query"] and pre["injected"] and pre["ms"] > 0  # high-res clock
     assert events[2]["stored"] is True
 
 
@@ -81,3 +81,11 @@ def test_watch_shows_live_hook_activity(client):
     view = render_memory_view(open_database(":memory:"), activity_path=log)
     assert "LIVE HOOKS" in view and "PreToolUse" in view and "retrieval.py" in view
     assert "gap9_tie_ranking" in view  # subjects are shown normalised
+
+
+def test_claude_codes_own_tool_search_is_not_a_memory_query(client):
+    c, log = client
+    r = c.post("/api/hooks/pre_tool_use", json={"tool_name": "ToolSearch", "session_id": "s1",
+                                                 "tool_input": {"query": "select:mcp__memcontext"}})
+    assert r.json() == {}
+    assert not log.exists() or log.read_text(encoding="utf-8") == ""

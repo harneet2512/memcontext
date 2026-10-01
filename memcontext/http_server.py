@@ -306,6 +306,7 @@ _HOOK_SKIP_TOOLS: set[str] = {
     "Read", "Glob", "Grep", "LS", "LSP",
     "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskStop", "TaskOutput",
     "Monitor", "AskUserQuestion", "WebSearch", "WebFetch",
+    "ToolSearch",  # Claude Code locating its own tools: not project work
 }
 
 _BASH_SKIP_PREFIXES: tuple[str, ...] = (
@@ -619,12 +620,12 @@ def _capture_prompt(body: dict, namespace: str | None) -> dict:
         return {}  # never query with (and so never log) text admission rejected
 
     # Retrieve before storing, so the prompt never retrieves itself.
-    started = time.monotonic()
+    started = time.perf_counter()
     context = _prompt_context(prompt, namespace)
     response = _hook_context("UserPromptSubmit", context)
     _record_activity("UserPromptSubmit", prompt=" ".join(prompt.split())[:200],
                      injected=_injected_lines(response),
-                     ms=round((time.monotonic() - started) * 1000, 1))
+                     ms=round((time.perf_counter() - started) * 1000, 1))
 
     from memcontext import mcp_tools
     mcp_tools.handle_memory_store(
@@ -667,11 +668,11 @@ def _context_for_tool(body: dict, namespace: str | None) -> dict:
     if not keywords:
         return {}
 
-    start = time.monotonic()
+    start = time.perf_counter()
     response = _tool_context(keywords, namespace, start)
     _record_activity("PreToolUse", tool=tool_name, target=_target(tool_input), query=keywords,
                      injected=_injected_lines(response),
-                     ms=round((time.monotonic() - start) * 1000, 1))
+                     ms=round((time.perf_counter() - start) * 1000, 1))
     return response
 
 
@@ -679,7 +680,7 @@ def _tool_context(keywords: str, namespace: str | None, start: float) -> dict:
     from memcontext.claims import row_to_claim
     rows = _active_claim_rows(namespace)
 
-    if time.monotonic() - start > 0.15:
+    if time.perf_counter() - start > 0.15:
         return {}
 
     query_tokens = set(keywords.split())
@@ -691,7 +692,7 @@ def _tool_context(keywords: str, namespace: str | None, start: float) -> dict:
         if overlap > 0:
             scored.append((overlap / len(query_tokens), (c.claim_id, c.subject, c.predicate, line)))
 
-    if time.monotonic() - start > 0.2:
+    if time.perf_counter() - start > 0.2:
         return {}
 
     scored.sort(key=lambda x: -x[0])  # stable: ties keep newest-first order

@@ -129,7 +129,7 @@ def _hooks(activity_path: Path, limit: int, width: int) -> list[str]:
             continue
         injected = ev.get("injected") or []
         what = (f"{ev.get('tool', '')} {ev.get('target', '')}" if ev.get("event") == "PreToolUse"
-                else f"\"{_one_line(ev.get('prompt'), 40)}\"")
+                else f"\"{_one_line(ev.get('prompt'), 32)}\"")
         out.append(f"  {when}  {label:<16} {_one_line(what, 44)}  -> "
                    f"{len(injected)} fact(s) injected  ({ev.get('ms', '?')} ms)")
         if ev.get("query"):
