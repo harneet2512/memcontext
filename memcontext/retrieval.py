@@ -918,12 +918,26 @@ _HISTORY_INTENT = _re.compile(
 )
 
 
+# Evolution questions ask how a value changed, so they need the superseded values
+# too. Matched as QUESTIONS about change ("how did/has X change", "what changed",
+# "over time", "timeline of"), never the bare verb: in a coding assistant "change
+# the CI provider" / "how do I change the log level" are requests, not history.
+_EVOLUTION_INTENT = _re.compile(
+    r"\bhow (?:did|has|have|had|was|were)\b.{0,80}?"
+    r"\b(?:change|changed|evolve|evolved|shift|shifted|develop|developed)\b"
+    r"|\bwhat (?:has |have )?changed\b"
+    r"|\bover time\b"
+    r"|\btimeline of\b"
+)
+
+
 def detect_history_intent(query: str) -> bool:
-    """True when a query asks about PAST/superseded state rather than the current
-    value, so retrieval should include superseded facts (temporal history mode).
-    Deterministic, zero-LLM.
+    """True when a query asks about PAST/superseded state or how a value EVOLVED,
+    rather than the current value, so retrieval includes superseded facts
+    (temporal history mode). Deterministic, zero-LLM.
     """
-    return bool(_HISTORY_INTENT.search(query.lower()))
+    q = query.lower()
+    return bool(_HISTORY_INTENT.search(q) or _EVOLUTION_INTENT.search(q))
 
 
 def classify_query_predicates(query: str) -> tuple[set[str], str]:

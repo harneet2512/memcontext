@@ -132,3 +132,17 @@ refuses a low-trust override, both values stay active, so a newer web page becam
   namespace-aware slot read.
 
 Tests: `tests/test_trace_trust_conflicts.py`. GAP-5 has been promoted in `tests/test_har95_baseline.py`.
+
+## Step 4: GAP-6, "how did X change" switches on history mode
+
+`detect_history_intent` knew only past-state cues (before, previously, used to…).
+`_EVOLUTION_INTENT` adds questions about change:
+- "how did/has/have/had/was/were … change/evolve/shift/develop"
+- "what (has) changed"
+- "over time"
+- "timeline of"
+
+The bare verb is not matched. In a coding assistant, "change the CI provider" or "how do I
+change the log level?" are requests, and history mode would let superseded claims take
+ranked slots. Both kinds of phrasing are tested (`tests/test_history_intent.py`).
+GAP-6 has been promoted in the baseline file.
