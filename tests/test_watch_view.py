@@ -76,3 +76,21 @@ def test_one_request_is_one_served_line():
     handle_memory_query(conn, query="what did we decide about retrieval ranking", session_id="har")
     served = render_memory_view(conn).split("SERVED TO AGENT", 1)[1]
     assert served.count("what did we decide about retrieval ranking") == 1
+
+
+def test_long_values_keep_the_part_that_changed():
+    # Live demo: old and new rules were both cut to "...tied claims ar..." in the pane,
+    # so viewers could not see which version the agent got.
+    conn = open_database(":memory:")
+    old = "Tied ranking scores share a rank; tied claims are then ordered newest first."
+    new = ("Tied ranking scores share a rank; tied claims are then ordered by source trust "
+           "first, then newest first, so a user-stated fact beats a newer web snippet.")
+    for text, value in ((old, old), (new, new)):
+        handle_memory_store(conn, text=text, session_id="har",
+                            claims=[{"subject": "gap9 tie ranking", "predicate": "user_fact",
+                                     "value": value}])
+    for compact in (False, True):
+        view = " ".join(render_memory_view(conn, width=80, compact=compact).split())
+        assert "newer web snippet" in view.split("CHANGES", 1)[0]  # current, its tail visible
+        changes = view.split("CHANGES", 1)[1]
+        assert "ordered newest first" in changes and "newer web snippet" in changes

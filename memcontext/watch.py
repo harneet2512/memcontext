@@ -33,6 +33,17 @@ def _one_line(text: str | None, width: int) -> str:
     return flat if len(flat) <= width else flat[: max(width - 3, 0)] + "..."
 
 
+def _squeeze(text: str | None, width: int) -> str:
+    """One line, shortened in the MIDDLE: versions of a fact usually differ at the end,
+    and that difference must stay visible."""
+    flat = " ".join((text or "").split())
+    if len(flat) <= width:
+        return flat
+    head = max(width * 2 // 5, 1)
+    tail = max(width - head - 5, 1)
+    return f"{flat[:head]} ... {flat[-tail:]}"
+
+
 def _section(title: str) -> list[str]:
     return ["", title]
 
@@ -63,9 +74,9 @@ def _decisions(conn: sqlite3.Connection, limit: int, width: int,
         slot = f"{r['subject']} / {r['predicate']}"
         history = f"  [replaced {r['replaced']}]" if r["replaced"] else ""
         out.append(f"  {_one_line(slot, width - 4)}{history}")
-        out.extend(textwrap.wrap(" ".join((r["value"] or "").split()), width=width - 8,
-                                 initial_indent="      = ", subsequent_indent="        ",
-                                 max_lines=value_lines, placeholder=" ..."))
+        value = _squeeze(r["value"], (width - 8) * value_lines)
+        out.extend(textwrap.wrap(value, width=width - 8, initial_indent="      = ",
+                                 subsequent_indent="        "))
     return out
 
 
@@ -82,8 +93,8 @@ def _changes(conn: sqlite3.Connection, limit: int, width: int) -> list[str]:
     for r in rows:
         out.append(f"  {_clock(r['created_ts'])}  {_one_line(r['subject'], width - 30)}"
                    f"  [{r['edge_type']}]")
-        out.append("      was: " + _one_line(r["old_value"], width - 11))
-        out.append("      now: " + _one_line(r["new_value"], width - 11))
+        out.append("      was: " + _squeeze(r["old_value"], width - 11))
+        out.append("      now: " + _squeeze(r["new_value"], width - 11))
     return out
 
 
@@ -135,7 +146,7 @@ def _hooks(activity_path: Path, limit: int, width: int, facts: int = 3) -> list[
                    f"{len(injected)} fact(s) injected  ({ev.get('ms', '?')} ms)")
         if ev.get("query"):
             out.append("      query: " + _one_line(ev["query"], width - 13))
-        out.extend("      + " + _one_line(fact, width - 8) for fact in injected[:facts])
+        out.extend("      + " + _squeeze(fact, width - 8) for fact in injected[:facts])
         if len(injected) > facts:  # never hide that more was injected
             out.append(f"      (+{len(injected) - facts} more)")
     return out
