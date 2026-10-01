@@ -111,3 +111,24 @@ Tests: `tests/test_hook_conflicts.py` covers:
 - newest first, including when retrieval surfaces only the stale value
 - superseded values are not a conflict
 - multi-valued predicates, unrelated decisions and namespace scope
+
+## Step 3: GAP-5, trace picks the most-trusted current value and shows conflicts
+
+`memory_trace(subject, predicate)` used to return the newest active claim. When the trust guard
+refuses a low-trust override, both values stay active, so a newer web page became the
+"current" value, with a lineage of one. Now (`conflicts.trusted_slot_head`):
+
+- **Head:** the live value with the highest source trust, the newest on a tie. The caller's
+  session selects the namespace; the slot is then read namespace-wide, which is supersession's scope.
+- **Lineage:** traced from that value's **earliest** live copy. That is the original assertion,
+  which carries the supersession edges; later copies are counted in `restatements`. (Tracing the
+  newest copy would show a restatement with no history.)
+- **`conflicts`:** every other current value competing with the head, newest first, one per
+  value, each with `trust`, `quarantined` and `newer_than_head`. "Competing" means the same
+  single-valued slot, a `contradicts` edge, or the same decision under another subject (step 2's
+  rule). Conflicts are confined to the head's namespace and are also listed when tracing by `claim_id`.
+- The CLI trace table prints a `CONFLICT` section.
+- `_newest_active_for_slot` (the old fallback) was removed. It is replaced by the
+  namespace-aware slot read.
+
+Tests: `tests/test_trace_trust_conflicts.py`. GAP-5 has been promoted in `tests/test_har95_baseline.py`.

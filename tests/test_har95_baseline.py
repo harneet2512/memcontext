@@ -3,7 +3,7 @@
 Runs one nuanced business scenario through the real store/query/trace handlers
 (no mocks) and characterizes current behavior before any Memory/evidence layer
 exists. Passing tests pin behavior that already works and must survive HAR-95.
-GAP-1..4 were closed by HAR-95 (memcontext/memories.py, grouped serving, the
+GAP-1..5 were closed by HAR-95 (memcontext/memories.py, grouped serving, the
 evidence-object budget in retrieval.select_by_memory)
 and are now plain regression tests. Strict-xfail tests are the remaining gaps: each one flips to XPASS (and fails) the
 moment the gap is closed, so it must then be promoted to a plain test.
@@ -263,7 +263,7 @@ def test_undeclared_cardinality_treats_categorical_update_as_additive(renewal_pa
     assert statuses["probable"] == "active" and statuses["confirmed"] == "active"
 
 
-# ---------------- confirmed gaps: GAP-1..4 closed; GAP-5..8 still xfail ---
+# ---------------- confirmed gaps: GAP-1..5 closed; GAP-6..8 still xfail ---
 
 
 # GAP-1 (closed: GAP-1a by slice 1, GAP-1b by the evidence-object budget): an episode
@@ -296,7 +296,7 @@ def test_evidence_with_superseded_state_is_marked_historical(sc):
     assert "superseded" in json.dumps(t1)
 
 
-@pytest.mark.xfail(strict=True, reason="GAP-5: slot trace picks the newest active claim, even a quarantined one")
+# GAP-5 (closed): the slot trace picked the newest active claim, even a quarantined one
 def test_slot_trace_head_is_the_trusted_current_value(sc):
     trace = handle_memory_trace(sc.conn, subject="acme", predicate="renewal_status", session_id=SESSION)
     assert trace["claim"]["value"] == "confirmed"

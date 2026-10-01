@@ -73,3 +73,108 @@ def live_same_kind(
         args.append(namespace)
     rows = conn.execute(sql + " ORDER BY c.created_ts DESC, c.claim_id", args).fetchall()
     return [r for r in rows if same_decision_kind(subject, r["subject"])]
+
+
+# ── memory_trace by slot ──────────────────────────────────────────────────────
+
+_LIVE_IN = ",".join("?" for _ in LIVE_STATUSES)
+_WITH_TRUST = (
+    "SELECT c.*, t.namespace AS namespace, COALESCE(m.source_trust, 0.5) AS trust"
+    " FROM claims c JOIN turns t ON t.turn_id = c.source_turn_id"
+    " LEFT JOIN claim_metadata m ON m.claim_id = c.claim_id"
+)
+
+
+def _norm_value(value: str | None) -> str:
+    return " ".join((value or "").lower().split())
+
+
+def _live_slot_rows(
+    conn: sqlite3.Connection, *, subject: str, predicate: str, session_id: str | None,
+) -> list[sqlite3.Row]:
+    """Live claims of one (subject, predicate) slot, with namespace and trust.
+
+    A slot is namespace-wide (supersession's scope): the caller's session only
+    selects WHICH namespace, then every live claim of the slot in it counts, since
+    the current value or its copies may live in other sessions. A session with no
+    claim in the slot falls back to any session (the stdio MCP case).
+    """
+    from memcontext.claims import _normalise_subject
+
+    base = f"{_WITH_TRUST} WHERE c.subject = ? AND c.predicate = ? AND c.status IN ({_LIVE_IN})"
+    args = [_normalise_subject(subject), predicate, *LIVE_STATUSES]
+    in_session = []
+    if session_id is not None:
+        in_session = conn.execute(base + " AND c.session_id = ?", [*args, session_id]).fetchall()
+    if not in_session:
+        return conn.execute(base, args).fetchall()
+    ns = max(in_session, key=lambda r: (r["trust"], r["created_ts"]))["namespace"]
+    return conn.execute(base + " AND t.namespace = ?", [*args, ns]).fetchall()
+
+
+def trusted_slot_head(
+    conn: sqlite3.Connection, *, subject: str, predicate: str, session_id: str | None,
+) -> tuple[str | None, int]:
+    """The claim representing a slot's current value, and its number of restatements.
+
+    The current value is the one with the highest source trust, the newest on a tie,
+    so a newer low-trust value the trust guard refused to let supersede never becomes
+    "current". Its EARLIEST live copy is returned: the original assertion, which
+    carries the supersession lineage; later copies are restatements.
+    """
+    rows = _live_slot_rows(conn, subject=subject, predicate=predicate, session_id=session_id)
+    if not rows:
+        return None, 0
+    best = max(rows, key=lambda r: (r["trust"], r["created_ts"]))
+    copies = [r for r in rows if r["namespace"] == best["namespace"]
+              and _norm_value(r["value"]) == _norm_value(best["value"])]
+    head = min(copies, key=lambda r: (r["created_ts"], r["claim_id"]))
+    return head["claim_id"], len(copies) - 1
+
+
+def _contradicted(conn: sqlite3.Connection, a: str, b: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM supersession_edges WHERE edge_type = 'contradicts' AND"
+        " ((old_claim_id = ? AND new_claim_id = ?) OR (old_claim_id = ? AND new_claim_id = ?))",
+        (a, b, b, a),
+    ).fetchone() is not None
+
+
+def slot_conflicts(conn: sqlite3.Connection, claim_id: str) -> list[dict]:
+    """Other CURRENT values competing with a claim, newest first, one per value.
+
+    Competing means: in the same slot when the predicate is single-valued or a
+    ``contradicts`` edge links the two, or the same kind of decision under another
+    subject (``live_same_kind``). Confined to the claim's own namespace. A value
+    equal to the claim's is agreement (a restatement), not a conflict.
+    """
+    from memcontext.source_trust import QUARANTINE_THRESHOLD
+
+    head = conn.execute(f"{_WITH_TRUST} WHERE c.claim_id = ?", (claim_id,)).fetchone()
+    if head is None or head["subject"] is None or head["status"] not in LIVE_STATUSES:
+        return []
+    ns = head["namespace"]
+    single = is_single_valued(head["predicate"])
+    same_slot = conn.execute(
+        f"{_WITH_TRUST} WHERE t.namespace = ? AND c.subject = ? AND c.predicate = ?"
+        f" AND c.status IN ({_LIVE_IN})",
+        (ns, head["subject"], head["predicate"], *LIVE_STATUSES),
+    ).fetchall()
+    candidates = [r for r in same_slot if single or _contradicted(conn, claim_id, r["claim_id"])]
+    candidates += live_same_kind(conn, subject=head["subject"], predicate=head["predicate"],
+                                 namespace=ns)
+    out: list[dict] = []
+    seen_values = {_norm_value(head["value"])}
+    for r in sorted(candidates, key=lambda r: (-r["created_ts"], r["claim_id"])):
+        value = _norm_value(r["value"])
+        if r["claim_id"] == claim_id or value in seen_values:
+            continue
+        seen_values.add(value)
+        trust = float(r["trust"])
+        out.append({
+            "claim_id": r["claim_id"], "subject": r["subject"], "value": r["value"],
+            "fact": r["text"], "status": r["status"], "trust": round(trust, 3),
+            "quarantined": trust < QUARANTINE_THRESHOLD, "source_turn_id": r["source_turn_id"],
+            "newer_than_head": r["created_ts"] > head["created_ts"],
+        })
+    return out

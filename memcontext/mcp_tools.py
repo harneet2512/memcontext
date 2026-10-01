@@ -13,7 +13,6 @@ import structlog
 
 from memcontext.brain import brain
 from memcontext.claims import (
-    find_same_identity_claim,
     get_claim,
     get_superseded_by,
     get_turn,
@@ -38,22 +37,6 @@ log = structlog.get_logger(__name__)
 
 
 DEFAULT_SESSION_ID = "default"
-
-
-def _newest_active_for_slot(conn: sqlite3.Connection, subject: str, predicate: str):
-    """Newest active claim for (subject, predicate) in ANY session.
-
-    Supersession is namespace-wide, so the current value of a slot may live in a
-    different session than the caller names (every Claude Code session differs).
-    """
-    from memcontext.claims import _normalise_subject, row_to_claim
-
-    row = conn.execute(
-        "SELECT * FROM claims WHERE subject = ? AND predicate = ?"
-        " AND status IN ('active','confirmed') ORDER BY created_ts DESC LIMIT 1",
-        (_normalise_subject(subject), predicate),
-    ).fetchone()
-    return row_to_claim(row) if row is not None else None
 
 
 def handle_memory_store(
@@ -798,24 +781,30 @@ def handle_memory_trace(
     """Trace a claim's source and supersession lineage.
 
     Resolve the head claim by ``claim_id``, or by ``(session_id, subject,
-    predicate)`` (the newest active claim for that slot). Returns the rich
-    ``lineage`` — newest-first, each step carrying value, status, typed edge,
-    source turn, and span quote — alongside the legacy head fields.
+    predicate)``: the slot's current value, i.e. the most-trusted live value (the
+    newest on a tie), traced from its original assertion (``restatements`` counts
+    later copies). Returns the rich ``lineage`` — newest-first, each step carrying
+    value, status, typed edge, source turn, and span quote — alongside the legacy
+    head fields, plus ``conflicts``: other CURRENT values competing with the head
+    (same single-valued slot, a contradicts edge, or the same decision under another
+    subject), newest first, each with its trust and quarantine flag.
     """
+    from memcontext.conflicts import slot_conflicts, trusted_slot_head
+
+    restatements = 0
     if claim_id is None:
         if not (subject and predicate):
             return {"error": "Provide claim_id, or both subject and predicate."}
-        head = find_same_identity_claim(
-            conn, session_id=session_id, subject=subject, predicate=predicate
-        ) or _newest_active_for_slot(conn, subject, predicate)
-        if head is None:
+        claim_id, restatements = trusted_slot_head(
+            conn, subject=subject, predicate=predicate, session_id=session_id,
+        )
+        if claim_id is None:
             return {
                 "error": f"No active claim for {subject}/{predicate} in {session_id}",
                 "subject": subject,
                 "predicate": predicate,
                 "lineage": [],
             }
-        claim_id = head.claim_id
 
     claim = get_claim(conn, claim_id)
     if claim is None:
@@ -889,6 +878,8 @@ def handle_memory_trace(
         } if span and span.char_start is not None else None,
         "lineage": lineage,
         "supersession_chain": chain,
+        "conflicts": slot_conflicts(conn, claim_id),
+        **({"restatements": restatements} if restatements else {}),
     }
 
 

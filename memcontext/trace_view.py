@@ -88,4 +88,14 @@ def render_trace_table(trace: dict) -> str:
             f"              {conf_str}turn {row.get('source_turn_id')}{speaker_str}"
             f"{_span_part(row.get('char_start'), row.get('char_end'))}{quote_str}"
         )
+    conflicts = trace.get("conflicts") or []
+    if conflicts:
+        # Other CURRENT values competing with the head (newest first): never hide them.
+        lines += ["", f"  CONFLICT    {len(conflicts)} other current value(s), newest first:"]
+        for c in conflicts:
+            tags = [t for t, on in (("newer", c.get("newer_than_head")),
+                                    ("untrusted source", c.get("quarantined"))) if on]
+            tag_str = f"   ({', '.join(tags)})" if tags else ""
+            lines.append(f"              {c.get('subject')}: {c.get('value') or c.get('fact')}"
+                         f"   trust {c.get('trust')}{tag_str}")
     return "\n".join(lines)
