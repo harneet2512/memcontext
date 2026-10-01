@@ -46,7 +46,11 @@ import statistics
 import sys
 import tempfile
 import time
+import webbrowser
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from report_html import write_report  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -458,6 +462,8 @@ def cmd_run(a) -> None:
     if summary["repo_sha_at_end"] != sha_at_import:
         print(f"WARNING: checkout moved during the run ({sha_at_import[:10]} -> "
               f"{summary['repo_sha_at_end'][:10]}); modules imported lazily may mix commits")
+    if a.html:
+        open_report(write_report(summary, perq, questions, len(hist), out / "report.html"))
     if a.brief:
         print_brief(summary, perq, len(hist))
         return
@@ -466,6 +472,19 @@ def cmd_run(a) -> None:
     print_hook_precision(perq)
     if a.examples:
         print_examples(perq)
+
+
+def open_report(path: Path) -> None:
+    print(f"report: {path}")
+    webbrowser.open(path.as_uri())
+
+
+def cmd_report(a) -> None:
+    d = RESULTS / a.tag
+    summary = json.loads((d / "summary.json").read_text(encoding="utf-8"))
+    perq = json.loads((d / "per_question.json").read_text(encoding="utf-8"))
+    hist = json.loads(Path(a.dataset).read_text(encoding="utf-8"))["histories"]
+    open_report(write_report(summary, perq, build_questions(hist), len(hist), d / "report.html"))
 
 
 def cmd_compare(a) -> None:
@@ -505,7 +524,13 @@ def main() -> None:
     r.add_argument("--examples", action="store_true", help="print 3 verbatim examples per condition")
     r.add_argument("--brief", action="store_true",
                    help="print only plain search vs hook injection (full results still written)")
+    r.add_argument("--html", action="store_true",
+                   help="write results/<tag>/report.html (plain search vs hook, per question) and open it")
     r.set_defaults(fn=cmd_run)
+    h = sub.add_parser("report", help="write and open the HTML report of a finished run")
+    h.add_argument("tag")
+    h.add_argument("--dataset", default=str(HERE / "datasets" / "stale_exposure.json"))
+    h.set_defaults(fn=cmd_report)
     c = sub.add_parser("compare", help="diff two finished runs")
     c.add_argument("tag1")
     c.add_argument("tag2")
