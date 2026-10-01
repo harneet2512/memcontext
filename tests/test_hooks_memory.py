@@ -228,3 +228,26 @@ def test_prompt_capture_uses_a_real_extractor_when_one_is_selected(conn, client,
     _prompt(client, "We decided we will use MySQL 5.7 for the orders database.")
     values = [r[0] for r in conn.execute("SELECT value FROM claims")]
     assert values == ["database is MySQL 5.7"]
+
+
+def test_prompt_injection_does_not_depend_on_the_general_rankers_top_k(
+        conn, client, monkeypatch):
+    # Live-demo failure on real memory: the general ranker's scores were near-uniform
+    # (ties broken by insertion order, GAP-9), so its top-k held superseded versions
+    # and unrelated decisions, and the CURRENT decision asked about never reached the
+    # agent. The prompt hook now scores live claims itself; simulate a ranker miss.
+    from memcontext import mcp_tools
+
+    _store(conn, "har95 context grouping", "user_fact",
+           "top-level claims stay complete; grouping additive via episode claim ids")
+    _store(conn, "har95 linear updates", "user_fact", "post a linear comment after each commit")
+    monkeypatch.setattr(mcp_tools, "handle_memory_query",
+                        lambda *a, **k: {"claims": [], "episodes": []})
+    out = _injected(_prompt(client, "How did the context grouping design for HAR-95 change?"))
+    assert out is not None and "grouping additive via episode claim ids" in out
+
+
+def test_hyphenated_ids_match_their_joined_form(conn, client):
+    _store(conn, "gap-9 tie ranking", "user_fact", "tied scores share one rank, trust first")
+    out = _injected(_prompt(client, "Let's start GAP-9 now"))
+    assert out is not None and "trust first" in out

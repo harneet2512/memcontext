@@ -272,7 +272,6 @@ def memory_status(request: Request):
 
 
 _CONTEXT_MAX_CHARS = 1500
-_PROMPT_CONTEXT_TOP_K = 8
 _PROMPT_CONTEXT_MAX_LINES = 6
 _PROMPT_QUERY_MAX_CHARS = 1000
 _LIVE_STATUSES = frozenset({"active", "confirmed", "audited"})
@@ -578,32 +577,46 @@ def _hook_context(event: str, context: str | None) -> dict:
     return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": context}}
 
 
-def _prompt_context(prompt: str, namespace: str | None) -> str | None:
+def _prompt_context(prompt: str, namespace: str | None,
+                    session_id: str = "hooks") -> str | None:
     """Current (non-superseded) facts relevant to the prompt, across all sessions.
 
-    Goes through the real query path (namespace-scoped), then keeps only live fact
-    claims that share a content word with the prompt: the ranked list always has
-    *something* in it, and injecting unrelated memory is worse than injecting none.
-    Episodes are skipped — raw text can restate a superseded value.
+    Scores live claims directly by shared content words, like PreToolUse, instead of
+    filtering the general ranker's top-k: on real memory that ranker's near-uniform
+    lexical scores (ties broken by insertion order, GAP-9) filled the top-k with
+    superseded versions and unrelated decisions, so the current decision the user
+    asked about never reached the agent. Strongest matches first (newest wins ties);
+    when any claim shares 2+ content words, single-word matches are dropped. Episodes
+    are skipped: raw text can restate a superseded value.
     """
-    from memcontext import mcp_tools
-    from memcontext.serving import iter_served_claims
-    result = mcp_tools.handle_memory_query(
-        get_conn(), query=prompt[:_PROMPT_QUERY_MAX_CHARS], session_id=None,
-        top_k=_PROMPT_CONTEXT_TOP_K, namespace=namespace, include_resolved=False,
-    )
+    from memcontext.claims import row_to_claim
+
     prompt_tokens = _content_tokens(prompt)
-    candidates: list[tuple[str, str | None, str | None, str]] = []
-    # ranked claims, top-level or under their served evidence (HAR-95 grouping)
-    for c in iter_served_claims(result):
-        if c.get("status") not in _LIVE_STATUSES or c.get("predicate") == _TOOL_ACTION_PREDICATE:
-            continue
-        line = _claim_line(c.get("subject"), c.get("predicate"), c.get("fact") or c.get("value") or "")
-        if line and prompt_tokens & _claim_match_tokens(c.get("predicate"), line):
-            candidates.append((c["claim_id"], c.get("subject"), c.get("predicate"), line))
+    if not prompt_tokens:
+        return None
+    scored: list[tuple[int, tuple[str, str | None, str | None, str]]] = []
+    for row in _active_claim_rows(namespace):  # newest first
+        c = row_to_claim(row)
+        line = _claim_line(c.subject, c.predicate, c.text or c.value or "")
+        overlap = len(prompt_tokens & _claim_match_tokens(c.predicate, line))
+        if overlap:
+            scored.append((overlap, (c.claim_id, c.subject, c.predicate, line)))
+    if not scored:
+        return None
+    floor = 2 if max(score for score, _ in scored) >= 2 else 1
+    scored.sort(key=lambda x: -x[0])  # stable: newest-first within equal overlap
+    candidates = [cand for score, cand in scored if score >= floor][: _PROMPT_CONTEXT_MAX_LINES * 2]
+    entries = _with_conflicts(candidates, namespace)
+
+    from memcontext import mcp_tools
+    mcp_tools._record_serve_events(  # what reached the agent stays verifiable
+        get_conn(), request_session_id=session_id,
+        claim_ids=[cand[0] for cand in candidates[:_PROMPT_CONTEXT_MAX_LINES]],
+        query=prompt[:_PROMPT_QUERY_MAX_CHARS],
+    )
     return _render_context(
         "[MemContext] Current project memory relevant to this prompt:",
-        _with_conflicts(candidates, namespace), _PROMPT_CONTEXT_MAX_LINES,
+        entries, _PROMPT_CONTEXT_MAX_LINES,
     )
 
 
@@ -621,7 +634,7 @@ def _capture_prompt(body: dict, namespace: str | None) -> dict:
 
     # Retrieve before storing, so the prompt never retrieves itself.
     started = time.perf_counter()
-    context = _prompt_context(prompt, namespace)
+    context = _prompt_context(prompt, namespace, session_id)
     response = _hook_context("UserPromptSubmit", context)
     _record_activity("UserPromptSubmit", prompt=" ".join(prompt.split())[:200],
                      injected=_injected_lines(response),
