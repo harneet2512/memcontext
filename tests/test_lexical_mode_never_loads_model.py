@@ -14,7 +14,6 @@ import pytest
 from memcontext import retrieval
 from memcontext.mcp_tools import handle_memory_query, handle_memory_store
 from memcontext.schema import open_database
-from memcontext.serving import iter_served_claims
 
 
 class _ExplodingClient:
@@ -58,4 +57,4 @@ def test_lexical_query_ignores_stored_vectors(db_with_foreign_vectors, monkeypat
     result = handle_memory_query(db_with_foreign_vectors,
                                  query="which database does the orders service use",
                                  session_id="s1")
-    assert any("PostgreSQL" in (c.get("fact") or "") for c in iter_served_claims(result))
+    assert any("PostgreSQL" in (c.get("fact") or "") for c in result["claims"])

@@ -19,7 +19,6 @@ from memcontext.mcp_tools import (
 )
 from memcontext.predicate_packs import active_pack
 from memcontext.schema import open_database
-from memcontext.serving import iter_served_claims
 from memcontext.trace_view import render_trace_table
 
 OFF_VOCAB = {"subject": "orders service", "predicate": "uses_database", "value": "PostgreSQL 16"}
@@ -49,7 +48,7 @@ def test_store_has_no_warning_for_in_vocab_predicates(conn):
 
 def test_query_serves_the_fact_text_for_nl_only_claims(conn):
     _store(conn, OFF_VOCAB)
-    claims = iter_served_claims(handle_memory_query(conn, query="orders service database", session_id="s1"))
+    claims = handle_memory_query(conn, query="orders service database", session_id="s1")["claims"]
     assert claims and all(c["fact"] for c in claims)
     assert any("PostgreSQL 16" in c["fact"] for c in claims)
 

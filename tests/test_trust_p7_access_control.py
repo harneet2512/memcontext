@@ -13,7 +13,6 @@ from fastapi.testclient import TestClient
 from memcontext import http_server
 from memcontext.authz import hash_token, register_principal, resolve_principal
 from memcontext.schema import open_database
-from memcontext.serving import iter_served_claims
 
 
 # ── substrate authz ──────────────────────────────────────
@@ -68,7 +67,7 @@ def test_http_principal_scopes_to_its_namespace():
 
     rA = client.post("/api/memory/query", json={"query": "likes"},
                      headers={"authorization": "Bearer tokA"})
-    subjects = {c["subject"] for c in iter_served_claims(rA.json())}
+    subjects = {c["subject"] for c in rA.json()["claims"]}
     assert "alice" in subjects and "bob" not in subjects  # A sees only tenantA
 
 

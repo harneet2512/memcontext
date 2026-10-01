@@ -14,7 +14,6 @@ from memcontext.extractors import PassthroughExtractor
 from memcontext.mcp_tools import handle_memory_query
 from memcontext.on_new_turn import on_new_turn
 from memcontext.schema import EdgeType, Speaker, open_database
-from memcontext.serving import iter_served_claims
 from memcontext.supersession import detect_pass1
 
 
@@ -39,7 +38,7 @@ def test_served_low_trust_memory_is_quarantine_flagged():
     conn.execute("UPDATE claim_metadata SET source_trust=0.35 WHERE claim_id=?", (cid,))  # web-level
 
     res = handle_memory_query(conn, query="coffee", session_id="s1", top_k=5)
-    fact = next(c for c in iter_served_claims(res) if c["claim_id"] == cid)
+    fact = next(c for c in res["claims"] if c["claim_id"] == cid)
     assert fact["trust"] == 0.35
     assert fact["quarantined"] is True
 

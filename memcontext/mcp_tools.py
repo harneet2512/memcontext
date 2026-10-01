@@ -284,11 +284,11 @@ def handle_memory_query(
             c["trust"] = round(trust, 3)
             c["quarantined"] = trust < QUARANTINE_THRESHOLD
 
-    # One evidence object, one slot: ranked claims whose episode is served are listed
-    # under it with its trust and state (read them all via serving.iter_served_claims).
-    from memcontext.serving import annotate_served_evidence
+    # Evidence <-> state link, additive: top-level claims stay exactly as ranked; each
+    # served episode names its claims (claim_ids) and lists its outdated ones inline.
+    from memcontext.serving import annotate_served_evidence, served_slots
 
-    claims_out, episodes_out = annotate_served_evidence(conn, claims_out, episodes_out)
+    episodes_out = annotate_served_evidence(conn, claims_out, episodes_out)
     nested_claims = [c for e in episodes_out for c in e.get("claims", ())]
 
     # Verification ledger: every claim the caller was shown, top-level or nested.
@@ -309,8 +309,9 @@ def handle_memory_query(
         "fact_tokens": fact_tokens,
         "episode_tokens": episode_tokens,
         "total_tokens": fact_tokens + episode_tokens,
-        # retrieval slots: top-level claims + episodes (claims under an episode share its slot)
         "served_items": len(claims_out) + len(episodes_out),
+        # retrieval slots: an episode and its claims served with it count as one
+        "served_slots": served_slots(claims_out, episodes_out),
         # distinct evidence objects behind the served items (claims + episodes)
         "served_memories": len({c["source_turn_id"] for c in claims_out}
                                | {e["turn_id"] for e in episodes_out}),

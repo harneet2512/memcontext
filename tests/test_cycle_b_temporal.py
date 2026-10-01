@@ -13,7 +13,6 @@ from memcontext.extractors import PassthroughExtractor
 from memcontext.on_new_turn import on_new_turn
 from memcontext.retrieval import detect_history_intent
 from memcontext.schema import ClaimStatus, Speaker, open_database
-from memcontext.serving import iter_served_claims
 
 
 def _conn():
@@ -49,9 +48,9 @@ def test_history_mode_surfaces_superseded_only_on_past_intent():
 
     # Same matching token ("berlin"), but NO history intent -> superseded excluded.
     res = handle_memory_query(conn, query="tell me about berlin", session_id="s1", top_k=10)
-    assert "berlin" not in {c["value"] for c in iter_served_claims(res)}, "superseded excluded by default"
+    assert "berlin" not in {c["value"] for c in res["claims"]}, "superseded excluded by default"
 
     # WITH history intent ("previously") -> the superseded fact surfaces.
     res_h = handle_memory_query(
         conn, query="what about berlin previously", session_id="s1", top_k=10)
-    assert "berlin" in {c["value"] for c in iter_served_claims(res_h)}, "history mode surfaces superseded"
+    assert "berlin" in {c["value"] for c in res_h["claims"]}, "history mode surfaces superseded"

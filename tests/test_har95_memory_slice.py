@@ -38,7 +38,6 @@ from tests.test_har95_baseline import (
     Scenario,
     build_scenario,
     claim_rows,
-    served_sources,
     slots_used,
     write_renewal_pack,
 )
@@ -165,12 +164,15 @@ def test_served_evidence_carries_its_derived_state(sc, question):
     out = handle_memory_query(sc.conn, query=question, session_id=SESSION)
     t1 = next(e for e in out["episodes"] if e["turn_id"] == sc.turns["T1"])
     assert t1["state"] == "mixed"
-    # its ranked (current) claim rides under it, and its superseded claim is listed
-    assert {(c["fact"], c["status"]) for c in t1["claims"]} == {
+    top = {c["claim_id"]: c for c in out["claims"]}
+    # every derived claim is visible exactly once: by id (served top-level) or inline
+    shown = {cid: (top[cid]["fact"], top[cid]["status"]) for cid in t1["claim_ids"]}
+    shown |= {c["claim_id"]: (c["fact"], c["status"]) for c in t1["claims"]}
+    assert set(shown.values()) == {
         ("acme renewal_status probable", "superseded"),
         ("acme renewal_blocker security_approval", "active"),
     }
-    assert not any(c["source_turn_id"] == sc.turns["T1"] for c in out["claims"])
+    assert not set(t1["claim_ids"]) & {c["claim_id"] for c in t1["claims"]}
 
 
 _PRE_HAR95_CLAIM_KEYS = {
@@ -186,16 +188,17 @@ def _ranked(sc: Scenario, question: str):
 
 
 @pytest.mark.parametrize("question", QUESTIONS)
-def test_every_ranked_claim_is_served_exactly_once(sc, question):
-    """Migration contract: every ranked fact is served once, top-level only when its
-    evidence is not served, with the pre-HAR-95 keys plus source_turn_id."""
+def test_top_level_claims_are_exactly_the_ranked_facts_in_order(sc, question):
+    """The client contract (scripts/smoke read claims[:3]): top-level claims are the
+    ranker's fact hits in rank order, with the pre-HAR-95 keys plus source_turn_id.
+    Grouping is additive and never moves a claim out of this list."""
     hits = _ranked(sc, question)
     out = handle_memory_query(sc.conn, query=question, session_id=SESSION)
-    ranked = [c for c in iter_served_claims(out) if "score" in c]
-    assert sorted(c["claim_id"] for c in ranked) == sorted(h.id for h, _ in hits if h.kind == "fact")
-    assert all(set(c) == _PRE_HAR95_CLAIM_KEYS | {"source_turn_id"} for c in ranked)
-    served_eps = {e["turn_id"] for e in out["episodes"]}
-    assert all(c["source_turn_id"] not in served_eps for c in out["claims"])
+    assert [c["claim_id"] for c in out["claims"]] == [h.id for h, _ in hits if h.kind == "fact"]
+    assert all(set(c) == _PRE_HAR95_CLAIM_KEYS | {"source_turn_id"} for c in out["claims"])
+    for e in out["episodes"]:
+        top_of_e = {c["claim_id"] for c in out["claims"] if c["source_turn_id"] == e["turn_id"]}
+        assert set(e["claim_ids"]) == top_of_e
 
 
 def test_top_level_claims_name_their_memory(sc):
@@ -227,14 +230,16 @@ def test_state_question_serves_current_state_never_the_superseded_value(sc):
 
 @pytest.mark.parametrize("question", QUESTIONS)
 def test_slots_are_evidence_objects_and_only_historical_lines_are_added(sc, question):
-    """served_items counts retrieval slots (an episode and its claims share one); the
-    only unranked lines added are historical claims."""
+    """served_items keeps its meaning (items); served_slots counts an episode and its
+    claims as one slot; the only inline lines are historical claims."""
     hits = _ranked(sc, question)
     out = handle_memory_query(sc.conn, query=question, session_id=SESSION)
-    assert out["token_report"]["served_items"] == slots_used(hits)
+    report = out["token_report"]
+    assert report["served_items"] == len(out["claims"]) + len(out["episodes"]) == len(hits)
+    assert report["served_slots"] == slots_used(hits)
     nested = [c for e in out["episodes"] for c in e["claims"]]
-    assert out["token_report"]["nested_claims"] == len(nested)
-    assert all(c["status"] in {"superseded", "dismissed"} for c in nested if "score" not in c)
+    assert report["nested_claims"] == len(nested)
+    assert all(c["status"] in {"superseded", "dismissed"} for c in nested)
 
 
 def test_serve_ledger_covers_nested_claims(sc):
@@ -257,8 +262,9 @@ def test_default_pack_nl_only_claims_group_too():
     sc = build_scenario()  # general pack: every claim is text-only
     out = handle_memory_query(sc.conn, query=Q_QUOTE, session_id=SESSION)
     t1 = next(e for e in out["episodes"] if e["turn_id"] == sc.turns["T1"])
-    assert {c["status"] for c in t1["claims"]} == {"active"} and len(t1["claims"]) == 2
-    assert sum(1 for _, lbl in served_sources(sc, out) if lbl == "T1") == 1
+    t1_top = {c["claim_id"] for c in out["claims"] if c["source_turn_id"] == sc.turns["T1"]}
+    assert len(t1_top) == 2 and set(t1["claim_ids"]) == t1_top and t1["claims"] == []
+    assert out["token_report"]["served_slots"] < out["token_report"]["served_items"]
 
 
 def test_cross_session_query_groups_too(sc):
@@ -305,7 +311,7 @@ def test_annotation_caps_historical_claims_newest_first():
     conn = open_database(":memory:")
     tid = _turn_with_claims(conn, 10)
     conn.execute("UPDATE claims SET status = 'superseded' WHERE source_turn_id = ?", (tid,))
-    _, [ep] = annotate_served_evidence(conn, [], [{"turn_id": tid, "text": "x"}])
+    [ep] = annotate_served_evidence(conn, [], [{"turn_id": tid, "text": "x"}])
     assert len(ep["claims"]) == MAX_NESTED_CLAIMS
     assert ep["historical_claims_omitted"] == 10 - MAX_NESTED_CLAIMS
     assert ep["claims"][0]["fact"].startswith("item9")  # newest first
@@ -317,7 +323,7 @@ def test_claim_without_metadata_row_defaults_to_neutral_trust():
     tid = _turn_with_claims(conn, 1)
     conn.execute("UPDATE claims SET status = 'superseded' WHERE source_turn_id = ?", (tid,))
     conn.execute("DELETE FROM claim_metadata")
-    _, [ep] = annotate_served_evidence(conn, [], [{"turn_id": tid, "text": "x"}])
+    [ep] = annotate_served_evidence(conn, [], [{"turn_id": tid, "text": "x"}])
     assert ep["claims"][0]["trust"] == 0.5 and ep["claims"][0]["quarantined"] is False
 
 
@@ -329,12 +335,12 @@ def test_annotation_does_not_mutate_inputs_and_handles_empty():
     before = copy.deepcopy((claims, episodes))
     annotate_served_evidence(conn, claims, episodes)
     assert (claims, episodes) == before
-    assert annotate_served_evidence(conn, claims, []) == (claims, [])
+    assert annotate_served_evidence(conn, claims, []) == []
 
 
 def test_vanished_episode_is_skipped_not_served_unannotated():
     conn = open_database(":memory:")
-    assert annotate_served_evidence(conn, [], [{"turn_id": "tu_gone", "text": "x"}]) == ([], [])
+    assert annotate_served_evidence(conn, [], [{"turn_id": "tu_gone", "text": "x"}]) == []
 
 
 def test_memory_never_lists_a_claim_from_another_session():

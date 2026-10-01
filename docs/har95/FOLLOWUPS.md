@@ -5,6 +5,13 @@ only, lexical mode, taken before and after (see "Evals" at the end).
 
 ## Step 1: GAP-1b, one evidence object = one retrieval slot
 
+> **Superseded in part by `f6eb74d`.** Moving claims under `episodes[i]["claims"]` broke every
+> client that reads `result["claims"]` (CI smokes: `memory_loop_smoke` 18/20, `mcp_smoke` 21/22).
+> Top-level `claims` is complete again, and the grouping is additive (`claim_ids` on each
+> episode). The slot accounting described below is unchanged. See [RESULTS.md](RESULTS.md)
+> for the final shape. The "API migration" and "existing tests affected" notes below describe
+> the reverted design.
+
 **Problem:** `_fuse_memory` cut the fused ranking at `top_k` items. A fact and the episode it
 came from used two items, so at `top_k=15` the scenario served only **10 distinct memories**.
 

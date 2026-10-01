@@ -29,48 +29,45 @@ MAX_NESTED_CLAIMS = 8
 
 def annotate_served_evidence(
     conn: sqlite3.Connection, claims: list[dict], episodes: list[dict],
-) -> tuple[list[dict], list[dict]]:
-    """Serve each evidence object with the state derived from it, once (HAR-95).
+) -> list[dict]:
+    """Link each served episode (Memory) to the state derived from it (HAR-95).
 
-    Each served episode (Memory) gains its source trust, a quarantine flag, and
-    ``state``: whether the claims derived from it are still current. Its ``claims``
-    lists the derived claims shown with it:
+    Additive only: the top-level ``claims`` list is left exactly as ranked, so every
+    existing client keeps reading it unchanged. Each served episode gains:
 
-    - every ranked claim derived from it, moved out of the top-level list (the pair
-      shares one retrieval slot, see ``retrieval.select_by_memory``), in full;
-    - its HISTORICAL claims (superseded / dismissed), newest first, capped at
-      ``MAX_NESTED_CLAIMS`` (``historical_claims_omitted`` counts the rest), so a
-      reader knows the nuance is outdated. Current unranked claims are not added:
-      they would restate the episode's own text and ``state`` already reports them.
+    - ``trust`` / ``quarantined``: the source trust of the evidence;
+    - ``state``: whether the claims derived from it are still current
+      (current / historical / mixed / no_claims);
+    - ``claim_ids``: the ids of its claims served in the top-level ``claims`` list.
+      The episode and those claims are one evidence object and took one retrieval
+      slot (``retrieval.select_by_memory``; ``token_report.served_slots``);
+    - ``claims``: its HISTORICAL claims (superseded / dismissed) that are not served
+      elsewhere, newest first, capped at ``MAX_NESTED_CLAIMS``
+      (``historical_claims_omitted`` counts the rest), each with its status, trust
+      and quarantine flag, so a reader knows the nuance is outdated.
 
-    Every claim carries its own status, trust and quarantine flag wherever it
-    appears. Top-level ``claims`` keeps the ranked claims whose evidence is not
-    served. Read all served claims with ``iter_served_claims``. Inputs are not mutated.
+    Returns new episode dicts; inputs are not mutated.
     """
     from memcontext.memories import HISTORICAL_STATUSES, get_memories
 
+    top_level = {c["claim_id"] for c in claims}
     memories = get_memories(conn, [e["turn_id"] for e in episodes])
-    ranked_by_source: dict[str, list[dict]] = {}
-    for c in claims:
-        if c.get("source_turn_id") in memories:
-            ranked_by_source.setdefault(c["source_turn_id"], []).append(c)
     annotated = []
     for e in episodes:
         m = memories.get(e["turn_id"])
         if m is None:
             continue  # turn vanished mid-request: cannot vouch for its trust, so skip it
-        ranked = ranked_by_source.get(m.memory_id, [])
-        ranked_ids = {c["claim_id"] for c in ranked}
         historical = [
             c for c in reversed(m.claims)  # newest first: the latest outdated nuance
-            if c.claim_id not in ranked_ids and c.status in HISTORICAL_STATUSES
+            if c.claim_id not in top_level and c.status in HISTORICAL_STATUSES
         ]
         entry = {
             **e,
             "trust": round(m.trust, 3),
             "quarantined": m.quarantined,
             "state": m.state,
-            "claims": [dict(c) for c in ranked] + [
+            "claim_ids": [c.claim_id for c in m.claims if c.claim_id in top_level],
+            "claims": [
                 {"claim_id": c.claim_id, "fact": c.fact, "status": c.status,
                  "trust": round(c.trust, 3), "quarantined": c.quarantined}
                 for c in historical[:MAX_NESTED_CLAIMS]
@@ -79,27 +76,28 @@ def annotate_served_evidence(
         if len(historical) > MAX_NESTED_CLAIMS:
             entry["historical_claims_omitted"] = len(historical) - MAX_NESTED_CLAIMS
         annotated.append(entry)
-    served_eps = {e["turn_id"] for e in annotated}
-    top = [c for c in claims if c.get("source_turn_id") not in served_eps]
-    return top, annotated
+    return annotated
+
+
+def served_slots(claims: list[dict], episodes: list[dict]) -> int:
+    """Retrieval slots a response used: one per episode, plus one per top-level claim
+    whose source episode is not served (a claim served with its episode shares it)."""
+    served_eps = {e["turn_id"] for e in episodes}
+    return len(served_eps) + sum(1 for c in claims if c.get("source_turn_id") not in served_eps)
 
 
 def iter_served_claims(result: dict, *, include_historical: bool = False) -> list[dict]:
-    """The claims a ``memory_query`` result serves, top-level or under their evidence.
+    """The claims a ``memory_query`` result serves.
 
-    Returns the RANKED claims (the served state), best first. This is the one way
-    consumers should read claims from a query result: since HAR-95 a ranked claim
-    whose evidence is also served appears under ``episodes[i]["claims"]``, not in
-    the top-level ``claims`` list. Historical claims listed under an episode only as
-    context (superseded / dismissed, no ``score``) are excluded unless
-    ``include_historical`` is set, so a consumer can never mistake them for state.
+    The ranked state is the top-level ``claims`` list, in rank order. Historical
+    claims listed under an episode only as context (superseded / dismissed, no
+    ``score``) are appended only when ``include_historical`` is set, so a consumer
+    never mistakes them for current state.
     """
-    every = list(result.get("claims", ()))
-    every += [c for e in result.get("episodes", ()) for c in e.get("claims", ())]
-    ranked = sorted((c for c in every if "score" in c), key=lambda c: -c["score"])
+    ranked = list(result.get("claims", ()))
     if not include_historical:
         return ranked
-    return ranked + [c for c in every if "score" not in c]
+    return ranked + [c for e in result.get("episodes", ()) for c in e.get("claims", ())]
 
 
 def session_briefing(

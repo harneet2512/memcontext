@@ -13,7 +13,6 @@ from memcontext.mcp_tools import handle_memory_query
 from memcontext.on_new_turn import on_new_turn
 from memcontext.retention import demote_low_utility
 from memcontext.schema import ClaimStatus, Speaker, open_database
-from memcontext.serving import iter_served_claims
 from memcontext.working_context import build_working_context
 
 
@@ -43,9 +42,9 @@ def test_cycles_compose_on_one_db():
 
     # Phase 1 + C: the door serves the consolidated fact with full ranking debug
     res = handle_memory_query(conn, query="darkmode preference", top_k=10, debug=True)
-    assert any(c.get("consolidated") for c in iter_served_claims(res)), "C: consolidated fact surfaced"
+    assert any(c.get("consolidated") for c in res["claims"]), "C: consolidated fact surfaced"
     assert "token_report" in res and res["ranking"], "Phase 1: token report + ranking debug"
-    cid = iter_served_claims(res)[0]["claim_id"]
+    cid = res["claims"][0]["claim_id"]
     assert {"importance", "usage", "final"} <= set(res["ranking"][cid]), "Phase 1: live signals"
 
     # F: an ancient low-utility fact is demoted out of active retrieval
@@ -53,7 +52,7 @@ def test_cycles_compose_on_one_db():
     conn.execute("UPDATE claims SET created_ts=1000 WHERE claim_id=?", (tcid,))
     conn.execute("UPDATE claim_metadata SET importance_score=0.02, access_count=0 WHERE claim_id=?", (tcid,))
     assert demote_low_utility(conn, threshold=0.35, min_age_days=1.0) >= 1
-    served = {c["claim_id"] for c in iter_served_claims(handle_memory_query(conn, query="trivia", session_id="s1"))}
+    served = {c["claim_id"] for c in handle_memory_query(conn, query="trivia", session_id="s1")["claims"]}
     assert tcid not in served, "F: demoted fact gone from retrieval"
 
     # B: a superseded prior value surfaces ONLY on past-intent (composes with the rest)
@@ -62,8 +61,8 @@ def test_cycles_compose_on_one_db():
         conn, session_id="s1", subject="user", predicate="user_preference",
         value="lightmode", confidence=0.9, source_turn_id=turn, status=ClaimStatus.SUPERSEDED)
     lcid = conn.execute("SELECT claim_id FROM claims WHERE value='lightmode'").fetchone()["claim_id"]
-    now = {c["claim_id"] for c in iter_served_claims(handle_memory_query(conn, query="lightmode", session_id="s1"))}
-    hist = {c["claim_id"] for c in iter_served_claims(handle_memory_query(conn, query="lightmode previously", session_id="s1"))}
+    now = {c["claim_id"] for c in handle_memory_query(conn, query="lightmode", session_id="s1")["claims"]}
+    hist = {c["claim_id"] for c in handle_memory_query(conn, query="lightmode previously", session_id="s1")["claims"]}
     assert lcid not in now and lcid in hist, "B: history mode toggles superseded inclusion"
 
     # D: a working context over the same DB is budget-bounded

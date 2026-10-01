@@ -11,7 +11,6 @@ from memcontext.mcp_tools import (
     handle_memory_trace,
 )
 from memcontext.schema import open_database
-from memcontext.serving import iter_served_claims
 
 
 @pytest.fixture()
@@ -68,14 +67,14 @@ def test_query_finds_stored(conn):
     )
     result = handle_memory_query(conn, query="dark mode", session_id="s1")
     assert result["total"] >= 1
-    assert len(iter_served_claims(result)) >= 1
-    values = [c["value"] for c in iter_served_claims(result)]
+    assert len(result["claims"]) >= 1
+    values = [c["value"] for c in result["claims"]]
     assert any("dark" in v.lower() for v in values)
 
 
 def test_query_empty_session(conn):
     result = handle_memory_query(conn, query="anything", session_id="empty")
-    assert iter_served_claims(result) == []
+    assert result["claims"] == []
     assert result["total"] == 0
 
 
@@ -153,7 +152,7 @@ def test_memory_query_serves_episodes_when_session_has_no_facts(
     insert_turn(conn, turn)  # an episode, with NO facts extracted
 
     result = handle_memory_query(conn, query="where is the deploy runbook", session_id=sid)
-    assert iter_served_claims(result) == []
+    assert result["claims"] == []
     assert result["episodes"], "episodes must be served when no facts exist"
     assert any("deploy runbook" in e["text"] for e in result["episodes"])
     assert result["episodes"][0]["source_type"] == "conversation"

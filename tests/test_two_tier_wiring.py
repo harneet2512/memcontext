@@ -24,8 +24,6 @@ from memcontext.mcp_tools import handle_memory_digest, handle_memory_query
 from memcontext.on_new_turn import on_new_turn
 from memcontext.retrieval import retrieve_memory_across
 from memcontext.schema import Speaker, open_database
-from memcontext.serving import iter_served_claims
-from tests.test_har95_baseline import slots_used
 
 
 def _ingest(conn, session_id, text, subject, predicate, value):
@@ -58,7 +56,7 @@ def test_query_door_returns_facts_AND_episodes():
     res = handle_memory_query(conn, query="where does the user live in Berlin",
                               session_id="s1", top_k=10)
 
-    assert iter_served_claims(res), "facts must surface"
+    assert res["claims"], "facts must surface"
     assert res["episodes"], "episodes MUST surface (would be [] on old code)"
     # episodes carry the real turn text + source_type
     assert all("text" in e and "source_type" in e for e in res["episodes"])
@@ -78,7 +76,7 @@ def test_cross_session_episodes_survive_global_fusion():
 
     res = handle_memory_query(conn, query="Berlin museum visit", session_id=None,
                               top_k=20)
-    assert iter_served_claims(res), "facts surface cross-session"
+    assert res["claims"], "facts surface cross-session"
     assert res["episodes"], "episodes survive the global fusion (red on old merge)"
 
 
@@ -280,7 +278,6 @@ def test_cross_session_normal_case_stays_within_top_k_when_budget_exceeds_guaran
         conn, session_ids=["s0", "s1"], query="Berlin tower photograph", top_k=top_k,
     )
 
-    # the envelope is top_k evidence objects (a fact rides in its episode's slot)
-    assert slots_used(hits) == top_k
+    assert len(hits) == top_k
     scores = [s for _, s in hits]
     assert scores == sorted(scores, reverse=True)
