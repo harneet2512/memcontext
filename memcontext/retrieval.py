@@ -1019,6 +1019,22 @@ def _bm25_scores(query_tokens: list[str], claims: list[Claim], *, k1: float = 1.
     return _bm25_over_docs(query_tokens, docs, k1=k1, b=b)
 
 
+def _turn_ids_in_namespace(
+    conn: sqlite3.Connection, session_id: str, namespace: str | None,
+) -> set[str] | None:
+    """Turn ids of a session that belong to ``namespace`` (None = unrestricted).
+
+    Session ids are caller-chosen and can collide across tenants (the hooks default
+    to "hooks"), so a session id alone never scopes a tenant's memory.
+    """
+    if namespace is None:
+        return None
+    return {r[0] for r in conn.execute(
+        "SELECT turn_id FROM turns WHERE session_id = ? AND namespace = ?",
+        (session_id, namespace),
+    ).fetchall()}
+
+
 def retrieve_hybrid(
     conn: sqlite3.Connection,
     *,
@@ -1033,8 +1049,11 @@ def retrieve_hybrid(
     reranker: Callable[[str, list[str]], list[float]] | None = None,
     explain: dict[str, dict[str, float]] | None = None,
     include_demoted: bool = False,
+    namespace: str | None = None,
 ) -> list[tuple[Claim, float]]:
     """Multi-signal retrieval: semantic + entity + temporal + BM25 + importance via RRF.
+
+    ``namespace`` confines candidates to that tenant's turns (None = unrestricted).
 
     Pass an empty ``explain`` dict to capture the per-signal RRF contribution for
     every ranked claim (ranking observability); it is filled in place.
@@ -1056,6 +1075,9 @@ def retrieve_hybrid(
         active = list_claims_with_lifecycle(conn, session_id, "historical_truth")
     else:
         active = list_active_claims(conn, session_id)
+    allowed_turns = _turn_ids_in_namespace(conn, session_id, namespace)
+    if allowed_turns is not None:
+        active = [c for c in active if c.source_turn_id in allowed_turns]
     if valid_at_ts is not None:
         active = [c for c in active if _claim_valid_at(c, valid_at_ts)]
     if not active:
@@ -1287,6 +1309,7 @@ def retrieve_episodes(
     top_k: int = DEFAULT_TOP_K,
     valid_at_ts: int | None = None,
     embedding_client: EmbeddingClient | None = None,
+    namespace: str | None = None,
 ) -> list[tuple[Turn, float]]:
     """Rank episodes (turns) for a query via RRF over NL-text signals.
 
@@ -1301,10 +1324,16 @@ def retrieve_episodes(
 
     from memcontext.claims import row_to_turn
 
-    rows = conn.execute(
-        "SELECT * FROM turns WHERE session_id = ? ORDER BY ts ASC",
-        (session_id,),
-    ).fetchall()
+    if namespace is None:
+        rows = conn.execute(
+            "SELECT * FROM turns WHERE session_id = ? ORDER BY ts ASC",
+            (session_id,),
+        ).fetchall()
+    else:  # session ids can collide across tenants: scope by namespace too
+        rows = conn.execute(
+            "SELECT * FROM turns WHERE session_id = ? AND namespace = ? ORDER BY ts ASC",
+            (session_id, namespace),
+        ).fetchall()
     episodes: list[Turn] = [row_to_turn(r) for r in rows]
     if valid_at_ts is not None:
         episodes = [t for t in episodes if t.ts <= valid_at_ts]
@@ -1585,6 +1614,7 @@ def retrieve_memory(
     embedding_client: EmbeddingClient | None = None,
     explain: dict[str, dict[str, float]] | None = None,
     include_superseded: bool = False,
+    namespace: str | None = None,
 ) -> list[tuple[MemoryHit, float]]:
     """Unified Tier-1 + Tier-2 retrieval: facts AND episodes, source-tagged.
 
@@ -1606,12 +1636,12 @@ def retrieve_memory(
         conn, session_id=session_id, query=query, top_k=top_k,
         valid_at_ts=valid_at_ts,
         embedding_client=embedding_client, explain=explain,
-        include_superseded=include_superseded,
+        include_superseded=include_superseded, namespace=namespace,
     )
     episodes = retrieve_episodes(
         conn, session_id=session_id, query=query, top_k=top_k,
         valid_at_ts=valid_at_ts,
-        embedding_client=embedding_client,
+        embedding_client=embedding_client, namespace=namespace,
     )
     return _fuse_memory(facts, episodes, top_k)
 
@@ -1627,6 +1657,7 @@ def retrieve_memory_across(
     embedding_client: EmbeddingClient | None = None,
     explain: dict[str, dict[str, float]] | None = None,
     include_superseded: bool = False,
+    namespace: str | None = None,
 ) -> list[tuple[MemoryHit, float]]:
     """Unified retrieval across MANY sessions — fuse per-session rankings by RANK.
 
@@ -1676,7 +1707,7 @@ def retrieve_memory_across(
             conn, session_id=sid, query=query, top_k=top_k,
             valid_at_ts=valid_at_ts,
             embedding_client=embedding_client, explain=explain,
-            include_superseded=include_superseded,
+            include_superseded=include_superseded, namespace=namespace,
         )
         # the guarantee is per evidence object, like the single-session budget
         kept = select_by_memory(hits, per_session_k)

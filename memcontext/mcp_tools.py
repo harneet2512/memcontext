@@ -212,7 +212,7 @@ def handle_memory_query(
             return {"claims": [], "episodes": [], "total": 0, "denied": "namespace"}
         hits = retrieve_memory(
             conn, session_id=session_id, query=query, top_k=top_k, explain=explain,
-            include_superseded=history,
+            include_superseded=history, namespace=namespace,
         )
         total = len(list_active_claims(conn, session_id))
     else:
@@ -231,7 +231,7 @@ def handle_memory_query(
             return {"claims": [], "episodes": [], "total": 0}
         hits = retrieve_memory_across(
             conn, session_ids=sids, query=query, top_k=top_k, explain=explain,
-            include_superseded=history,
+            include_superseded=history, namespace=namespace,
         )
         total = conn.execute(
             "SELECT COUNT(*) FROM claims"
@@ -355,7 +355,16 @@ def handle_memory_query(
     # raw ranked hits, the agent gets the current world-state — one value per slot
     # with provenance + typed supersession lineage — and a compact session briefing.
     # Built fresh so it is always current; best-effort so it never breaks a query.
-    if include_resolved and session_id:
+    # The resolved view below is keyed by session id alone. When a tenant-scoped
+    # caller's session id is also used in another namespace, it would mix tenants:
+    # withhold it (fail closed) and say so.
+    shared_session = bool(session_id) and namespace is not None and conn.execute(
+        "SELECT 1 FROM turns WHERE session_id = ? AND namespace != ? LIMIT 1",
+        (session_id, namespace),
+    ).fetchone() is not None
+    if include_resolved and session_id and shared_session:
+        result["resolved_view_withheld"] = "session id shared across namespaces"
+    if include_resolved and session_id and not shared_session:
         try:
             from memcontext.brain import brain
             from memcontext.serving import (
