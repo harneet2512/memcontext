@@ -258,6 +258,7 @@ def live(repo: Path, db: Path, port: int) -> None:
     activity = work / "hook_activity.jsonl"
     activity.write_text("", encoding="utf-8")  # each take starts with an empty feed
     env["MEMCONTEXT_HOOK_ACTIVITY_LOG"] = str(activity)
+    env["MEMCONTEXT_HOOK_VISIBLE"] = "1"  # show what memory did, inside the Claude Code terminal
     _run(["hooks", "install", "--port", str(port), "--project-dir", str(repo)], env)
 
     mcp_path = repo / ".mcp.json"
