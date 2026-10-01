@@ -58,6 +58,7 @@ python evals/product/provenance_trace.py run
 python evals/product/scale.py run
 ```
 
+In Claude Code, type `/evals` (or `/evals --run` to re-run the fast evals first).
 `python evals/product/dashboard.py` builds `results/dashboard.html` from the latest results of
 every eval (method, n, baseline, metrics, findings, limits) and opens it; `--run` re-runs the
 fast deterministic evals first. Pass `--repo PATH` to an eval to measure another checkout
