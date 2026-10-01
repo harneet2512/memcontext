@@ -199,6 +199,30 @@ def _topic_words(subject: str) -> frozenset[str]:
     return frozenset(re.findall(r"[a-z0-9]+", topic)) - _CONTAINER_WORDS
 
 
+_COMMON_WORD_MIN_SUBJECTS = 3
+_COMMON_WORD_SHARE = 0.5
+
+
+def _corpus_common_words(subjects: list[str]) -> frozenset[str]:
+    """Project prefixes: a word that LEADS a multi-word topic in at least half of the
+    distinct subjects (min 3), e.g. "har95" in har95_context_grouping, har95_storage_model.
+
+    Only the leading position counts, and only when more words follow it, so a topic
+    word that many subjects are genuinely about ("authentication") is never dropped.
+    """
+    distinct = {s for s in subjects if s}
+    if len(distinct) < _COMMON_WORD_MIN_SUBJECTS:
+        return frozenset()
+    counts: dict[str, int] = {}
+    for s in distinct:
+        _, _, topic = s.strip().lower().rpartition("/")
+        words = re.findall(r"[a-z0-9]+", topic)
+        if len(words) >= 2:
+            counts[words[0]] = counts.get(words[0], 0) + 1
+    floor = max(_COMMON_WORD_MIN_SUBJECTS, _COMMON_WORD_SHARE * len(distinct))
+    return frozenset(w for w, n in counts.items() if n >= floor)
+
+
 def similar_subjects(
     conn: sqlite3.Connection, *, subject: str, predicate: str, namespace: str | None,
     limit: int = SIMILAR_SUBJECTS_LIMIT,
@@ -219,9 +243,14 @@ def similar_subjects(
     if namespace is not None:
         sql += " AND t.namespace = ?"
         args.append(namespace)
+    rows = conn.execute(sql, args).fetchall()
+    # A word that most live subjects share (a project prefix like "har95_") names
+    # the project, not the decision: it is never evidence that two are the same.
+    common = _corpus_common_words([r["subject"] or "" for r in rows])
+    mine = mine - common
     best: dict[str, tuple[float, int, sqlite3.Row]] = {}
-    for r in conn.execute(sql, args).fetchall():
-        theirs = _topic_words(r["subject"] or "")
+    for r in rows:
+        theirs = _topic_words(r["subject"] or "") - common
         shared = mine & theirs
         if not shared:
             continue

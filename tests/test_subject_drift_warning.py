@@ -98,3 +98,24 @@ def test_similar_subjects_ranks_closest_first_and_caps(conn):
     assert [m["subject"] for m in got] == [
         "admin/authentication", "mobile/authentication", "project/authentication",
     ]
+
+
+def test_a_shared_project_prefix_is_not_evidence_of_the_same_decision(conn):
+    # Live demo: every HAR-95 subject starts "har95_", so a new GAP-9 decision was
+    # flagged as resembling three unrelated decisions.
+    for topic, value in (("memory_granularity", "one memory per turn"),
+                         ("context_grouping", "grouping is additive"),
+                         ("derived_caches_tenancy", "no migration"),
+                         ("storage_model", "extend the turns table")):
+        _decide(conn, f"har95_{topic}", value)
+    r = _decide(conn, "har95_gap-9_tie_ranking", "ties share a rank", session="s2")
+    assert "similar_subjects" not in r
+
+
+def test_real_drift_under_a_shared_prefix_is_still_flagged(conn):
+    for topic, value in (("memory_granularity", "one memory per turn"),
+                         ("context_grouping", "grouping is additive"),
+                         ("auth_method", "JWT")):
+        _decide(conn, f"har95_{topic}", value)
+    r = _decide(conn, "har95_authentication_method", "session cookies", session="s2")
+    assert [m["subject"] for m in r["similar_subjects"]] == ["har95_auth_method"]
