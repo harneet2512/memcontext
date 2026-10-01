@@ -82,3 +82,43 @@ def test_extractor_context_never_includes_another_tenants_turns():
     on_new_turn(conn, session_id="hooks", speaker=Speaker.USER, namespace="tenantA",
                 text="Tenant A: what did we decide about billing?", extractor=rec)
     assert rec.seen == ["Tenant A earlier note about the billing service."]
+
+
+# ── derived caches (HAR-95 option 2: no migration) ────────────────────────────
+
+
+def _ten_turns(conn, *, namespace: str, session: str, subject: str, start: int = 0) -> None:
+    """Ten writes in one session: the 10th triggers the derived-cache rebuild."""
+    for i in range(start, start + 10):
+        handle_memory_store(conn, text=f"The user mentioned that the {subject} plan item {i} "
+                            "matters for next quarter.", session_id=session,
+                            namespace=namespace,
+                            claims=[{"subject": "user", "predicate": "user_fact",
+                                     "value": f"{subject} fact {i}"}])
+
+
+def _cache_rows(conn) -> tuple[int, int, int]:
+    return tuple(conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+                 for t in ("profiles", "session_digests", "life_events"))
+
+
+def test_tenant_writes_never_build_the_shared_caches():
+    conn = open_database(":memory:")
+    _ten_turns(conn, namespace="tenantB", session="b1", subject="tenant-b")
+    assert _cache_rows(conn)[:2] == (0, 0)
+    assert _cache_rows(conn)[2] == 0
+
+
+def test_shared_caches_never_include_tenant_data():
+    conn = open_database(":memory:")
+    _ten_turns(conn, namespace="tenantB", session="b1", subject="tenant-b")
+    _ten_turns(conn, namespace="default", session="d1", subject="local")
+    text = conn.execute("SELECT profile_text FROM profiles WHERE subject = 'user'").fetchone()[0]
+    assert "local fact" in text and "tenant-b" not in text
+
+
+def test_single_tenant_still_builds_the_caches():
+    conn = open_database(":memory:")
+    _ten_turns(conn, namespace="default", session="d1", subject="local")
+    profiles, digests, _ = _cache_rows(conn)
+    assert profiles == 1 and digests == 1

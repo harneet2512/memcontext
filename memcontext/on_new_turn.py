@@ -258,15 +258,33 @@ def run_extraction(
             "SELECT COUNT(*) FROM turns WHERE session_id = ?", (session_id,)
         ).fetchone()[0]
         if turn_count % 10 == 0 and turn_count > 0:
-            from memcontext.profiles import build_smart_profile, store_profile
-            profile = build_smart_profile(conn, "user")
-            store_profile(conn, profile)
+            # The profile / digest / life-event caches are keyed by subject or session id
+            # only (no namespace), so they are shared. They are built from the DEFAULT
+            # namespace alone and never on a tenant's write: tenant reads re-detect their
+            # own scoped data instead (serving.session_briefing / serve_life_events), so
+            # no tenant's facts ever enter a shared cache. Per-tenant caches would need a
+            # namespace in these keys (a schema migration), deferred while local
+            # single-tenant use is the deployment (docs/har95/FOLLOWUPS.md).
+            namespace = conn.execute(
+                "SELECT namespace FROM turns WHERE turn_id = ?", (episode_id,)
+            ).fetchone()[0]
+            shared_caches = namespace == "default"
+            if shared_caches:
+                from memcontext.profiles import build_smart_profile, store_profile
+                store_profile(conn, build_smart_profile(conn, "user", namespace="default"))
             # Session digest alongside the profile (same per-session cadence): top facts
             # by importance + supersession updates, cached so the serve path
             # (build_context_briefing) can return a session summary without rebuilding it
             # per query. Previously digests were only ever built via the memory_digest tool.
-            from memcontext.digests import build_session_digest, store_digest
-            store_digest(conn, build_session_digest(conn, session_id))
+            # The digest builder reads by session id, so skip it when that id is also used
+            # by another namespace (it would mix tenants).
+            session_shared = conn.execute(
+                "SELECT 1 FROM turns WHERE session_id = ? AND namespace != ? LIMIT 1",
+                (session_id, namespace),
+            ).fetchone() is not None
+            if shared_caches and not session_shared:
+                from memcontext.digests import build_session_digest, store_digest
+                store_digest(conn, build_session_digest(conn, session_id))
 
             # Episodic layer: assemble multi-slot event frames (purchases, trips,
             # appointments, named artifacts...) and detect life-event bursts. Both are
@@ -278,8 +296,9 @@ def run_extraction(
             from memcontext.event_frames import assemble_event_frames
             from memcontext.life_events import detect_life_events, store_life_events
             assemble_event_frames(conn, session_id)
-            conn.execute("DELETE FROM life_events WHERE subject = ?", ("user",))
-            store_life_events(conn, detect_life_events(conn, "user"))
+            if shared_caches:
+                conn.execute("DELETE FROM life_events WHERE subject = ?", ("user",))
+                store_life_events(conn, detect_life_events(conn, "user", namespace="default"))
             from memcontext.retrieval import backfill_event_frame_embeddings, episode_embedder
             _emb = episode_embedder()
             if _emb is not None:

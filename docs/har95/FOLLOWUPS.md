@@ -199,3 +199,29 @@ Committed results (summaries plus the per-question data these docs cite; raw dum
 - `stale_exposure/step2_drift{,_r2}/per_question_D_hook.json`: the hook condition of two
   identical-code runs, behind the "26/51 injections differ" and "0/19 got a CONFLICT entry" claims.
 - `har95/supersession_matrix_dev_{before_fec53a4,after_826331c}.txt`: matrix tables and failure lists.
+
+## Derived caches and tenants: option 2, no migration (decided 2026-10-01)
+
+The `profiles`, `session_digests` and `life_events` caches are keyed by subject or session id
+only, so they are shared across namespaces. Per-tenant caches would need a namespace in those
+keys, which is a schema migration. Local single-tenant Claude Code is the real deployment, so
+instead:
+
+- **Tenant writes** (namespace other than `default`) never build these caches.
+- **Default-namespace writes** build the profile and life events from the `default`
+  namespace only, so tenant data never enters a shared cache.
+- **The session digest** is skipped when its session id is also used by another namespace.
+- **Event frames** stay session-keyed. Tenant reads use them, and a session id shared across
+  namespaces already has its resolved view withheld at read time.
+
+**Trade-off:** a tenant never gets these caches. Its HTTP reads recompute the profile and life
+events scoped to its namespace, which costs a little per query. The unscoped MCP tools that
+read the caches (`memory_profile`, `memory_digest`, `memory_life_events`) show only
+`default`-namespace data, and they are already blocked for tenants. In a pure single-tenant
+install every write is in `default`, so behaviour there is unchanged.
+
+**Revisit** if multi-tenant hosting becomes a target. The fix then is a migration that adds a
+namespace to the cache keys and builds the caches per tenant.
+
+Tests: `tests/test_tenant_isolation_writes.py` (tenant writes build no shared cache; shared
+caches never include tenant data; single-tenant still builds them).
