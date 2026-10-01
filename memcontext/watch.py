@@ -48,7 +48,8 @@ def _captured(conn: sqlite3.Connection, limit: int, width: int) -> list[str]:
     return out
 
 
-def _decisions(conn: sqlite3.Connection, limit: int, width: int) -> list[str]:
+def _decisions(conn: sqlite3.Connection, limit: int, width: int,
+               value_lines: int = 2) -> list[str]:
     rows = conn.execute(
         "SELECT c.subject, c.predicate, c.value, c.created_ts,"
         " (SELECT COUNT(*) FROM claims o WHERE o.subject = c.subject"
@@ -64,7 +65,7 @@ def _decisions(conn: sqlite3.Connection, limit: int, width: int) -> list[str]:
         out.append(f"  {_one_line(slot, width - 4)}{history}")
         out.extend(textwrap.wrap(" ".join((r["value"] or "").split()), width=width - 8,
                                  initial_indent="      = ", subsequent_indent="        ",
-                                 max_lines=2, placeholder=" ..."))
+                                 max_lines=value_lines, placeholder=" ..."))
     return out
 
 
@@ -109,7 +110,7 @@ _HOOK_LABEL = {"UserPromptSubmit": "UserPromptSubmit", "PreToolUse": "PreToolUse
                "PostToolUse": "PostToolUse"}
 
 
-def _hooks(activity_path: Path, limit: int, width: int) -> list[str]:
+def _hooks(activity_path: Path, limit: int, width: int, facts: int = 3) -> list[str]:
     """What the Claude Code hooks just did: queried, injected, captured (newest first)."""
     out = _section("LIVE HOOKS (what memory did for the agent, as it happened)")
     try:
@@ -134,22 +135,34 @@ def _hooks(activity_path: Path, limit: int, width: int) -> list[str]:
                    f"{len(injected)} fact(s) injected  ({ev.get('ms', '?')} ms)")
         if ev.get("query"):
             out.append("      query: " + _one_line(ev["query"], width - 13))
-        out.extend("      + " + _one_line(fact, width - 8) for fact in injected[:3])
+        out.extend("      + " + _one_line(fact, width - 8) for fact in injected[:facts])
+        if len(injected) > facts:  # never hide that more was injected
+            out.append(f"      (+{len(injected) - facts} more)")
     return out
 
 
 def render_memory_view(conn: sqlite3.Connection, *, limit: int = 5, width: int = 100,
-                       title: str = "", activity_path: Path | str | None = None) -> str:
-    """Render the pipeline stages as plain ASCII, at most ``width`` columns."""
+                       title: str = "", activity_path: Path | str | None = None,
+                       compact: bool = False) -> str:
+    """Render the pipeline stages as plain ASCII, at most ``width`` columns.
+
+    ``compact`` keeps it to one screen for a side pane: live hooks, current
+    decisions and changes only, fewer rows each.
+    """
     conn.row_factory = sqlite3.Row
     turns = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
     header = _one_line(f"MEMCONTEXT  .  live memory  .  {title}  .  "
                        f"{datetime.now().strftime('%H:%M:%S')}", width)
     lines = [header]
     if activity_path is not None:
-        lines += _hooks(Path(activity_path), limit, width)
+        lines += _hooks(Path(activity_path), 4 if compact else limit, width,
+                        facts=2 if compact else 3)
     if not turns:
         return "\n".join(lines + ["", "  (no memory yet)"])
+    if compact:
+        lines += _decisions(conn, 3, width, value_lines=1)
+        lines += _changes(conn, 2, width)
+        return "\n".join(line[:width] for line in lines)
     lines += _captured(conn, limit, width)
     lines += _decisions(conn, limit + 3, width)
     lines += _changes(conn, limit, width)

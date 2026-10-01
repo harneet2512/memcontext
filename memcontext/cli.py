@@ -247,10 +247,12 @@ def brain(db: str, session: str, pack: str, as_json: bool) -> None:
 @click.option("--limit", default=5, help="Rows per section.")
 @click.option("--width", default=100, help="Maximum line width.")
 @click.option("--once", is_flag=True, default=False, help="Print one snapshot and exit.")
+@click.option("--compact", is_flag=True, default=False,
+              help="One-screen view for a side pane: hooks, decisions, changes.")
 @click.option("--activity", default=None,
               help="Hook activity log (MEMCONTEXT_HOOK_ACTIVITY_LOG of the server) to show live.")
 def watch(db: str, interval: float, limit: int, width: int, once: bool,
-          activity: str | None) -> None:
+          compact: bool, activity: str | None) -> None:
     """Live view of the memory pipeline: captured -> decisions -> changes -> served."""
     import time
 
@@ -261,7 +263,8 @@ def watch(db: str, interval: float, limit: int, width: int, once: bool,
     try:
         while True:
             view = render_memory_view(conn, limit=limit, width=width,
-                                      title=os.path.basename(db), activity_path=activity)
+                                      title=os.path.basename(db), activity_path=activity,
+                                      compact=compact)
             if once:
                 click.echo(view)
                 return

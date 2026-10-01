@@ -89,3 +89,22 @@ def test_claude_codes_own_tool_search_is_not_a_memory_query(client):
                                                  "tool_input": {"query": "select:mcp__memcontext"}})
     assert r.json() == {}
     assert not log.exists() or log.read_text(encoding="utf-8") == ""
+
+
+def test_watch_never_hides_that_more_facts_were_injected(tmp_path):
+    log = tmp_path / "a.jsonl"
+    log.write_text(json.dumps({"ts": 1, "event": "PreToolUse", "tool": "Edit", "target": "x.py",
+                               "query": "q", "injected": [f"fact {i}" for i in range(5)],
+                               "ms": 1.0}) + "\n", encoding="utf-8")
+    view = render_memory_view(open_database(":memory:"), activity_path=log)
+    assert "5 fact(s) injected" in view and "(+2 more)" in view
+
+
+def test_compact_watch_fits_one_screen(client):
+    c, log = client
+    for i in range(6):
+        c.post("/api/hooks/user_prompt_submit",
+               json={"session_id": "s1", "prompt": f"How are tied ranking scores ordered, take {i}?"})
+    view = render_memory_view(http_server._conn, activity_path=log, compact=True)  # type: ignore[arg-type]
+    assert "LIVE HOOKS" in view and "CURRENT DECISIONS" in view and "CHANGES" in view
+    assert "CAPTURED" not in view and len(view.splitlines()) <= 40
