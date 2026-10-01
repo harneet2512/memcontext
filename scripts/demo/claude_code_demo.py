@@ -217,7 +217,18 @@ LIVE_BRIEF = ("Keep answers brief (3-6 sentences or a short list). Use the memco
 
 
 def _live_dir(db: Path) -> Path:
-    return db.parent / "live-session"
+    # One folder per database, so takes against different DBs never share a backup.
+    return db.parent / f"live-{db.stem}"
+
+
+def _memcontext_cli() -> str:
+    """Full path of the memcontext CLI next to this interpreter (works off PATH)."""
+    exe = "memcontext.exe" if os.name == "nt" else "memcontext"
+    return str(Path(sys.executable).parent / exe)
+
+
+_SAVED_CONFIG = {".mcp.json": "original.mcp.json",
+                 ".claude/settings.local.json": "original.settings.local.json"}
 
 
 def live(repo: Path, db: Path, port: int) -> None:
@@ -236,6 +247,11 @@ def live(repo: Path, db: Path, port: int) -> None:
     backup = work / "memory-before-take.db"
     with sqlite3.connect(db) as src, sqlite3.connect(backup) as dst:
         src.backup(dst)
+    # Remember the repo's own config exactly, so finish/restore can put it back.
+    for rel, saved in _SAVED_CONFIG.items():
+        src_path, dst_path = repo / rel, work / saved
+        if src_path.exists() and not dst_path.exists():
+            shutil.copyfile(src_path, dst_path)
 
     token = secrets.token_urlsafe(24)
     env = _env(token)
@@ -275,9 +291,10 @@ def live(repo: Path, db: Path, port: int) -> None:
     print(f"live session ready: {repo}")
     print(f"  memory db : {db}  (backup: {backup})")
     print(f"  start     : {work / 'start-claude.cmd'}")
-    print(f"  watch     : memcontext watch --db \"{db}\" --activity \"{activity}\"")
-    print(f"  good take : python {Path(__file__).name} finish --db \"{db}\"   (keeps memory)")
-    print(f"  bad take  : python {Path(__file__).name} restore --db \"{db}\"  (rolls memory back)")
+    me = f"\"{sys.executable}\" \"{Path(__file__).resolve()}\""
+    print(f"  watch     : \"{_memcontext_cli()}\" watch --compact --db \"{db}\" --activity \"{activity}\"")
+    print(f"  good take : {me} finish --db \"{db}\"   (keeps memory)")
+    print(f"  bad take  : {me} restore --db \"{db}\"  (rolls memory back)")
 
 
 def _check_claude_sees_memcontext(repo: Path) -> None:
@@ -310,13 +327,15 @@ def restore(repo: Path, db: Path) -> None:
 
 
 def finish(repo: Path, db: Path) -> None:
-    """A good take: stop the server, keep the new memory, re-enable auto-memory."""
-    stop(_live_dir(db))
-    local_path = repo / ".claude" / "settings.local.json"
-    if local_path.exists():
-        local = json.loads(local_path.read_text(encoding="utf-8"))
-        local.pop("autoMemoryEnabled", None)
-        local_path.write_text(json.dumps(local, indent=2), encoding="utf-8")
+    """A good take: stop the server, keep the new memory, put the repo's config back."""
+    work = _live_dir(db)
+    stop(work)
+    for rel, saved in _SAVED_CONFIG.items():
+        saved_path = work / saved
+        if saved_path.exists():
+            shutil.copyfile(saved_path, repo / rel)
+            saved_path.unlink()
+    print(f"repo config restored: {', '.join(_SAVED_CONFIG)}")
 
 
 def main() -> None:
