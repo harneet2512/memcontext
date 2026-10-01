@@ -92,3 +92,59 @@ do not need it: `result["claims"]` is the ranked state.
 `master` and on `fec53a4`, before HAR-95. The local install has the embedding backend, so the
 CLI loads BGE-M3 on first query. CI installs only `.[dev]`, so it has no backend and loads
 no model. With embeddings off it passes 10/10 on both commits.
+
+## Capture-time subject-drift warning (`895e0b8`)
+
+When `memory_store` writes a single-valued claim (`decision_made`, `project_status`,
+`convention_established`, `file_purpose`) into a **new** slot (no supersession and no
+restatement of that subject), it looks for live claims of the same predicate in the same
+namespace whose topic resembles the new subject. The topic is the part after the last `/`;
+the project prefix is ignored. Resembling means sharing a word that is not a container word
+such as "service", "system" or "project". Matches are returned as:
+
+```json
+"similar_subjects": [{"subject": "project/authentication", "predicate": "decision_made",
+                      "value": "JWT", "claim_id": "cl_..."}],
+"warnings": ["decision subject 'auth-system/authentication-method' is new, but a similar live
+              decision exists under 'project/authentication' (= 'JWT'). If this updates it, store
+              it again with the same subject 'project/authentication' so it supersedes the old
+              value; otherwise ignore."]
+```
+
+It only warns. Nothing is merged or superseded. The `memory_store` tool description tells the
+agent to re-store under the suggested subject when the new claim is an update. Both keys are
+new and are absent when there is no match.
+
+**Measured:**
+
+- **Coverage probe.** The stale-exposure drift histories (34 decisions) were replayed through
+  `memory_store`, with the final change stored under the paraphrased subject.
+  - **17/34** of those writes return the original subject.
+  - **17/34** miss. These are paraphrases with no shared word ("CI provider" vs "continuous
+    integration service") or with plural or derived forms ("payment" vs "payments",
+    "cache" vs "caching"), since there is no stemming.
+  - **9** suggestions point at a different decision.
+  - The word rule was **not** adjusted after seeing these misses. This dataset has no
+    held-out split, so any tweak would be fitted to it. Paraphrases need semantic subject
+    similarity, which is follow-up work.
+- **Stale-exposure `--subject-drift`.** Hook: 73.2% stale, 65.9% current. That is within the
+  measured noise of the earlier runs (70.7% / 61.0–65.9%), as expected. The harness ingests
+  directly and never reacts to a warning, so it cannot show this feature.
+- **Recall eval, dev** (`claude_code_recall_20261001T012926Z_summary.json`):
+  - current 10/11, stale answer 1/8, correct action 5/6, stale action 1/4.
+  - Both failures are the MCP-connect plumbing flake: the stdio server took 7.1 s to
+    connect, and Claude Code then found no memcontext tools. The same flake hit 2 of the 3
+    recall runs today, at 9.3 s and 7.1 s.
+  - In this run Claude reused the subject (`project/authentication`), so no drift occurred
+    and the warning was not exercised.
+  - This run overlapped the `total`-scoping edit (`65f9711`). That edit is a no-op for this
+    eval, which uses a shared token and so has no namespace.
+
+## Tenant-scoped `total` (`65f9711`)
+
+For a namespaced caller, `total` counts only that namespace's active claims, on the
+cross-session and the single-session paths. With `namespace=None`, the single-tenant
+behaviour is unchanged.
+
+Not done yet: building the derived caches (profiles, session digests, life events) per tenant.
+That needs a namespace in their keys, which is a schema migration, so it is pending approval.
