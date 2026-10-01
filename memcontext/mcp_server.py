@@ -5,6 +5,7 @@ All MCP-specific imports are lazy so mcp_tools.py works standalone.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import Any
 
@@ -83,18 +84,9 @@ def run_server(
 
     conn = open_database(db_path)
 
-    # Persistent extractor + background extraction queue so a deferrable (LLM)
-    # extractor runs off the request path. ThreadedQueue needs a file-backed DB
-    # and is only useful when the extractor actually defers; otherwise stay inline.
-    from memcontext.extractors import auto_extractor
-    store_extractor = auto_extractor()
-    store_queue = None
-    if db_path != ":memory:" and getattr(store_extractor, "is_deferrable", False):
-        from memcontext.extraction_queue import ThreadedQueue
-        from memcontext.retrieval import semantic_supersession
-        store_queue = ThreadedQueue(
-            db_path, extractor=store_extractor, semantic=semantic_supersession()
-        )
+    # Extractor for text-only memory_store calls, selected on first use (see
+    # _StoreBackend): probing for an LLM backend must not delay the MCP handshake.
+    store_backend = _StoreBackend(db_path)
 
     server = Server("memcontext")
 
@@ -345,9 +337,10 @@ def run_server(
     async def call_tool(name: str, arguments: dict):
         try:
             if name == "memory_store":
-                result = handle_memory_store(
-                    conn, extractor=store_extractor, queue=store_queue, **arguments
+                extractor, queue = (
+                    (None, None) if arguments.get("claims") else store_backend.get()
                 )
+                result = handle_memory_store(conn, extractor=extractor, queue=queue, **arguments)
             elif name == "memory_query":
                 result = handle_memory_query(conn, **arguments)
             elif name == "brain":
@@ -403,10 +396,13 @@ def run_server(
         # the first tool call (DLL loads) then waits on that handle until the client
         # sends another message, so the first memory_store hung for minutes.
         prewarm_embedder()
+        # The lazy extractor probe uses requests (-> ssl); import it now, before the
+        # stdio reader starts, so no native module loads mid-request.
+        with contextlib.suppress(ImportError):
+            import requests  # noqa: F401
         asyncio.run(_run())
     finally:
-        if store_queue is not None:
-            store_queue.close()  # drain in-flight extraction + join the worker
+        store_backend.close()  # drain in-flight extraction + join the worker
 
 
 def memory_store_description() -> str:
@@ -428,6 +424,41 @@ def memory_store_description() -> str:
         "If the result lists similar_subjects, a matching decision already exists under "
         "another subject: when this updates it, store it again with that subject."
     )
+
+
+class _StoreBackend:
+    """Extractor (+ background queue) for text-only memory_store calls, chosen lazily.
+
+    ``auto_extractor()`` probes for a local Ollama; on Windows a refused localhost
+    connect takes ~4s. Run at startup, that probe delayed the MCP handshake long
+    enough for Claude Code to look for the memcontext tools before the server had
+    connected. Stores that pass structured claims never need it.
+    """
+
+    def __init__(self, db_path: str) -> None:
+        self._db_path = db_path
+        self._resolved = False
+        self._extractor: Any = None
+        self._queue: Any = None
+
+    def get(self) -> tuple[Any, Any]:
+        if not self._resolved:
+            from memcontext import extractors
+
+            self._extractor = extractors.auto_extractor()
+            if self._db_path != ":memory:" and getattr(self._extractor, "is_deferrable", False):
+                from memcontext.extraction_queue import ThreadedQueue
+                from memcontext.retrieval import semantic_supersession
+
+                self._queue = ThreadedQueue(
+                    self._db_path, extractor=self._extractor, semantic=semantic_supersession()
+                )
+            self._resolved = True
+        return self._extractor, self._queue
+
+    def close(self) -> None:
+        if self._queue is not None:
+            self._queue.close()
 
 
 def prewarm_embedder() -> None:
@@ -493,15 +524,7 @@ def create_http_app(db_path: str = "memcontext.db"):
 
     conn = open_database(db_path)
 
-    from memcontext.extractors import auto_extractor
-    store_extractor = auto_extractor()
-    store_queue = None
-    if db_path != ":memory:" and getattr(store_extractor, "is_deferrable", False):
-        from memcontext.extraction_queue import ThreadedQueue
-        from memcontext.retrieval import semantic_supersession
-        store_queue = ThreadedQueue(
-            db_path, extractor=store_extractor, semantic=semantic_supersession()
-        )
+    store_backend = _StoreBackend(db_path)
 
     def _build_server():
         """Create a fresh MCP Server instance with all tools registered."""
@@ -553,9 +576,11 @@ def create_http_app(db_path: str = "memcontext.db"):
             import asyncio  # noqa: F401  (kept for parity with stdio dispatcher)
             try:
                 if name == "memory_store":
+                    extractor, queue = (
+                        (None, None) if arguments.get("claims") else store_backend.get()
+                    )
                     result = handle_memory_store(
-                        conn, extractor=store_extractor, queue=store_queue,
-                        **arguments,
+                        conn, extractor=extractor, queue=queue, **arguments,
                     )
                 elif name == "memory_query":
                     result = handle_memory_query(conn, **arguments)

@@ -71,3 +71,41 @@ def test_prewarm_survives_embedder_construction_failure(monkeypatch, capsys):
     monkeypatch.setattr(retrieval, "episode_embedder", broken)
     mcp_server.prewarm_embedder()
     assert "warmup failed (ImportError)" in capsys.readouterr().err
+
+
+def test_stdio_startup_does_not_probe_for_an_llm_extractor(tmp_path, monkeypatch):
+    # auto_extractor() probes for a local Ollama (~4s on Windows when nothing
+    # listens). Done before the MCP handshake, it made Claude Code look for the
+    # memcontext tools before the server had connected ("no tools found").
+    from memcontext import extractors
+
+    probes: list[int] = []
+    monkeypatch.setattr(extractors, "auto_extractor", lambda: probes.append(1))
+    monkeypatch.setattr(mcp_server, "prewarm_embedder", lambda: None)
+
+    def fake_run(coro):
+        coro.close()
+        raise _StopServer
+
+    monkeypatch.setattr(asyncio, "run", fake_run)
+    with pytest.raises(_StopServer):
+        mcp_server.run_server(db_path=str(tmp_path / "m.db"), transport="stdio")
+    assert probes == []
+
+
+def test_store_backend_selects_the_extractor_once_on_first_use(tmp_path, monkeypatch):
+    from memcontext import extractors
+
+    probes: list[int] = []
+
+    def fake_auto():
+        probes.append(1)
+        return extractors.SimpleExtractor()
+
+    monkeypatch.setattr(extractors, "auto_extractor", fake_auto)
+    backend = mcp_server._StoreBackend(str(tmp_path / "m.db"))
+    assert probes == []
+    first = backend.get()
+    second = backend.get()
+    assert probes == [1] and first == second
+    backend.close()
