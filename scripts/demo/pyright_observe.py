@@ -31,6 +31,7 @@ from memcontext.mcp_tools import handle_memory_query, handle_memory_trace
 from memcontext.on_new_turn import on_new_turn
 from memcontext.predicate_packs import active_pack
 from memcontext.schema import Speaker, open_database
+from memcontext.serving import iter_served_claims
 
 active_pack.cache_clear()
 
@@ -154,7 +155,7 @@ def main():
     for q in queries:
         print(f'   Q: "{q}"')
         qr = handle_memory_query(conn, query=q, session_id=sid, top_k=5)
-        for c in qr["claims"][:3]:
+        for c in iter_served_claims(qr)[:3]:
             print(f'      [{c["subject"]}] {c["value"][:80]}')
         print()
 

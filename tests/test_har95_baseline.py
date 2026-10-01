@@ -3,7 +3,8 @@
 Runs one nuanced business scenario through the real store/query/trace handlers
 (no mocks) and characterizes current behavior before any Memory/evidence layer
 exists. Passing tests pin behavior that already works and must survive HAR-95.
-GAP-1a and GAP-2..4 were closed by HAR-95 slice 1 (memcontext/memories.py + grouped serving)
+GAP-1..4 were closed by HAR-95 (memcontext/memories.py, grouped serving, the
+evidence-object budget in retrieval.select_by_memory)
 and are now plain regression tests. Strict-xfail tests are the remaining gaps: each one flips to XPASS (and fails) the
 moment the gap is closed, so it must then be promoted to a plain test.
 
@@ -36,6 +37,7 @@ from memcontext.mcp_tools import handle_memory_query, handle_memory_store, handl
 from memcontext.on_new_turn import run_extraction
 from memcontext.predicate_packs import active_pack
 from memcontext.schema import SourceType, Speaker, Turn, open_database
+from memcontext.serving import iter_served_claims
 
 SESSION = "har95"
 PACKS_DIR = Path(__file__).resolve().parent.parent / "predicate_packs"
@@ -139,6 +141,15 @@ def served_sources(sc: Scenario, out: dict) -> list[tuple[str, str]]:
         items.append(("claim", sc.label_of(src)))
     items.extend(("episode", sc.label_of(e["turn_id"])) for e in out["episodes"])
     return items
+
+
+def slots_used(hits) -> int:
+    """Retrieval slots a hit list takes: one per episode, plus one per fact whose
+    episode is absent (a fact served under its episode shares that slot)."""
+    episodes = {h.id for h, _ in hits if h.kind == "episode"}
+    return len(episodes) + sum(
+        1 for h, _ in hits if h.kind == "fact" and h.source_turn_id not in episodes
+    )
 
 
 def baseline_matrix(sc: Scenario) -> dict[str, dict]:
@@ -252,24 +263,12 @@ def test_undeclared_cardinality_treats_categorical_update_as_additive(renewal_pa
     assert statuses["probable"] == "active" and statuses["confirmed"] == "active"
 
 
-# ---------- confirmed gaps: GAP-1a, 2..4 closed by slice 1; GAP-1b, 5..8 still xfail ---
+# ---------------- confirmed gaps: GAP-1..4 closed; GAP-5..8 still xfail ---
 
 
-# GAP-1a (closed by slice 1): a served evidence object repeated its claims' content
+# GAP-1 (closed: GAP-1a by slice 1, GAP-1b by the evidence-object budget): an episode
+# and its derived claims took separate top-k slots
 @pytest.mark.parametrize("question", [Q_WHY, Q_QUOTE])  # the questions that serve T1's evidence
-def test_evidence_links_its_served_claims_instead_of_repeating_them(sc, question):
-    out = handle_memory_query(sc.conn, query=question, session_id=SESSION)
-    items = served_sources(sc, out)
-    assert ("episode", "T1") in items  # precondition: not vacuous
-    t1 = next(e for e in out["episodes"] if e["turn_id"] == sc.turns["T1"])
-    t1_top = {c["claim_id"] for c in out["claims"] if c["source_turn_id"] == sc.turns["T1"]}
-    assert set(t1["linked_claim_ids"]) == t1_top
-    assert not t1_top & {c["claim_id"] for c in t1["claims"]}
-
-
-@pytest.mark.xfail(strict=True, reason="GAP-1b: an episode and its ranked claims still count as "
-                   "separate top-k items; removing that needs a claims-consumer API migration")
-@pytest.mark.parametrize("question", [Q_WHY, Q_QUOTE])
 def test_one_evidence_object_takes_at_most_one_slot(sc, question):
     out = handle_memory_query(sc.conn, query=question, session_id=SESSION)
     items = served_sources(sc, out)
@@ -320,9 +319,10 @@ def test_resolved_blocker_is_no_longer_active(sc):
 def test_restated_value_is_served_once():
     sc = build_scenario()  # general pack: T3 and T4 both yield the identical fact text
     out = handle_memory_query(sc.conn, query=Q_STATUS, session_id=SESSION)
-    labels = [lbl for kind, lbl in served_sources(sc, out) if kind == "claim"]
-    assert {"T3", "T4"} <= set(labels)  # precondition: both copies are in play
-    facts = [c["fact"] for c in out["claims"] if c["status"] == "active"]
+    served = iter_served_claims(out)
+    labels = {sc.label_of(c["source_turn_id"]) for c in served if "source_turn_id" in c}
+    assert {"T3", "T4"} <= labels  # precondition: both copies are in play
+    facts = [c["fact"] for c in served if c["status"] == "active"]
     assert len(facts) == len(set(facts))
 
 

@@ -259,7 +259,10 @@ def cond_mc(mc, db: Path, part: str):
 
     def serve(q: str) -> list[str]:
         r = mc.mcp_tools.handle_memory_query(conn, query=q, session_id=None, top_k=TOP_K)
-        claims = [f"{c['subject']} / {c['predicate']}: {c['value']}" for c in r["claims"]]
+        # ranked claims wherever they are served (HAR-95: a claim whose evidence is
+        # served is listed under that episode); labelled history lines are not counted
+        served = mc.serving.iter_served_claims(r) if hasattr(mc, "serving") else r["claims"]
+        claims = [f"{c['subject']} / {c['predicate']}: {c['value']}" for c in served]
         if part == "claims":
             return claims
         if part == "claims5":
@@ -384,6 +387,9 @@ def load_memcontext(repo: Path, mode: str) -> _MC:
     mc.tokenize, mc.bm25 = retrieval._tokenize_for_bm25, retrieval._bm25_over_docs
     mc.backfill_embeddings = retrieval.backfill_embeddings
     mc.apply_query_prefix, mc.history_intent = retrieval.apply_query_prefix, retrieval.detect_history_intent
+    from memcontext import serving
+    if hasattr(serving, "iter_served_claims"):  # checkouts after HAR-95 GAP-1b
+        mc.serving = serving
     return mc
 
 

@@ -1678,13 +1678,16 @@ def retrieve_memory_across(
             embedding_client=embedding_client, explain=explain,
             include_superseded=include_superseded,
         )
-        reserved.extend(hits[:per_session_k])
-        overflow.extend(hits[per_session_k:])
+        # the guarantee is per evidence object, like the single-session budget
+        kept = select_by_memory(hits, per_session_k)
+        kept_ids = {(h.kind, h.id) for h, _ in kept}
+        reserved.extend(kept)
+        overflow.extend(x for x in hits if (x[0].kind, x[0].id) not in kept_ids)
     reserved.sort(key=tie)
     overflow.sort(key=tie)
     # Never cut below the per-session guarantee for the queried breadth.
     budget = min(max(top_k, len(reserved)), MAX_ACROSS_HITS)
-    return (reserved + overflow)[:budget]
+    return select_by_memory(reserved + overflow, budget)
 
 
 def _fuse_memory(
@@ -1723,7 +1726,39 @@ def _fuse_memory(
         ))
     # -score, then facts before episodes on exact ties, then id for determinism.
     fused.sort(key=lambda h: (-h[1], h[0].kind != "fact", h[0].id))
-    return fused[:top_k]
+    return select_by_memory(fused, top_k)
+
+
+def select_by_memory(
+    ranked: list[tuple[MemoryHit, float]], budget: int,
+) -> list[tuple[MemoryHit, float]]:
+    """Cut a best-first hit list to ``budget`` slots, one per evidence object (HAR-95).
+
+    The window is the best ``budget`` hits, as before. A fact whose source episode is
+    also in the window is the same evidence object, so it shares the episode's slot
+    (it is served under that episode) and the freed slot goes to the next-ranked hit
+    from a memory not yet represented. Hits past the window from memories already
+    represented are skipped: an episode arriving behind its own top-ranked fact would
+    upgrade a compact claim to full evidence text for free (measured: 15/15 slots
+    became episode+claim, ~2x tokens). So every slot is a distinct memory in the
+    representation it ranked with. Deterministic; preserves rank order.
+    """
+    if budget <= 0:
+        return []
+    window = ranked[:budget]
+    window_episodes = {h.id for h, _ in window if h.kind == "episode"}
+    freed = sum(1 for h, _ in window if h.kind == "fact" and h.source_turn_id in window_episodes)
+    selected = list(window)
+    represented = {h.source_turn_id for h, _ in window}
+    for hit in ranked[budget:]:
+        if freed == 0:
+            break
+        if hit[0].source_turn_id in represented:
+            continue
+        selected.append(hit)
+        represented.add(hit[0].source_turn_id)
+        freed -= 1
+    return selected
 
 
 def retrieve_with_fallback(
@@ -1940,6 +1975,7 @@ __all__ = [
     "retrieve_relevant_claims",
     "retrieve_with_fallback",
     "rrf_ranks",
+    "select_by_memory",
     "search_raw_turns",
     "tokenize_for_bm25",
 ]

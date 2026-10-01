@@ -14,6 +14,7 @@ from memcontext.on_new_turn import on_new_turn
 from memcontext.retention import compute_utility
 from memcontext.retrieval import retrieve_memory
 from memcontext.schema import ClaimStatus, Speaker, open_database
+from memcontext.serving import iter_served_claims
 
 
 def _conn():
@@ -67,5 +68,5 @@ def test_door_surfaces_consolidated_marker():
         _say(conn, "coffee", session=s)
     assert consolidate_facts(conn, min_sessions=3) == 1
     res = handle_memory_query(conn, query="coffee", top_k=10)  # cross-session door
-    assert res["claims"], "the durable consolidated fact is served"
-    assert any(c.get("consolidated") for c in res["claims"]), "consolidation marker surfaced"
+    assert iter_served_claims(res), "the durable consolidated fact is served"
+    assert any(c.get("consolidated") for c in iter_served_claims(res)), "consolidation marker surfaced"

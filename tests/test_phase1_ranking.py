@@ -11,6 +11,7 @@ from memcontext.extractors import PassthroughExtractor
 from memcontext.on_new_turn import on_new_turn
 from memcontext.retrieval import retrieve_hybrid
 from memcontext.schema import SCHEMA_VERSION, Speaker, open_database
+from memcontext.serving import iter_served_claims
 
 
 def _conn():
@@ -106,8 +107,8 @@ def test_query_debug_exposes_ranking_breakdown():
     conn = _conn()
     _ingest(conn, "alice", "coffee")
     res = handle_memory_query(conn, query="coffee", session_id="s1", top_k=5, debug=True)
-    assert "ranking" in res and res["claims"]
-    cid = res["claims"][0]["claim_id"]
+    assert "ranking" in res and iter_served_claims(res)
+    cid = iter_served_claims(res)[0]["claim_id"]
     assert {"importance", "usage", "final"} <= set(res["ranking"][cid])
 
 

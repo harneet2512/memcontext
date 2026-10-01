@@ -301,11 +301,11 @@ def handle_memory_query(
             c["trust"] = round(trust, 3)
             c["quarantined"] = trust < QUARANTINE_THRESHOLD
 
-    # Evidence <-> state link: each served episode says what became of the claims
-    # derived from it, referencing already-served claims by id (no claim twice).
+    # One evidence object, one slot: ranked claims whose episode is served are listed
+    # under it with its trust and state (read them all via serving.iter_served_claims).
     from memcontext.serving import annotate_served_evidence
 
-    episodes_out = annotate_served_evidence(conn, claims_out, episodes_out)
+    claims_out, episodes_out = annotate_served_evidence(conn, claims_out, episodes_out)
     nested_claims = [c for e in episodes_out for c in e.get("claims", ())]
 
     # Verification ledger: every claim the caller was shown, top-level or nested.
@@ -320,12 +320,13 @@ def handle_memory_query(
     def _toks(text: str) -> int:
         return max(1, len(text or "") // 4)
     fact_tokens = sum(_toks(c.get("fact") or c.get("value") or "") for c in claims_out)
-    fact_tokens += sum(_toks(c["fact"]) for c in nested_claims)
+    fact_tokens += sum(_toks(c.get("fact") or c.get("value") or "") for c in nested_claims)
     episode_tokens = sum(_toks(e.get("text") or "") for e in episodes_out)
     token_report = {
         "fact_tokens": fact_tokens,
         "episode_tokens": episode_tokens,
         "total_tokens": fact_tokens + episode_tokens,
+        # retrieval slots: top-level claims + episodes (claims under an episode share its slot)
         "served_items": len(claims_out) + len(episodes_out),
         # distinct evidence objects behind the served items (claims + episodes)
         "served_memories": len({c["source_turn_id"] for c in claims_out}

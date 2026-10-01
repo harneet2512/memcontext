@@ -11,6 +11,7 @@ from memcontext.mcp_tools import (
 )
 from memcontext.on_new_turn import on_new_turn
 from memcontext.schema import ClaimStatus, EdgeType, Speaker, Turn, open_database
+from memcontext.serving import iter_served_claims
 from memcontext.supersession import detect_pass1
 
 
@@ -48,7 +49,7 @@ def test_memory_query_records_serve_events_and_verify_checks_them() -> None:
 
     result = handle_memory_query(conn, session_id="s1", query="coffee", top_k=5)
 
-    assert result["claims"][0]["claim_id"] == cid
+    assert iter_served_claims(result)[0]["claim_id"] == cid
     assert result["serve_event_ids"]
     assert conn.execute("SELECT COUNT(*) FROM serve_events").fetchone()[0] == 1
     assert handle_memory_verify(conn, session_id="s1", claim_ids=[cid])["verified"] is True

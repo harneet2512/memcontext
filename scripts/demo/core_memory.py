@@ -29,6 +29,7 @@ from memcontext.extractors import PassthroughExtractor
 from memcontext.mcp_tools import handle_brain, handle_memory_query, handle_memory_trace
 from memcontext.on_new_turn import on_new_turn
 from memcontext.schema import Speaker, open_database
+from memcontext.serving import iter_served_claims
 
 LINE = "-" * 64
 
@@ -89,7 +90,7 @@ def main() -> None:
     print('4. QUERY -- "where does the user live"')
     print(LINE)
     q = handle_memory_query(conn, query="where does the user live", session_id=sid)
-    for c in q["claims"][:3]:
+    for c in iter_served_claims(q)[:3]:
         print(f"    -> {c['subject']} | {c['predicate']} | {c['value']}")
 
     print()

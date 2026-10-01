@@ -506,13 +506,15 @@ def _prompt_context(prompt: str, namespace: str | None) -> str | None:
     Episodes are skipped — raw text can restate a superseded value.
     """
     from memcontext import mcp_tools
+    from memcontext.serving import iter_served_claims
     result = mcp_tools.handle_memory_query(
         get_conn(), query=prompt[:_PROMPT_QUERY_MAX_CHARS], session_id=None,
         top_k=_PROMPT_CONTEXT_TOP_K, namespace=namespace, include_resolved=False,
     )
     prompt_tokens = _content_tokens(prompt)
     lines: list[str] = []
-    for c in result.get("claims", []):
+    # ranked claims, top-level or under their served evidence (HAR-95 grouping)
+    for c in iter_served_claims(result):
         if c.get("status") not in _LIVE_STATUSES or c.get("predicate") == _TOOL_ACTION_PREDICATE:
             continue
         line = _claim_line(c.get("subject"), c.get("predicate"), c.get("fact") or c.get("value") or "")
