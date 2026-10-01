@@ -424,7 +424,9 @@ def memory_store_description() -> str:
         "text only and never supersede. Reuse the same subject + predicate to update a fact. "
         "Use a specific subject per fact (e.g. 'orders service database', not 'orders "
         "service'): single-valued predicates such as decision_made keep ONE current value "
-        "per subject, so unrelated decisions under one subject replace each other."
+        "per subject, so unrelated decisions under one subject replace each other. "
+        "If the result lists similar_subjects, a matching decision already exists under "
+        "another subject: when this updates it, store it again with that subject."
     )
 
 

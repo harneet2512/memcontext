@@ -178,3 +178,56 @@ def slot_conflicts(conn: sqlite3.Connection, claim_id: str) -> list[dict]:
             "newer_than_head": r["created_ts"] > head["created_ts"],
         })
     return out
+
+
+# ── capture-time subject drift ────────────────────────────────────────────────
+
+# Words that name the container or kind of thing rather than the decision's topic:
+# two subjects sharing only these ("billing_service_language" / "go_service_logging")
+# are not the same decision.
+_CONTAINER_WORDS = frozenset({
+    "a", "an", "the", "of", "for", "and", "to", "in", "on", "our", "we",
+    "project", "app", "application", "service", "services", "system", "systems",
+    "config", "configuration", "setup", "choice", "decision", "decisions",
+    "tool", "tools", "library", "libraries", "framework", "version",
+})
+SIMILAR_SUBJECTS_LIMIT = 3
+
+
+def _topic_words(subject: str) -> frozenset[str]:
+    _, _, topic = subject.strip().lower().rpartition("/")
+    return frozenset(re.findall(r"[a-z0-9]+", topic)) - _CONTAINER_WORDS
+
+
+def similar_subjects(
+    conn: sqlite3.Connection, *, subject: str, predicate: str, namespace: str | None,
+    limit: int = SIMILAR_SUBJECTS_LIMIT,
+) -> list[dict]:
+    """Live decisions under OTHER subjects that look like the same decision.
+
+    For a single-valued predicate only. Two subjects resemble each other when their
+    topics (the part after the last '/', any project prefix ignored) share a word
+    that is not a container word. Ranked by topic-word Jaccard, then newest; one
+    entry (the newest live value) per subject. Used to WARN at capture time; nothing
+    is merged or superseded.
+    """
+    mine = _topic_words(subject)
+    if not mine or not is_single_valued(predicate):
+        return []
+    sql = f"{_WITH_TRUST} WHERE c.predicate = ? AND c.subject != ? AND c.status IN ({_LIVE_IN})"
+    args: list = [predicate, subject, *LIVE_STATUSES]
+    if namespace is not None:
+        sql += " AND t.namespace = ?"
+        args.append(namespace)
+    best: dict[str, tuple[float, int, sqlite3.Row]] = {}
+    for r in conn.execute(sql, args).fetchall():
+        theirs = _topic_words(r["subject"] or "")
+        shared = mine & theirs
+        if not shared:
+            continue
+        score = (len(shared) / len(mine | theirs), r["created_ts"], r)
+        if r["subject"] not in best or score[1] > best[r["subject"]][1]:
+            best[r["subject"]] = score
+    ranked = sorted(best.values(), key=lambda x: (-x[0], -x[1]))[:limit]
+    return [{"subject": r["subject"], "predicate": r["predicate"], "value": r["value"],
+             "claim_id": r["claim_id"]} for _j, _ts, r in ranked]

@@ -100,9 +100,46 @@ def handle_memory_store(
         "supersessions": len(result.supersession_edges),
     }
     warnings = _demoted_predicate_warnings(claims) if claims and result.admitted else []
+    matches = _subject_drift(conn, result, namespace)
+    if matches:
+        out["similar_subjects"] = [m for _new, m in matches]
+        warnings += [
+            f"decision subject {new!r} is new, but a similar live decision exists under "
+            f"{m['subject']!r} (= {m['value']!r}). If this updates it, store it again with "
+            f"the same subject {m['subject']!r} so it supersedes the old value; otherwise ignore."
+            for new, m in matches
+        ]
     if warnings:
         out["warnings"] = warnings
     return out
+
+
+def _subject_drift(conn: sqlite3.Connection, result, namespace: str) -> list[tuple[str, dict]]:
+    """(new subject, similar live decision) pairs for claims that opened a NEW slot.
+
+    A single-valued claim that superseded or restated a value reused its subject, so
+    it is fine. One that landed in an empty slot may be a changed decision recorded
+    under a drifted subject, which supersession cannot link: return the likely
+    matches so the caller can re-store under the existing subject. Never merges.
+    """
+    from memcontext.conflicts import is_single_valued, similar_subjects
+
+    linked = {e.new_claim_id for e in result.supersession_edges}
+    pairs: list[tuple[str, dict]] = []
+    for c in result.created_claims:
+        if not c.subject or not is_single_valued(c.predicate) or c.claim_id in linked:
+            continue
+        same_slot = conn.execute(
+            "SELECT 1 FROM claims c JOIN turns t ON t.turn_id = c.source_turn_id"
+            " WHERE c.subject = ? AND c.predicate = ? AND c.claim_id != ? AND t.namespace = ?"
+            " AND c.status IN ('active','confirmed','audited') LIMIT 1",
+            (c.subject, c.predicate, c.claim_id, namespace),
+        ).fetchone()
+        if same_slot is not None:
+            continue  # a restatement of the same subject
+        pairs += [(c.subject, m) for m in similar_subjects(
+            conn, subject=c.subject, predicate=c.predicate, namespace=namespace)]
+    return pairs
 
 
 def _demoted_predicate_warnings(claims: list[dict]) -> list[str]:
