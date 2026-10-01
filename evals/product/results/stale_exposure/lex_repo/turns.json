@@ -1,0 +1,1178 @@
+[
+ {
+  "hist": 0,
+  "epoch": 0,
+  "session_id": "s00_e0",
+  "text": "Decision: we will use PostgreSQL 15 for the orders-service database.",
+  "claim": {
+   "subject": "orders-service database",
+   "predicate": "decision_made",
+   "value": "PostgreSQL 15",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 1,
+  "epoch": 0,
+  "session_id": "s01_e0",
+  "text": "Decision: we will use Fly.io for the deploy target.",
+  "claim": {
+   "subject": "deploy target",
+   "predicate": "decision_made",
+   "value": "Fly.io",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 2,
+  "epoch": 0,
+  "session_id": "s02_e0",
+  "text": "Decision: we will use offset pagination for the API pagination scheme.",
+  "claim": {
+   "subject": "API pagination scheme",
+   "predicate": "decision_made",
+   "value": "offset pagination",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 3,
+  "epoch": 0,
+  "session_id": "s03_e0",
+  "text": "Decision: we will use server-side sessions for the authentication mechanism.",
+  "claim": {
+   "subject": "authentication mechanism",
+   "predicate": "decision_made",
+   "value": "server-side sessions",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 4,
+  "epoch": 0,
+  "session_id": "s04_e0",
+  "text": "Decision: we will use Python 3.11 for the Python runtime version.",
+  "claim": {
+   "subject": "Python runtime version",
+   "predicate": "decision_made",
+   "value": "Python 3.11",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 5,
+  "epoch": 0,
+  "session_id": "s05_e0",
+  "text": "Decision: we will use Create React App for the frontend framework.",
+  "claim": {
+   "subject": "frontend framework",
+   "predicate": "decision_made",
+   "value": "Create React App",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 6,
+  "epoch": 0,
+  "session_id": "s06_e0",
+  "text": "Decision: we will use Travis CI for the CI provider.",
+  "claim": {
+   "subject": "CI provider",
+   "predicate": "decision_made",
+   "value": "Travis CI",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 7,
+  "epoch": 0,
+  "session_id": "s07_e0",
+  "text": "Decision: we will use npm for the frontend package manager.",
+  "claim": {
+   "subject": "frontend package manager",
+   "predicate": "decision_made",
+   "value": "npm",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 8,
+  "epoch": 0,
+  "session_id": "s08_e0",
+  "text": "Decision: we will use logrus for the Go service logging library.",
+  "claim": {
+   "subject": "Go service logging library",
+   "predicate": "decision_made",
+   "value": "logrus",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 9,
+  "epoch": 0,
+  "session_id": "s09_e0",
+  "text": "Decision: we will use RabbitMQ for the message queue.",
+  "claim": {
+   "subject": "message queue",
+   "predicate": "decision_made",
+   "value": "RabbitMQ",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 10,
+  "epoch": 0,
+  "session_id": "s10_e0",
+  "text": "Decision: we will use Memcached for the cache layer.",
+  "claim": {
+   "subject": "cache layer",
+   "predicate": "decision_made",
+   "value": "Memcached",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 11,
+  "epoch": 0,
+  "session_id": "s11_e0",
+  "text": "Decision: we will use unittest for the backend test runner.",
+  "claim": {
+   "subject": "backend test runner",
+   "predicate": "decision_made",
+   "value": "unittest",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 12,
+  "epoch": 0,
+  "session_id": "s12_e0",
+  "text": "Decision: we will use SQLAlchemy 1.4 for the ORM.",
+  "claim": {
+   "subject": "ORM",
+   "predicate": "decision_made",
+   "value": "SQLAlchemy 1.4",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 13,
+  "epoch": 0,
+  "session_id": "s13_e0",
+  "text": "Decision: we will use Node 18 LTS for the Node.js version.",
+  "claim": {
+   "subject": "Node.js version",
+   "predicate": "decision_made",
+   "value": "Node 18 LTS",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 14,
+  "epoch": 0,
+  "session_id": "s14_e0",
+  "text": "Decision: we will use Debian slim for the container base image.",
+  "claim": {
+   "subject": "container base image",
+   "predicate": "decision_made",
+   "value": "Debian slim",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 15,
+  "epoch": 0,
+  "session_id": "s15_e0",
+  "text": "Decision: we will use Sentry for the error tracking service.",
+  "claim": {
+   "subject": "error tracking service",
+   "predicate": "decision_made",
+   "value": "Sentry",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 16,
+  "epoch": 0,
+  "session_id": "s16_e0",
+  "text": "Decision: we will use LaunchDarkly for the feature flag system.",
+  "claim": {
+   "subject": "feature flag system",
+   "predicate": "decision_made",
+   "value": "LaunchDarkly",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 17,
+  "epoch": 0,
+  "session_id": "s17_e0",
+  "text": "Decision: we will use black for the Python code formatter.",
+  "claim": {
+   "subject": "Python code formatter",
+   "predicate": "decision_made",
+   "value": "black",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 18,
+  "epoch": 0,
+  "session_id": "s18_e0",
+  "text": "Decision: we will use TSLint for the TypeScript linter.",
+  "claim": {
+   "subject": "TypeScript linter",
+   "predicate": "decision_made",
+   "value": "TSLint",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 19,
+  "epoch": 0,
+  "session_id": "s19_e0",
+  "text": "Decision: we will use AWS S3 for the object storage.",
+  "claim": {
+   "subject": "object storage",
+   "predicate": "decision_made",
+   "value": "AWS S3",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 20,
+  "epoch": 0,
+  "session_id": "s20_e0",
+  "text": "Decision: we will use Elasticsearch 7 for the search backend.",
+  "claim": {
+   "subject": "search backend",
+   "predicate": "decision_made",
+   "value": "Elasticsearch 7",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 21,
+  "epoch": 0,
+  "session_id": "s21_e0",
+  "text": "Decision: we will use Braintree for the payment provider.",
+  "claim": {
+   "subject": "payment provider",
+   "predicate": "decision_made",
+   "value": "Braintree",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 22,
+  "epoch": 0,
+  "session_id": "s22_e0",
+  "text": "Decision: we will use SendGrid for the transactional email provider.",
+  "claim": {
+   "subject": "transactional email provider",
+   "predicate": "decision_made",
+   "value": "SendGrid",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 23,
+  "epoch": 0,
+  "session_id": "s23_e0",
+  "text": "Decision: we will use Lerna for the monorepo build tool.",
+  "claim": {
+   "subject": "monorepo build tool",
+   "predicate": "decision_made",
+   "value": "Lerna",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 24,
+  "epoch": 0,
+  "session_id": "s24_e0",
+  "text": "Decision: we will use REST with JSON for the public API style.",
+  "claim": {
+   "subject": "public API style",
+   "predicate": "decision_made",
+   "value": "REST with JSON",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 25,
+  "epoch": 0,
+  "session_id": "s25_e0",
+  "text": "Decision: we will use Redux Toolkit for the web app state management.",
+  "claim": {
+   "subject": "web app state management",
+   "predicate": "decision_made",
+   "value": "Redux Toolkit",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 26,
+  "epoch": 0,
+  "session_id": "s26_e0",
+  "text": "Decision: we will use weekly releases on Tuesday for the release cadence.",
+  "claim": {
+   "subject": "release cadence",
+   "predicate": "decision_made",
+   "value": "weekly releases on Tuesday",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 27,
+  "epoch": 0,
+  "session_id": "s27_e0",
+  "text": "Decision: we will use one approval required for the code review policy.",
+  "claim": {
+   "subject": "code review policy",
+   "predicate": "decision_made",
+   "value": "one approval required",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 28,
+  "epoch": 0,
+  "session_id": "s28_e0",
+  "text": "Decision: we will use us-east-1 for the primary cloud region.",
+  "claim": {
+   "subject": "primary cloud region",
+   "predicate": "decision_made",
+   "value": "us-east-1",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 29,
+  "epoch": 0,
+  "session_id": "s29_e0",
+  "text": "Decision: we will use Celery for the background job runner.",
+  "claim": {
+   "subject": "background job runner",
+   "predicate": "decision_made",
+   "value": "Celery",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 30,
+  "epoch": 0,
+  "session_id": "s30_e0",
+  "text": "Decision: we will use .env files for the secrets management.",
+  "claim": {
+   "subject": "secrets management",
+   "predicate": "decision_made",
+   "value": ".env files",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 31,
+  "epoch": 0,
+  "session_id": "s31_e0",
+  "text": "Decision: we will use 10 MB for the max upload size.",
+  "claim": {
+   "subject": "max upload size",
+   "predicate": "decision_made",
+   "value": "10 MB",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 32,
+  "epoch": 0,
+  "session_id": "s32_e0",
+  "text": "Decision: we will use 30 minutes for the session timeout.",
+  "claim": {
+   "subject": "session timeout",
+   "predicate": "decision_made",
+   "value": "30 minutes",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 33,
+  "epoch": 0,
+  "session_id": "s33_e0",
+  "text": "Decision: we will use 100 requests per minute for the API rate limit.",
+  "claim": {
+   "subject": "API rate limit",
+   "predicate": "decision_made",
+   "value": "100 requests per minute",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 36,
+  "epoch": 0,
+  "session_id": "s36_e0",
+  "text": "Decision: we will use trunk-based development for the branching model.",
+  "claim": {
+   "subject": "branching model",
+   "predicate": "decision_made",
+   "value": "trunk-based development",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 39,
+  "epoch": 0,
+  "session_id": "s39_e0",
+  "text": "Decision: we will use MkDocs Material for the docs site generator.",
+  "claim": {
+   "subject": "docs site generator",
+   "predicate": "decision_made",
+   "value": "MkDocs Material",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 42,
+  "epoch": 0,
+  "session_id": "s42_e0",
+  "text": "Decision: we will use Cloudflare DNS for the DNS provider.",
+  "claim": {
+   "subject": "DNS provider",
+   "predicate": "decision_made",
+   "value": "Cloudflare DNS",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 0,
+  "epoch": 1,
+  "session_id": "s00_e1",
+  "text": "Update: going forward, the orders-service database is SQLite.",
+  "claim": {
+   "subject": "orders-service database",
+   "predicate": "decision_made",
+   "value": "SQLite",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 1,
+  "epoch": 1,
+  "session_id": "s01_e1",
+  "text": "Heads up, we switched the deploy target to Render.",
+  "claim": {
+   "subject": "deploy target",
+   "predicate": "decision_made",
+   "value": "Render",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 2,
+  "epoch": 1,
+  "session_id": "s02_e1",
+  "text": "Change of plan: the API pagination scheme is now cursor pagination.",
+  "claim": {
+   "subject": "API pagination scheme",
+   "predicate": "decision_made",
+   "value": "cursor pagination",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 3,
+  "epoch": 1,
+  "session_id": "s03_e1",
+  "text": "Update: going forward, the authentication mechanism is JWT access tokens.",
+  "claim": {
+   "subject": "authentication mechanism",
+   "predicate": "decision_made",
+   "value": "JWT access tokens",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 4,
+  "epoch": 1,
+  "session_id": "s04_e1",
+  "text": "Heads up, we switched the Python runtime version to Python 3.12.",
+  "claim": {
+   "subject": "Python runtime version",
+   "predicate": "decision_made",
+   "value": "Python 3.12",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 5,
+  "epoch": 1,
+  "session_id": "s05_e1",
+  "text": "Change of plan: the frontend framework is now Vite + React.",
+  "claim": {
+   "subject": "frontend framework",
+   "predicate": "decision_made",
+   "value": "Vite + React",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 6,
+  "epoch": 1,
+  "session_id": "s06_e1",
+  "text": "Update: going forward, the CI provider is GitHub Actions.",
+  "claim": {
+   "subject": "CI provider",
+   "predicate": "decision_made",
+   "value": "GitHub Actions",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 7,
+  "epoch": 1,
+  "session_id": "s07_e1",
+  "text": "Heads up, we switched the frontend package manager to Yarn Berry.",
+  "claim": {
+   "subject": "frontend package manager",
+   "predicate": "decision_made",
+   "value": "Yarn Berry",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 8,
+  "epoch": 1,
+  "session_id": "s08_e1",
+  "text": "Change of plan: the Go service logging library is now zap.",
+  "claim": {
+   "subject": "Go service logging library",
+   "predicate": "decision_made",
+   "value": "zap",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 9,
+  "epoch": 1,
+  "session_id": "s09_e1",
+  "text": "Update: going forward, the message queue is Kafka.",
+  "claim": {
+   "subject": "message queue",
+   "predicate": "decision_made",
+   "value": "Kafka",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 10,
+  "epoch": 1,
+  "session_id": "s10_e1",
+  "text": "Heads up, we switched the cache layer to Redis 7.",
+  "claim": {
+   "subject": "cache layer",
+   "predicate": "decision_made",
+   "value": "Redis 7",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 11,
+  "epoch": 1,
+  "session_id": "s11_e1",
+  "text": "Change of plan: the backend test runner is now pytest.",
+  "claim": {
+   "subject": "backend test runner",
+   "predicate": "decision_made",
+   "value": "pytest",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 12,
+  "epoch": 1,
+  "session_id": "s12_e1",
+  "text": "Update: going forward, the ORM is SQLAlchemy 2.0.",
+  "claim": {
+   "subject": "ORM",
+   "predicate": "decision_made",
+   "value": "SQLAlchemy 2.0",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 13,
+  "epoch": 1,
+  "session_id": "s13_e1",
+  "text": "Heads up, we switched the Node.js version to Node 20 LTS.",
+  "claim": {
+   "subject": "Node.js version",
+   "predicate": "decision_made",
+   "value": "Node 20 LTS",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 14,
+  "epoch": 1,
+  "session_id": "s14_e1",
+  "text": "Change of plan: the container base image is now distroless.",
+  "claim": {
+   "subject": "container base image",
+   "predicate": "decision_made",
+   "value": "distroless",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 15,
+  "epoch": 1,
+  "session_id": "s15_e1",
+  "text": "Update: going forward, the error tracking service is Rollbar.",
+  "claim": {
+   "subject": "error tracking service",
+   "predicate": "decision_made",
+   "value": "Rollbar",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 16,
+  "epoch": 1,
+  "session_id": "s16_e1",
+  "text": "Heads up, we switched the feature flag system to Unleash self-hosted.",
+  "claim": {
+   "subject": "feature flag system",
+   "predicate": "decision_made",
+   "value": "Unleash self-hosted",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 17,
+  "epoch": 1,
+  "session_id": "s17_e1",
+  "text": "Change of plan: the Python code formatter is now ruff format.",
+  "claim": {
+   "subject": "Python code formatter",
+   "predicate": "decision_made",
+   "value": "ruff format",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 18,
+  "epoch": 1,
+  "session_id": "s18_e1",
+  "text": "Update: going forward, the TypeScript linter is ESLint 9 flat config.",
+  "claim": {
+   "subject": "TypeScript linter",
+   "predicate": "decision_made",
+   "value": "ESLint 9 flat config",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 19,
+  "epoch": 1,
+  "session_id": "s19_e1",
+  "text": "Heads up, we switched the object storage to Cloudflare R2.",
+  "claim": {
+   "subject": "object storage",
+   "predicate": "decision_made",
+   "value": "Cloudflare R2",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 20,
+  "epoch": 1,
+  "session_id": "s20_e1",
+  "text": "Change of plan: the search backend is now OpenSearch 2.",
+  "claim": {
+   "subject": "search backend",
+   "predicate": "decision_made",
+   "value": "OpenSearch 2",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 21,
+  "epoch": 1,
+  "session_id": "s21_e1",
+  "text": "Update: going forward, the payment provider is Stripe.",
+  "claim": {
+   "subject": "payment provider",
+   "predicate": "decision_made",
+   "value": "Stripe",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 22,
+  "epoch": 1,
+  "session_id": "s22_e1",
+  "text": "Heads up, we switched the transactional email provider to Postmark.",
+  "claim": {
+   "subject": "transactional email provider",
+   "predicate": "decision_made",
+   "value": "Postmark",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 23,
+  "epoch": 1,
+  "session_id": "s23_e1",
+  "text": "Change of plan: the monorepo build tool is now Nx.",
+  "claim": {
+   "subject": "monorepo build tool",
+   "predicate": "decision_made",
+   "value": "Nx",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 24,
+  "epoch": 1,
+  "session_id": "s24_e1",
+  "text": "Update: going forward, the public API style is GraphQL.",
+  "claim": {
+   "subject": "public API style",
+   "predicate": "decision_made",
+   "value": "GraphQL",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 25,
+  "epoch": 1,
+  "session_id": "s25_e1",
+  "text": "Heads up, we switched the web app state management to Zustand.",
+  "claim": {
+   "subject": "web app state management",
+   "predicate": "decision_made",
+   "value": "Zustand",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 26,
+  "epoch": 1,
+  "session_id": "s26_e1",
+  "text": "Change of plan: the release cadence is now biweekly releases on Thursday.",
+  "claim": {
+   "subject": "release cadence",
+   "predicate": "decision_made",
+   "value": "biweekly releases on Thursday",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 27,
+  "epoch": 1,
+  "session_id": "s27_e1",
+  "text": "Update: going forward, the code review policy is two approvals required.",
+  "claim": {
+   "subject": "code review policy",
+   "predicate": "decision_made",
+   "value": "two approvals required",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 28,
+  "epoch": 1,
+  "session_id": "s28_e1",
+  "text": "Heads up, we switched the primary cloud region to us-west-2.",
+  "claim": {
+   "subject": "primary cloud region",
+   "predicate": "decision_made",
+   "value": "us-west-2",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 29,
+  "epoch": 1,
+  "session_id": "s29_e1",
+  "text": "Change of plan: the background job runner is now RQ.",
+  "claim": {
+   "subject": "background job runner",
+   "predicate": "decision_made",
+   "value": "RQ",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 30,
+  "epoch": 1,
+  "session_id": "s30_e1",
+  "text": "Update: going forward, the secrets management is HashiCorp Vault.",
+  "claim": {
+   "subject": "secrets management",
+   "predicate": "decision_made",
+   "value": "HashiCorp Vault",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 31,
+  "epoch": 1,
+  "session_id": "s31_e1",
+  "text": "Heads up, we switched the max upload size to 25 MB.",
+  "claim": {
+   "subject": "max upload size",
+   "predicate": "decision_made",
+   "value": "25 MB",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 32,
+  "epoch": 1,
+  "session_id": "s32_e1",
+  "text": "Change of plan: the session timeout is now 15 minutes.",
+  "claim": {
+   "subject": "session timeout",
+   "predicate": "decision_made",
+   "value": "15 minutes",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 33,
+  "epoch": 1,
+  "session_id": "s33_e1",
+  "text": "Update: going forward, the API rate limit is 600 requests per minute.",
+  "claim": {
+   "subject": "API rate limit",
+   "predicate": "decision_made",
+   "value": "600 requests per minute",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 34,
+  "epoch": 1,
+  "session_id": "s34_e1",
+  "text": "Decision: we will use Go 1.22 for the billing service language.",
+  "claim": {
+   "subject": "billing service language",
+   "predicate": "decision_made",
+   "value": "Go 1.22",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 37,
+  "epoch": 1,
+  "session_id": "s37_e1",
+  "text": "Decision: we will use Conventional Commits for the commit message convention.",
+  "claim": {
+   "subject": "commit message convention",
+   "predicate": "decision_made",
+   "value": "Conventional Commits",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 40,
+  "epoch": 1,
+  "session_id": "s40_e1",
+  "text": "Decision: we will use Terraform for the infrastructure as code tool.",
+  "claim": {
+   "subject": "infrastructure as code tool",
+   "predicate": "decision_made",
+   "value": "Terraform",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 43,
+  "epoch": 1,
+  "session_id": "s43_e1",
+  "text": "Decision: we will use Prometheus and Grafana for the metrics stack.",
+  "claim": {
+   "subject": "metrics stack",
+   "predicate": "decision_made",
+   "value": "Prometheus and Grafana",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 1,
+  "epoch": 2,
+  "session_id": "s01_e2",
+  "text": "Change of plan: the deploy target is now AWS ECS.",
+  "claim": {
+   "subject": "deploy target",
+   "predicate": "decision_made",
+   "value": "AWS ECS",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 3,
+  "epoch": 2,
+  "session_id": "s03_e2",
+  "text": "Heads up, we switched the authentication mechanism to OAuth 2.1 with PKCE.",
+  "claim": {
+   "subject": "authentication mechanism",
+   "predicate": "decision_made",
+   "value": "OAuth 2.1 with PKCE",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 4,
+  "epoch": 2,
+  "session_id": "s04_e2",
+  "text": "Change of plan: the Python runtime version is now Python 3.13.",
+  "claim": {
+   "subject": "Python runtime version",
+   "predicate": "decision_made",
+   "value": "Python 3.13",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 5,
+  "epoch": 2,
+  "session_id": "s05_e2",
+  "text": "Update: going forward, the frontend framework is Next.js 15.",
+  "claim": {
+   "subject": "frontend framework",
+   "predicate": "decision_made",
+   "value": "Next.js 15",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 7,
+  "epoch": 2,
+  "session_id": "s07_e2",
+  "text": "Change of plan: the frontend package manager is now pnpm.",
+  "claim": {
+   "subject": "frontend package manager",
+   "predicate": "decision_made",
+   "value": "pnpm",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 8,
+  "epoch": 2,
+  "session_id": "s08_e2",
+  "text": "Update: going forward, the Go service logging library is slog.",
+  "claim": {
+   "subject": "Go service logging library",
+   "predicate": "decision_made",
+   "value": "slog",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 9,
+  "epoch": 2,
+  "session_id": "s09_e2",
+  "text": "Heads up, we switched the message queue to AWS SQS.",
+  "claim": {
+   "subject": "message queue",
+   "predicate": "decision_made",
+   "value": "AWS SQS",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 13,
+  "epoch": 2,
+  "session_id": "s13_e2",
+  "text": "Change of plan: the Node.js version is now Node 22 LTS.",
+  "claim": {
+   "subject": "Node.js version",
+   "predicate": "decision_made",
+   "value": "Node 22 LTS",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 14,
+  "epoch": 2,
+  "session_id": "s14_e2",
+  "text": "Update: going forward, the container base image is Chainguard Wolfi.",
+  "claim": {
+   "subject": "container base image",
+   "predicate": "decision_made",
+   "value": "Chainguard Wolfi",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 15,
+  "epoch": 2,
+  "session_id": "s15_e2",
+  "text": "Heads up, we switched the error tracking service to Honeybadger.",
+  "claim": {
+   "subject": "error tracking service",
+   "predicate": "decision_made",
+   "value": "Honeybadger",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 18,
+  "epoch": 2,
+  "session_id": "s18_e2",
+  "text": "Heads up, we switched the TypeScript linter to Biome.",
+  "claim": {
+   "subject": "TypeScript linter",
+   "predicate": "decision_made",
+   "value": "Biome",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 20,
+  "epoch": 2,
+  "session_id": "s20_e2",
+  "text": "Update: going forward, the search backend is Meilisearch.",
+  "claim": {
+   "subject": "search backend",
+   "predicate": "decision_made",
+   "value": "Meilisearch",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 22,
+  "epoch": 2,
+  "session_id": "s22_e2",
+  "text": "Change of plan: the transactional email provider is now Amazon SES.",
+  "claim": {
+   "subject": "transactional email provider",
+   "predicate": "decision_made",
+   "value": "Amazon SES",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 23,
+  "epoch": 2,
+  "session_id": "s23_e2",
+  "text": "Update: going forward, the monorepo build tool is Turborepo.",
+  "claim": {
+   "subject": "monorepo build tool",
+   "predicate": "decision_made",
+   "value": "Turborepo",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 24,
+  "epoch": 2,
+  "session_id": "s24_e2",
+  "text": "Heads up, we switched the public API style to gRPC.",
+  "claim": {
+   "subject": "public API style",
+   "predicate": "decision_made",
+   "value": "gRPC",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 28,
+  "epoch": 2,
+  "session_id": "s28_e2",
+  "text": "Change of plan: the primary cloud region is now eu-central-1.",
+  "claim": {
+   "subject": "primary cloud region",
+   "predicate": "decision_made",
+   "value": "eu-central-1",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 29,
+  "epoch": 2,
+  "session_id": "s29_e2",
+  "text": "Update: going forward, the background job runner is Dramatiq.",
+  "claim": {
+   "subject": "background job runner",
+   "predicate": "decision_made",
+   "value": "Dramatiq",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 30,
+  "epoch": 2,
+  "session_id": "s30_e2",
+  "text": "Heads up, we switched the secrets management to AWS Secrets Manager.",
+  "claim": {
+   "subject": "secrets management",
+   "predicate": "decision_made",
+   "value": "AWS Secrets Manager",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 31,
+  "epoch": 2,
+  "session_id": "s31_e2",
+  "text": "Change of plan: the max upload size is now 100 MB.",
+  "claim": {
+   "subject": "max upload size",
+   "predicate": "decision_made",
+   "value": "100 MB",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 32,
+  "epoch": 2,
+  "session_id": "s32_e2",
+  "text": "Update: going forward, the session timeout is 8 hours.",
+  "claim": {
+   "subject": "session timeout",
+   "predicate": "decision_made",
+   "value": "8 hours",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 35,
+  "epoch": 2,
+  "session_id": "s35_e2",
+  "text": "Decision: we will use UTC everywhere for the timestamp timezone.",
+  "claim": {
+   "subject": "timestamp timezone",
+   "predicate": "decision_made",
+   "value": "UTC everywhere",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 38,
+  "epoch": 2,
+  "session_id": "s38_e2",
+  "text": "Decision: we will use PagerDuty for the on-call paging tool.",
+  "claim": {
+   "subject": "on-call paging tool",
+   "predicate": "decision_made",
+   "value": "PagerDuty",
+   "confidence": 0.9
+  }
+ },
+ {
+  "hist": 41,
+  "epoch": 2,
+  "session_id": "s41_e2",
+  "text": "Decision: we will use Tailwind CSS for the CSS approach.",
+  "claim": {
+   "subject": "CSS approach",
+   "predicate": "decision_made",
+   "value": "Tailwind CSS",
+   "confidence": 0.9
+  }
+ }
+]
