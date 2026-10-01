@@ -476,7 +476,10 @@ def _capture_tool_use(body: dict, namespace: str) -> dict:
     session_id = body.get("session_id", "hooks")
 
     if _should_skip_tool(tool_name, tool_input):
-        return {"status": "skipped"}
+        # memcontext's own tools are never re-captured, but a memory write is shown
+        message = _memory_write_message(
+            tool_name, body.get("tool_response", body.get("tool_output")))
+        return _with_message({"status": "skipped"}, message)
 
     value = _summarize_tool(tool_name, tool_input)
 
@@ -577,6 +580,110 @@ def _hook_context(event: str, context: str | None) -> dict:
     return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": context}}
 
 
+# ── Visible hook messages (opt-in: MEMCONTEXT_HOOK_VISIBLE=1) ───────────────
+# Claude Code shows a hook's `systemMessage` to the user in the terminal, so the
+# user can see what memory did for each prompt and edit. Model-facing context is
+# unchanged; this only adds the user-facing line.
+
+_VISIBLE_FACTS = 3
+_VISIBLE_VALUE_CHARS = 180
+_MEMORY_WRITE_TOOLS = frozenset({"memory_store", "memory_correct"})
+
+
+def _visible() -> bool:
+    return os.environ.get("MEMCONTEXT_HOOK_VISIBLE", "").strip() == "1"
+
+
+def _with_message(response: dict, message: str | None) -> dict:
+    if not (_visible() and message):
+        return response
+    return {**response, "systemMessage": message}
+
+
+def _short(text: str | None, limit: int = _VISIBLE_VALUE_CHARS) -> str:
+    flat = " ".join((text or "").split())
+    return flat if len(flat) <= limit else flat[: limit - 3] + "..."
+
+
+def _fact_lines(line: str) -> list[str]:
+    """'subject / predicate: value' -> two display lines."""
+    head, sep, body = line.partition(": ")
+    if not sep:
+        return [f"  {_short(line)}"]
+    return [f"  {head}", f"    -> {_short(body)}"]
+
+
+def _facts_message(title: str, facts: list[str]) -> str:
+    lines = [title]
+    for fact in facts[:_VISIBLE_FACTS]:
+        lines += _fact_lines(fact)
+    if len(facts) > _VISIBLE_FACTS:
+        lines.append(f"  (+{len(facts) - _VISIBLE_FACTS} more)")
+    return "\n".join(lines)
+
+
+def _prompt_message(response: dict) -> str:
+    facts = _injected_lines(response)
+    if not facts:
+        return "[MemContext] searched project memory: nothing relevant to this prompt"
+    return _facts_message("[MemContext] current project memory for this prompt:", facts)
+
+
+def _tool_message(tool_name: str, target: str, response: dict) -> str | None:
+    facts = _injected_lines(response)
+    if not facts:
+        return None
+    return _facts_message(f"[MemContext] in context before {tool_name} {target}:", facts[:1])
+
+
+def _tool_result_json(resp: object) -> dict | None:
+    """The JSON a memcontext MCP tool returned, from Claude Code's tool_response."""
+    import json
+
+    if isinstance(resp, dict):
+        if "claim_ids" in resp or "new_claim_id" in resp:
+            return resp
+        resp = resp.get("content")
+    if isinstance(resp, list):
+        for block in resp:
+            text = block.get("text") if isinstance(block, dict) else block
+            found = _tool_result_json(text)
+            if found:
+                return found
+        return None
+    if isinstance(resp, str):
+        with contextlib.suppress(ValueError):
+            return _tool_result_json(json.loads(resp))
+    return None
+
+
+def _memory_write_message(tool_name: str, tool_response: object) -> str | None:
+    """What a memory_store / memory_correct call stored, and what it superseded."""
+    if tool_name.rsplit("__", 1)[-1] not in _MEMORY_WRITE_TOOLS:
+        return None
+    result = _tool_result_json(tool_response)
+    if not result:
+        return None
+    from memcontext.claims import get_claim
+
+    conn = get_conn()
+    ids = [*(result.get("claim_ids") or []), *([result["new_claim_id"]] if result.get("new_claim_id") else [])]
+    lines = ["[MemContext] memory updated:"]
+    for cid in ids:
+        c = get_claim(conn, cid)
+        if c is None:
+            continue
+        slot = f"{c.subject} / {c.predicate}" if c.predicate else "(text fact)"
+        lines += [f"  stored      {slot}", f"    -> {_short(c.value or c.text)}"]
+        for edge in conn.execute(
+            "SELECT e.edge_type, o.value, o.text FROM supersession_edges e"
+            " JOIN claims o ON o.claim_id = e.old_claim_id WHERE e.new_claim_id = ?", (cid,),
+        ).fetchall():
+            lines += [f"  superseded  [{edge['edge_type']}]",
+                      f"    -> {_short(edge['value'] or edge['text'])}"]
+    return "\n".join(lines) if len(lines) > 1 else None
+
+
 def _prompt_context(prompt: str, namespace: str | None,
                     session_id: str = "hooks") -> str | None:
     """Current (non-superseded) facts relevant to the prompt, across all sessions.
@@ -649,7 +756,7 @@ def _capture_prompt(body: dict, namespace: str | None) -> dict:
         namespace=namespace or "default",
         extractor=_get_hook_extractor(),
     )
-    return response
+    return _with_message(response, _prompt_message(response))
 
 
 _TOOL_CONTEXT_MAX_LINES = 5
@@ -683,10 +790,11 @@ def _context_for_tool(body: dict, namespace: str | None) -> dict:
 
     start = time.perf_counter()
     response = _tool_context(keywords, namespace, start)
-    _record_activity("PreToolUse", tool=tool_name, target=_target(tool_input), query=keywords,
+    target = _target(tool_input)
+    _record_activity("PreToolUse", tool=tool_name, target=target, query=keywords,
                      injected=_injected_lines(response),
                      ms=round((time.perf_counter() - start) * 1000, 1))
-    return response
+    return _with_message(response, _tool_message(tool_name, target, response))
 
 
 def _tool_context(keywords: str, namespace: str | None, start: float) -> dict:
