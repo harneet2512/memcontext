@@ -491,6 +491,51 @@ def _render_context(header: str, lines: list[str], max_lines: int) -> str | None
     return header + "".join(out) if out else None
 
 
+_CONFLICT_MAX_VALUES = 4
+
+
+def _conflict_entry(rows: list) -> str:
+    """One context entry flagging several current values for one decision, newest first."""
+    from memcontext.source_trust import QUARANTINE_THRESHOLD
+
+    out = [f"CONFLICT: {len(rows)} current values recorded for the same decision (newest first)."
+           " Prefer the newest trusted value unless the user says otherwise, and store the"
+           " resolution with memory_store:"]
+    for i, r in enumerate(rows[:_CONFLICT_MAX_VALUES], start=1):
+        tags = (["newest"] if i == 1 else []) + (
+            ["untrusted source"] if r["trust"] < QUARANTINE_THRESHOLD else [])
+        line = _claim_line(r["subject"], r["predicate"], r["text"] or r["value"] or "")
+        out.append(f"    {i}. {line}" + (f"  ({', '.join(tags)})" if tags else ""))
+    return "\n".join(out)
+
+
+def _with_conflicts(candidates: list[tuple[str, str | None, str | None, str]],
+                    namespace: str | None) -> list[str]:
+    """Context entries for ranked candidates ``(claim_id, subject, predicate, line)``.
+
+    A candidate that has another CURRENT value of the same kind of decision (see
+    ``memcontext.conflicts``) becomes one CONFLICT entry listing every such value
+    newest first, at the candidate's rank. Its partners are looked up in the store,
+    not just among the ranked candidates: the newer value is often the one the
+    query did not match. Each value appears once.
+    """
+    from memcontext.conflicts import live_same_kind
+
+    conn = get_conn()
+    entries: list[str] = []
+    consumed: set[str] = set()
+    for claim_id, subject, predicate, line in candidates:
+        if claim_id in consumed:
+            continue
+        group = live_same_kind(conn, subject=subject, predicate=predicate, namespace=namespace)
+        if len(group) >= 2:
+            consumed |= {r["claim_id"] for r in group}
+            entries.append(_conflict_entry(group))
+        elif line not in entries:
+            entries.append(line)
+    return entries
+
+
 def _hook_context(event: str, context: str | None) -> dict:
     if not context:
         return {}
@@ -512,17 +557,17 @@ def _prompt_context(prompt: str, namespace: str | None) -> str | None:
         top_k=_PROMPT_CONTEXT_TOP_K, namespace=namespace, include_resolved=False,
     )
     prompt_tokens = _content_tokens(prompt)
-    lines: list[str] = []
+    candidates: list[tuple[str, str | None, str | None, str]] = []
     # ranked claims, top-level or under their served evidence (HAR-95 grouping)
     for c in iter_served_claims(result):
         if c.get("status") not in _LIVE_STATUSES or c.get("predicate") == _TOOL_ACTION_PREDICATE:
             continue
         line = _claim_line(c.get("subject"), c.get("predicate"), c.get("fact") or c.get("value") or "")
-        if line and line not in lines and prompt_tokens & _claim_match_tokens(c.get("predicate"), line):
-            lines.append(line)
+        if line and prompt_tokens & _claim_match_tokens(c.get("predicate"), line):
+            candidates.append((c["claim_id"], c.get("subject"), c.get("predicate"), line))
     return _render_context(
         "[MemContext] Current project memory relevant to this prompt:",
-        lines, _PROMPT_CONTEXT_MAX_LINES,
+        _with_conflicts(candidates, namespace), _PROMPT_CONTEXT_MAX_LINES,
     )
 
 
@@ -591,22 +636,24 @@ def _context_for_tool(body: dict, namespace: str | None) -> dict:
         return {}
 
     query_tokens = set(keywords.split())
-    scored: list[tuple[float, str]] = []
+    scored: list[tuple[float, tuple[str, str | None, str | None, str]]] = []
     for row in rows:
         c = row_to_claim(row)
         line = _claim_line(c.subject, c.predicate, c.text or c.value or "")
         overlap = len(query_tokens & _claim_match_tokens(c.predicate, line))
         if overlap > 0:
-            scored.append((overlap / len(query_tokens), line))
+            scored.append((overlap / len(query_tokens), (c.claim_id, c.subject, c.predicate, line)))
 
     if time.monotonic() - start > 0.2:
         return {}
 
     scored.sort(key=lambda x: -x[0])  # stable: ties keep newest-first order
-    lines = list(dict.fromkeys(line for _score, line in scored))
+    # same conflict flag as the prompt hook: this is the context right before an edit
+    top = [cand for _score, cand in scored][: _TOOL_CONTEXT_MAX_LINES * 2]
+    entries = _with_conflicts(top, namespace)
     return _hook_context(
         "PreToolUse",
-        _render_context("[MemContext] Relevant context:", lines, _TOOL_CONTEXT_MAX_LINES),
+        _render_context("[MemContext] Relevant context:", entries, _TOOL_CONTEXT_MAX_LINES),
     )
 
 

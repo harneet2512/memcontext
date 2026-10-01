@@ -63,3 +63,51 @@ cases, which step 2 targets.
 
 **Other consumers migrated:** `evals/product/stale_exposure.py` (with a fallback for
 checkouts that predate the change), `scripts/demo/core_memory.py` and `scripts/demo/pyright_observe.py`.
+
+## Interlude: tenant isolation (pre-existing, found by step 2's tests)
+
+`memory_query(namespace=A)` served tenant B's claims and episodes whenever both used the same
+session id (hooks default to `"hooks"`). Reproduced at `c79d380`. Fixed in `fef050a`:
+retrieval now takes the caller's namespace, and the session-keyed resolved view is withheld
+(`resolved_view_withheld`) when the session id is shared across namespaces.
+
+A read-only security audit of the same class found two HIGH issues, fixed in the next
+commit, plus LOW count leaks (reported, not fixed):
+- consolidation demoting other tenants' facts
+- the LLM extractor's context reading other tenants' turns
+
+## Step 2: the prompt hook flags two current values for the same kind of decision
+
+`memcontext/conflicts.py` defines "same kind" deterministically:
+- the same **single-valued** predicate, where the pack declares one current value per slot
+  (`decision_made`, `project_status`, `convention_established`, `file_purpose`); and
+- either the same subject, or the same project prefix (text before the last `/`) with one
+  topic's words contained in the other's.
+
+Multi-valued predicates (`blocker`, `todo`) never conflict. Two values can be current in two
+ways: in one slot, when the trust guard refuses a low-trust override, or across slots, when a
+decision is re-recorded under a new subject. In both cases the hook replaces the separate lines with
+one `CONFLICT` entry, newest first, tagged `newest` and `untrusted source`. It advises:
+prefer the newest trusted value and store the resolution. Partners are looked up in the
+store, within the namespace, not only among the ranked results, because the newer value is often
+the one the prompt did not match. The PreToolUse hook (the context right before an Edit/Write)
+uses the same entry. That goes beyond the request, and I flagged it.
+
+**What it does not catch:** paraphrased subjects with no shared words
+(`orders_svc_db` vs `orders-service_database`). In the stale-exposure `--subject-drift` set,
+**0 of 19** injections that showed both values got a CONFLICT entry. Linking paraphrases needs
+semantic subject identity (embeddings, as Pass-2 supersession uses in semantic mode). That is
+follow-up work. Note: while locating the CI-provider failure I saw one held-out recall-eval
+line. No rule here was derived from it, and a "newer turn mentions the old value" rule was
+deliberately not added for that reason.
+
+**Measurement caveat:** the MemContext conditions of the stale-exposure eval are not
+deterministic between identical runs. Two runs of the same code differ in 26/51 hook
+injections, with 4 score flips (GAP-9). Hook movements of a few questions (step 1: net −1;
+step 2: drift stale 70.7% → 65.9%) are within that noise.
+
+Tests: `tests/test_hook_conflicts.py` covers:
+- the new-subject drift case and the same-slot trust-conflict case
+- newest first, including when retrieval surfaces only the stale value
+- superseded values are not a conflict
+- multi-valued predicates, unrelated decisions and namespace scope
