@@ -1,0 +1,873 @@
+{
+ "note": "Filtered copy of per_question.json: only the D_mc_hook_injection condition, the one docs/har95/FOLLOWUPS.md cites.",
+ "D_mc_hook_injection": [
+  {
+   "q": "What database does the orders service use?",
+   "subject": "orders-service database",
+   "changed": true,
+   "current": "SQLite",
+   "cur_hit": true,
+   "stale_hit": [
+    "PostgreSQL 15"
+   ],
+   "n_items": 1,
+   "chars": 377,
+   "seconds": 0.054,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- orders_svc_db / decision_made: SQLite\n- orders-service_database / decision_made: PostgreSQL 15\n- go_service_logging_library / decision_made: zap\n- billing_service_language / decision_made: Go 1.22\n- continuous_integration_service / decision_made: GitHub Actions\n- email_delivery_service / decision_made: Amazon SES"
+   ],
+   "sha": "18605804e982"
+  },
+  {
+   "q": "Which DB should I write the orders-service migrations for?",
+   "subject": "orders-service database",
+   "changed": true,
+   "current": "SQLite",
+   "cur_hit": true,
+   "stale_hit": [
+    "PostgreSQL 15"
+   ],
+   "n_items": 1,
+   "chars": 377,
+   "seconds": 0.047,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- orders_svc_db / decision_made: SQLite\n- orders-service_database / decision_made: PostgreSQL 15\n- go_service_logging_library / decision_made: zap\n- billing_service_language / decision_made: Go 1.22\n- continuous_integration_service / decision_made: GitHub Actions\n- email_delivery_service / decision_made: Amazon SES"
+   ],
+   "sha": "18605804e982"
+  },
+  {
+   "q": "Where do we deploy the app?",
+   "subject": "deploy target",
+   "changed": true,
+   "current": "AWS ECS",
+   "cur_hit": false,
+   "stale_hit": [
+    "Render"
+   ],
+   "n_items": 1,
+   "chars": 158,
+   "seconds": 0.045,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- web_app_state_management / decision_made: Redux Toolkit\n- deploy_target / decision_made: Render"
+   ],
+   "sha": "5f8d863992e2"
+  },
+  {
+   "q": "What platform is production hosted on?",
+   "subject": "deploy target",
+   "changed": true,
+   "current": "AWS ECS",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 170,
+   "seconds": 0.039,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- production_hosting_platform / decision_made: AWS ECS\n- feature_toggles / decision_made: Unleash self-hosted"
+   ],
+   "sha": "87f07dbbe385"
+  },
+  {
+   "q": "How should list endpoints paginate results?",
+   "subject": "API pagination scheme",
+   "changed": true,
+   "current": "cursor pagination",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 118,
+   "seconds": 0.043,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- list_endpoint_paging / decision_made: cursor pagination"
+   ],
+   "sha": "9f611795ab24"
+  },
+  {
+   "q": "How do users authenticate with the API?",
+   "subject": "authentication mechanism",
+   "changed": true,
+   "current": "OAuth 2.1 with PKCE",
+   "cur_hit": false,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 267,
+   "seconds": 0.041,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- api_rate_limit / decision_made: 100 requests per minute\n- api_pagination_scheme / decision_made: offset pagination\n- public_api_style / decision_made: GraphQL\n- external_api_protocol / decision_made: gRPC"
+   ],
+   "sha": "7bc55620afe8"
+  },
+  {
+   "q": "What auth approach does the backend use?",
+   "subject": "authentication mechanism",
+   "changed": true,
+   "current": "OAuth 2.1 with PKCE",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 357,
+   "seconds": 0.043,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- backend_test_runner / decision_made: unittest\n- search_backend / decision_made: OpenSearch 2\n- user_login_auth / decision_made: OAuth 2.1 with PKCE\n- css_approach / decision_made: Tailwind CSS\n- backend_interpreter_version / decision_made: Python 3.13\n- caching_backend / decision_made: Redis 7"
+   ],
+   "sha": "0715afe12a82"
+  },
+  {
+   "q": "Which Python version does the backend run on?",
+   "subject": "Python runtime version",
+   "changed": true,
+   "current": "Python 3.13",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 374,
+   "seconds": 0.05,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- python_test_framework / decision_made: pytest\n- backend_test_runner / decision_made: unittest\n- search_backend / decision_made: OpenSearch 2\n- backend_interpreter_version / decision_made: Python 3.13\n- python_formatting_tool / decision_made: ruff format\n- javascript_runtime_version / decision_made: Node 22 LTS"
+   ],
+   "sha": "8a877d4e69e7"
+  },
+  {
+   "q": "What framework is the frontend built with?",
+   "subject": "frontend framework",
+   "changed": true,
+   "current": "Next.js 15",
+   "cur_hit": false,
+   "stale_hit": [
+    "Vite + React"
+   ],
+   "n_items": 1,
+   "chars": 214,
+   "seconds": 0.04,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- python_test_framework / decision_made: pytest\n- frontend_framework / decision_made: Vite + React\n- frontend_package_manager / decision_made: Yarn Berry"
+   ],
+   "sha": "8cb3dc255885"
+  },
+  {
+   "q": "Which CI system runs our tests?",
+   "subject": "CI provider",
+   "changed": true,
+   "current": "GitHub Actions",
+   "cur_hit": false,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 112,
+   "seconds": 0.044,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- feature_flag_system / decision_made: LaunchDarkly"
+   ],
+   "sha": "45847e7293ff"
+  },
+  {
+   "q": "Where should I add the new CI job?",
+   "subject": "CI provider",
+   "changed": true,
+   "current": "GitHub Actions",
+   "cur_hit": false,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 104,
+   "seconds": 0.039,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- background_job_runner / decision_made: RQ"
+   ],
+   "sha": "8cde24937f88"
+  },
+  {
+   "q": "Which package manager do we use for the frontend?",
+   "subject": "frontend package manager",
+   "changed": true,
+   "current": "pnpm",
+   "cur_hit": false,
+   "stale_hit": [
+    "Yarn Berry"
+   ],
+   "n_items": 1,
+   "chars": 224,
+   "seconds": 0.045,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- frontend_framework / decision_made: Vite + React\n- where_secrets_live / decision_made: AWS Secrets Manager\n- frontend_package_manager / decision_made: Yarn Berry"
+   ],
+   "sha": "45b0e6048408"
+  },
+  {
+   "q": "What logging library do the Go services use?",
+   "subject": "Go service logging library",
+   "changed": true,
+   "current": "slog",
+   "cur_hit": true,
+   "stale_hit": [
+    "zap"
+   ],
+   "n_items": 1,
+   "chars": 328,
+   "seconds": 0.042,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- client_state_library / decision_made: Zustand\n- go_service_logging_library / decision_made: zap\n- event_bus_between_services / decision_made: AWS SQS\n- structured_logger_for_go_services / decision_made: slog\n- database_access_library / decision_made: SQLAlchemy 2.0"
+   ],
+   "sha": "7166b8dcae72"
+  },
+  {
+   "q": "What message queue connects the services?",
+   "subject": "message queue",
+   "changed": true,
+   "current": "AWS SQS",
+   "cur_hit": true,
+   "stale_hit": [
+    "Kafka"
+   ],
+   "n_items": 1,
+   "chars": 322,
+   "seconds": 0.045,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- event_bus_between_services / decision_made: AWS SQS\n- async_task_queue / decision_made: Dramatiq\n- commit_message_convention / decision_made: Conventional Commits\n- message_queue / decision_made: Kafka\n- structured_logger_for_go_services / decision_made: slog"
+   ],
+   "sha": "49c9675419c5"
+  },
+  {
+   "q": "What do we use for caching?",
+   "subject": "cache layer",
+   "changed": true,
+   "current": "Redis 7",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 103,
+   "seconds": 0.038,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- caching_backend / decision_made: Redis 7"
+   ],
+   "sha": "d48b9f2baab0"
+  },
+  {
+   "q": "Which test runner should backend tests be written for?",
+   "subject": "backend test runner",
+   "changed": true,
+   "current": "pytest",
+   "cur_hit": true,
+   "stale_hit": [
+    "unittest"
+   ],
+   "n_items": 1,
+   "chars": 349,
+   "seconds": 0.047,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- python_test_framework / decision_made: pytest\n- backend_test_runner / decision_made: unittest\n- search_backend / decision_made: OpenSearch 2\n- backend_interpreter_version / decision_made: Python 3.13\n- caching_backend / decision_made: Redis 7\n- background_job_runner / decision_made: RQ"
+   ],
+   "sha": "bd5f58b1bc17"
+  },
+  {
+   "q": "Which ORM version is the backend on?",
+   "subject": "ORM",
+   "changed": true,
+   "current": "SQLAlchemy 2.0",
+   "cur_hit": false,
+   "stale_hit": [
+    "SQLAlchemy 1.4"
+   ],
+   "n_items": 1,
+   "chars": 364,
+   "seconds": 0.044,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- backend_test_runner / decision_made: unittest\n- search_backend / decision_made: OpenSearch 2\n- backend_interpreter_version / decision_made: Python 3.13\n- orm / decision_made: SQLAlchemy 1.4\n- javascript_runtime_version / decision_made: Node 22 LTS\n- python_runtime_version / decision_made: Python 3.12"
+   ],
+   "sha": "86887ad14b5c"
+  },
+  {
+   "q": "What Node version do we target?",
+   "subject": "Node.js version",
+   "changed": true,
+   "current": "Node 22 LTS",
+   "cur_hit": true,
+   "stale_hit": [
+    "Node 20 LTS"
+   ],
+   "n_items": 1,
+   "chars": 318,
+   "seconds": 0.041,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- backend_interpreter_version / decision_made: Python 3.13\n- javascript_runtime_version / decision_made: Node 22 LTS\n- python_runtime_version / decision_made: Python 3.12\n- deploy_target / decision_made: Render\n- node.js_version / decision_made: Node 20 LTS"
+   ],
+   "sha": "1abc3c7f4395"
+  },
+  {
+   "q": "What base image do our containers use?",
+   "subject": "container base image",
+   "changed": true,
+   "current": "Chainguard Wolfi",
+   "cur_hit": true,
+   "stale_hit": [
+    "distroless"
+   ],
+   "n_items": 1,
+   "chars": 165,
+   "seconds": 0.043,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- container_base_image / decision_made: distroless\n- docker_base_image / decision_made: Chainguard Wolfi"
+   ],
+   "sha": "ab583bd8fef8"
+  },
+  {
+   "q": "Where do production errors get reported?",
+   "subject": "error tracking service",
+   "changed": true,
+   "current": "Honeybadger",
+   "cur_hit": false,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 115,
+   "seconds": 0.064,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- production_hosting_platform / decision_made: AWS ECS"
+   ],
+   "sha": "4ea638a32c62"
+  },
+  {
+   "q": "Which error tracker are we on?",
+   "subject": "error tracking service",
+   "changed": true,
+   "current": "Honeybadger",
+   "cur_hit": false,
+   "stale_hit": [
+    "Rollbar"
+   ],
+   "n_items": 1,
+   "chars": 110,
+   "seconds": 0.041,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- error_tracking_service / decision_made: Rollbar"
+   ],
+   "sha": "834c5d6b556d"
+  },
+  {
+   "q": "What do we use for feature flags?",
+   "subject": "feature flag system",
+   "changed": true,
+   "current": "Unleash self-hosted",
+   "cur_hit": true,
+   "stale_hit": [
+    "LaunchDarkly"
+   ],
+   "n_items": 1,
+   "chars": 167,
+   "seconds": 0.038,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- feature_flag_system / decision_made: LaunchDarkly\n- feature_toggles / decision_made: Unleash self-hosted"
+   ],
+   "sha": "23aa3c98c438"
+  },
+  {
+   "q": "Which formatter should I run on Python code?",
+   "subject": "Python code formatter",
+   "changed": true,
+   "current": "ruff format",
+   "cur_hit": true,
+   "stale_hit": [
+    "black"
+   ],
+   "n_items": 1,
+   "chars": 382,
+   "seconds": 0.047,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- python_test_framework / decision_made: pytest\n- backend_interpreter_version / decision_made: Python 3.13\n- code_review_policy / decision_made: one approval required\n- python_formatting_tool / decision_made: ruff format\n- python_runtime_version / decision_made: Python 3.12\n- python_code_formatter / decision_made: black"
+   ],
+   "sha": "f980a8e09ad3"
+  },
+  {
+   "q": "What linter do we use for TypeScript?",
+   "subject": "TypeScript linter",
+   "changed": true,
+   "current": "Biome",
+   "cur_hit": false,
+   "stale_hit": [
+    "ESLint 9 flat config"
+   ],
+   "n_items": 1,
+   "chars": 118,
+   "seconds": 0.039,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- typescript_linter / decision_made: ESLint 9 flat config"
+   ],
+   "sha": "01f021b75c77"
+  },
+  {
+   "q": "Where are uploaded files stored?",
+   "subject": "object storage",
+   "changed": true,
+   "current": "Cloudflare R2",
+   "cur_hit": false,
+   "stale_hit": [],
+   "n_items": 0,
+   "chars": 0,
+   "seconds": 0.042,
+   "history_intent": false,
+   "served": [],
+   "sha": "e3b0c44298fc"
+  },
+  {
+   "q": "What powers product search?",
+   "subject": "search backend",
+   "changed": true,
+   "current": "Meilisearch",
+   "cur_hit": true,
+   "stale_hit": [
+    "OpenSearch 2"
+   ],
+   "n_items": 1,
+   "chars": 162,
+   "seconds": 0.04,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- search_backend / decision_made: OpenSearch 2\n- full-text_search_engine / decision_made: Meilisearch"
+   ],
+   "sha": "28c47f5a4897"
+  },
+  {
+   "q": "Which payment provider do we integrate with?",
+   "subject": "payment provider",
+   "changed": true,
+   "current": "Stripe",
+   "cur_hit": false,
+   "stale_hit": [
+    "Braintree"
+   ],
+   "n_items": 1,
+   "chars": 251,
+   "seconds": 0.042,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- dns_provider / decision_made: Cloudflare DNS\n- payment_provider / decision_made: Braintree\n- ci_provider / decision_made: Travis CI\n- transactional_email_provider / decision_made: Postmark"
+   ],
+   "sha": "83e17ea01ca6"
+  },
+  {
+   "q": "What service sends our transactional emails?",
+   "subject": "transactional email provider",
+   "changed": true,
+   "current": "Amazon SES",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 387,
+   "seconds": 0.048,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- orders-service_database / decision_made: PostgreSQL 15\n- go_service_logging_library / decision_made: zap\n- billing_service_language / decision_made: Go 1.22\n- continuous_integration_service / decision_made: GitHub Actions\n- email_delivery_service / decision_made: Amazon SES\n- error_tracking_service / decision_made: Rollbar"
+   ],
+   "sha": "e34517e4f4b7"
+  },
+  {
+   "q": "What tool manages the monorepo builds?",
+   "subject": "monorepo build tool",
+   "changed": true,
+   "current": "Turborepo",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 353,
+   "seconds": 0.043,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- ts_lint_tool / decision_made: Biome\n- monorepo_orchestration / decision_made: Turborepo\n- python_formatting_tool / decision_made: ruff format\n- on-call_paging_tool / decision_made: PagerDuty\n- exception_monitoring_tool / decision_made: Honeybadger\n- js_dependency_tool / decision_made: pnpm"
+   ],
+   "sha": "326c886d8ef9"
+  },
+  {
+   "q": "What style is our public API?",
+   "subject": "public API style",
+   "changed": true,
+   "current": "gRPC",
+   "cur_hit": true,
+   "stale_hit": [
+    "GraphQL"
+   ],
+   "n_items": 1,
+   "chars": 267,
+   "seconds": 0.044,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- api_rate_limit / decision_made: 100 requests per minute\n- api_pagination_scheme / decision_made: offset pagination\n- public_api_style / decision_made: GraphQL\n- external_api_protocol / decision_made: gRPC"
+   ],
+   "sha": "7bc55620afe8"
+  },
+  {
+   "q": "What state management library does the web app use?",
+   "subject": "web app state management",
+   "changed": true,
+   "current": "Zustand",
+   "cur_hit": true,
+   "stale_hit": [
+    "Redux Toolkit"
+   ],
+   "n_items": 1,
+   "chars": 371,
+   "seconds": 0.044,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- web_ui_stack / decision_made: Next.js 15\n- web_app_state_management / decision_made: Redux Toolkit\n- client_state_library / decision_made: Zustand\n- secrets_management / decision_made: HashiCorp Vault\n- go_service_logging_library / decision_made: zap\n- database_access_library / decision_made: SQLAlchemy 2.0"
+   ],
+   "sha": "3cd2c61fc846"
+  },
+  {
+   "q": "When do we ship releases?",
+   "subject": "release cadence",
+   "changed": true,
+   "current": "biweekly releases on Thursday",
+   "cur_hit": true,
+   "stale_hit": [
+    "weekly releases on Tuesday"
+   ],
+   "n_items": 1,
+   "chars": 188,
+   "seconds": 0.043,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- release_cadence / decision_made: weekly releases on Tuesday\n- release_schedule / decision_made: biweekly releases on Thursday"
+   ],
+   "sha": "c4c8559bba3a"
+  },
+  {
+   "q": "What is our release schedule?",
+   "subject": "release cadence",
+   "changed": true,
+   "current": "biweekly releases on Thursday",
+   "cur_hit": true,
+   "stale_hit": [
+    "weekly releases on Tuesday"
+   ],
+   "n_items": 1,
+   "chars": 188,
+   "seconds": 0.039,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- release_cadence / decision_made: weekly releases on Tuesday\n- release_schedule / decision_made: biweekly releases on Thursday"
+   ],
+   "sha": "c4c8559bba3a"
+  },
+  {
+   "q": "How many approvals does a pull request need?",
+   "subject": "code review policy",
+   "changed": true,
+   "current": "two approvals required",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 187,
+   "seconds": 0.046,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- pr_approval_rule / decision_made: two approvals required\n- request_throttling_limit / decision_made: 600 requests per minute"
+   ],
+   "sha": "dbf71a4923d2"
+  },
+  {
+   "q": "Which region is the primary deployment in?",
+   "subject": "primary cloud region",
+   "changed": true,
+   "current": "eu-central-1",
+   "cur_hit": true,
+   "stale_hit": [
+    "us-west-2"
+   ],
+   "n_items": 1,
+   "chars": 158,
+   "seconds": 0.04,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- primary_cloud_region / decision_made: us-west-2\n- main_aws_region / decision_made: eu-central-1"
+   ],
+   "sha": "8bcd4ad17d89"
+  },
+  {
+   "q": "What runs our background jobs?",
+   "subject": "background job runner",
+   "changed": true,
+   "current": "Dramatiq",
+   "cur_hit": false,
+   "stale_hit": [
+    "RQ"
+   ],
+   "n_items": 1,
+   "chars": 104,
+   "seconds": 0.045,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- background_job_runner / decision_made: RQ"
+   ],
+   "sha": "8cde24937f88"
+  },
+  {
+   "q": "Where are application secrets stored?",
+   "subject": "secrets management",
+   "changed": true,
+   "current": "AWS Secrets Manager",
+   "cur_hit": true,
+   "stale_hit": [
+    "HashiCorp Vault"
+   ],
+   "n_items": 1,
+   "chars": 172,
+   "seconds": 0.059,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- secrets_management / decision_made: HashiCorp Vault\n- where_secrets_live / decision_made: AWS Secrets Manager"
+   ],
+   "sha": "81fc785fabad"
+  },
+  {
+   "q": "How do I add a new secret for the API?",
+   "subject": "secrets management",
+   "changed": true,
+   "current": "AWS Secrets Manager",
+   "cur_hit": false,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 267,
+   "seconds": 0.058,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- api_rate_limit / decision_made: 100 requests per minute\n- api_pagination_scheme / decision_made: offset pagination\n- public_api_style / decision_made: GraphQL\n- external_api_protocol / decision_made: gRPC"
+   ],
+   "sha": "7bc55620afe8"
+  },
+  {
+   "q": "What is the maximum file upload size?",
+   "subject": "max upload size",
+   "changed": true,
+   "current": "100 MB",
+   "cur_hit": true,
+   "stale_hit": [
+    "25 MB"
+   ],
+   "n_items": 1,
+   "chars": 145,
+   "seconds": 0.067,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- max_upload_size / decision_made: 25 MB\n- upload_size_limit / decision_made: 100 MB"
+   ],
+   "sha": "3c6bbc586989"
+  },
+  {
+   "q": "How long before an idle session times out?",
+   "subject": "session timeout",
+   "changed": true,
+   "current": "8 hours",
+   "cur_hit": true,
+   "stale_hit": [
+    "15 minutes"
+   ],
+   "n_items": 1,
+   "chars": 154,
+   "seconds": 0.104,
+   "history_intent": true,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- session_timeout / decision_made: 15 minutes\n- idle_logout_duration / decision_made: 8 hours"
+   ],
+   "sha": "132b8813b679"
+  },
+  {
+   "q": "What is the API rate limit?",
+   "subject": "API rate limit",
+   "changed": true,
+   "current": "600 requests per minute",
+   "cur_hit": true,
+   "stale_hit": [
+    "100 requests per minute"
+   ],
+   "n_items": 1,
+   "chars": 379,
+   "seconds": 0.066,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- api_rate_limit / decision_made: 100 requests per minute\n- api_pagination_scheme / decision_made: offset pagination\n- upload_size_limit / decision_made: 100 MB\n- public_api_style / decision_made: GraphQL\n- request_throttling_limit / decision_made: 600 requests per minute\n- external_api_protocol / decision_made: gRPC"
+   ],
+   "sha": "00e9d1b15e50"
+  },
+  {
+   "q": "What language is the billing service written in?",
+   "subject": "billing service language",
+   "changed": false,
+   "current": "Go 1.22",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 387,
+   "seconds": 0.065,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- orders-service_database / decision_made: PostgreSQL 15\n- go_service_logging_library / decision_made: zap\n- billing_service_language / decision_made: Go 1.22\n- continuous_integration_service / decision_made: GitHub Actions\n- email_delivery_service / decision_made: Amazon SES\n- error_tracking_service / decision_made: Rollbar"
+   ],
+   "sha": "e34517e4f4b7"
+  },
+  {
+   "q": "What timezone should timestamps be stored in?",
+   "subject": "timestamp timezone",
+   "changed": false,
+   "current": "UTC everywhere",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 113,
+   "seconds": 0.069,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- timestamp_timezone / decision_made: UTC everywhere"
+   ],
+   "sha": "ace64e526c23"
+  },
+  {
+   "q": "What branching model does the team follow?",
+   "subject": "branching model",
+   "changed": false,
+   "current": "trunk-based development",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 119,
+   "seconds": 0.056,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- branching_model / decision_made: trunk-based development"
+   ],
+   "sha": "43811a4e3e95"
+  },
+  {
+   "q": "How should commit messages be formatted?",
+   "subject": "commit message convention",
+   "changed": false,
+   "current": "Conventional Commits",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 126,
+   "seconds": 0.058,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- commit_message_convention / decision_made: Conventional Commits"
+   ],
+   "sha": "8214d014b335"
+  },
+  {
+   "q": "What tool pages the on-call engineer?",
+   "subject": "on-call paging tool",
+   "changed": false,
+   "current": "PagerDuty",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 343,
+   "seconds": 0.054,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- ts_lint_tool / decision_made: Biome\n- python_formatting_tool / decision_made: ruff format\n- on-call_paging_tool / decision_made: PagerDuty\n- exception_monitoring_tool / decision_made: Honeybadger\n- js_dependency_tool / decision_made: pnpm\n- monorepo_build_tool / decision_made: Nx"
+   ],
+   "sha": "13407cd75fdb"
+  },
+  {
+   "q": "What generates the documentation site?",
+   "subject": "docs site generator",
+   "changed": false,
+   "current": "MkDocs Material",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 115,
+   "seconds": 0.058,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- docs_site_generator / decision_made: MkDocs Material"
+   ],
+   "sha": "ef22f16c0a51"
+  },
+  {
+   "q": "What do we use for infrastructure as code?",
+   "subject": "infrastructure as code tool",
+   "changed": false,
+   "current": "Terraform",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 224,
+   "seconds": 0.046,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- code_review_policy / decision_made: one approval required\n- python_code_formatter / decision_made: black\n- infrastructure_as_code_tool / decision_made: Terraform"
+   ],
+   "sha": "fb0d8d685054"
+  },
+  {
+   "q": "How is the frontend styled?",
+   "subject": "CSS approach",
+   "changed": false,
+   "current": "Tailwind CSS",
+   "cur_hit": false,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 166,
+   "seconds": 0.051,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- frontend_framework / decision_made: Vite + React\n- frontend_package_manager / decision_made: Yarn Berry"
+   ],
+   "sha": "1bd580fbd6a3"
+  },
+  {
+   "q": "Who hosts our DNS?",
+   "subject": "DNS provider",
+   "changed": false,
+   "current": "Cloudflare DNS",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 107,
+   "seconds": 0.041,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- dns_provider / decision_made: Cloudflare DNS"
+   ],
+   "sha": "fd4f642ecb2b"
+  },
+  {
+   "q": "What do we use for metrics and dashboards?",
+   "subject": "metrics stack",
+   "changed": false,
+   "current": "Prometheus and Grafana",
+   "cur_hit": true,
+   "stale_hit": [],
+   "n_items": 1,
+   "chars": 116,
+   "seconds": 0.044,
+   "history_intent": false,
+   "served": [
+    "[MemContext] Current project memory relevant to this prompt:\n- metrics_stack / decision_made: Prometheus and Grafana"
+   ],
+   "sha": "bab338e2c0fb"
+  }
+ ]
+}

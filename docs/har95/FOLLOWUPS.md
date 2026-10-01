@@ -146,3 +146,49 @@ The bare verb is not matched. In a coding assistant, "change the CI provider" or
 change the log level?" are requests, and history mode would let superseded claims take
 ranked slots. Both kinds of phrasing are tested (`tests/test_history_intent.py`).
 GAP-6 has been promoted in the baseline file.
+
+## Evals: before (`fec53a4`) and after (`826331c`), dev split only, lexical
+
+| eval | before | after |
+|---|---|---|
+| supersession matrix, deterministic | 75/91 (82.4%) | 75/91 (82.4%), identical failure list |
+| supersession matrix, semantic | 78/92 (84.8%) | 78/92 (84.8%), identical failure list |
+| recall: current answer | 10/11 | 11/11 |
+| recall: stale answer | 1/8 | 0/8 |
+| recall: correct action | 6/6 | 6/6 |
+| recall: stale action | 0/4 | 0/4 |
+| recall: answered from hook injection | 9/11 | 10/11 |
+| stale-exposure, hook stale (normal) | 0.0% | 0.0% |
+| stale-exposure, hook current (normal) | 75.6% | 75.6% |
+| stale-exposure, hook stale (subject drift) | 70.7% | 70.7% |
+| stale-exposure, hook current (subject drift) | 63.4% | 61.0% (within noise) |
+
+Notes on these numbers:
+- The supersession matrix measures ingest-side supersession, which none of these steps
+  change. It was run as a regression guard.
+- The recall "before" miss was a plumbing flake: MCP took 9.3 s to connect and the tools never
+  loaded. n = 11 scored steps with model variance, so the after-run improvement is not
+  attributable to these changes.
+- Stale exposure was not requested. I ran it because it measures the hook directly. Identical
+  runs differ in 26/51 hook injections (GAP-9).
+- Recall eval cost: $0.52 before, $0.47 after (haiku).
+
+**The most useful finding (dev split, `actually_correction`).** Claude stored a correction under
+a new subject *and* a new prefix: `project/authentication` → `auth-system/authentication-method`.
+Step 2's rule requires an equal project prefix, so the conflict flag **did not fire**. The hook
+injected both values unflagged, which is exactly the CI-provider failure shape. Claude answered
+correctly anyway, apparently because the new value text says "instead of JWTs".
+
+Loosening the rule to fit this case would be tuning to the eval. Dropping the prefix check
+would also flag `billing-api/database` vs `orders-api/database`. The deeper fix belongs at
+**capture**: when `memory_store` receives a new subject for a single-valued decision that
+resembles an existing live one, return a warning to reuse that subject, so supersession links
+the two. That, or semantic subject identity, is the recommended next step.
+
+Committed results (summaries plus the per-question data these docs cite; raw dumps are not committed):
+- `evals/product/results/claude_code_recall_20260930T232521Z_summary.json` (before) and
+  `..._20261001T004028Z_summary.json` (after): meta, totals and per-step verdicts, without transcripts.
+- `stale_exposure/{before,after}_{lex,drift}/summary.json`: the table numbers.
+- `stale_exposure/step2_drift{,_r2}/per_question_D_hook.json`: the hook condition of two
+  identical-code runs, behind the "26/51 injections differ" and "0/19 got a CONFLICT entry" claims.
+- `har95/supersession_matrix_dev_{before_fec53a4,after_826331c}.txt`: matrix tables and failure lists.

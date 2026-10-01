@@ -1,0 +1,344 @@
+{
+ "tag": "step2_drift_r2",
+ "repo": "D:\\mc-har95-next",
+ "repo_sha": "fef050a066edc59ed0ca3e033a188cb3eaf689d3",
+ "repo_sha_at_end": "fef050a066edc59ed0ca3e033a188cb3eaf689d3",
+ "mode": "lexical",
+ "layout": "per-change",
+ "subject_drift": true,
+ "backfill_claim_embeddings": false,
+ "top_k": 5,
+ "n_turns": 98,
+ "n_sessions": 98,
+ "ingest": {
+  "stored": 98,
+  "not_admitted": [],
+  "claims_created": 98,
+  "supersessions": 20,
+  "ingest_seconds": 0.1,
+  "claim_embeddings_stored": 0,
+  "turn_embeddings_stored": 0,
+  "slot_resolved": "0/34",
+  "slot_problems": [
+   {
+    "subject": "orders-service database",
+    "live": [
+     "PostgreSQL 15",
+     "SQLite"
+    ]
+   },
+   {
+    "subject": "deploy target",
+    "live": [
+     "AWS ECS",
+     "Render"
+    ]
+   },
+   {
+    "subject": "API pagination scheme",
+    "live": [
+     "cursor pagination",
+     "offset pagination"
+    ]
+   },
+   {
+    "subject": "authentication mechanism",
+    "live": [
+     "JWT access tokens",
+     "OAuth 2.1 with PKCE"
+    ]
+   },
+   {
+    "subject": "Python runtime version",
+    "live": [
+     "Python 3.12",
+     "Python 3.13"
+    ]
+   },
+   {
+    "subject": "frontend framework",
+    "live": [
+     "Next.js 15",
+     "Vite + React"
+    ]
+   },
+   {
+    "subject": "CI provider",
+    "live": [
+     "GitHub Actions",
+     "Travis CI"
+    ]
+   },
+   {
+    "subject": "frontend package manager",
+    "live": [
+     "Yarn Berry",
+     "pnpm"
+    ]
+   },
+   {
+    "subject": "Go service logging library",
+    "live": [
+     "slog",
+     "zap"
+    ]
+   },
+   {
+    "subject": "message queue",
+    "live": [
+     "AWS SQS",
+     "Kafka"
+    ]
+   },
+   {
+    "subject": "cache layer",
+    "live": [
+     "Memcached",
+     "Redis 7"
+    ]
+   },
+   {
+    "subject": "backend test runner",
+    "live": [
+     "pytest",
+     "unittest"
+    ]
+   },
+   {
+    "subject": "ORM",
+    "live": [
+     "SQLAlchemy 1.4",
+     "SQLAlchemy 2.0"
+    ]
+   },
+   {
+    "subject": "Node.js version",
+    "live": [
+     "Node 20 LTS",
+     "Node 22 LTS"
+    ]
+   },
+   {
+    "subject": "container base image",
+    "live": [
+     "Chainguard Wolfi",
+     "distroless"
+    ]
+   },
+   {
+    "subject": "error tracking service",
+    "live": [
+     "Honeybadger",
+     "Rollbar"
+    ]
+   },
+   {
+    "subject": "feature flag system",
+    "live": [
+     "LaunchDarkly",
+     "Unleash self-hosted"
+    ]
+   },
+   {
+    "subject": "Python code formatter",
+    "live": [
+     "black",
+     "ruff format"
+    ]
+   },
+   {
+    "subject": "TypeScript linter",
+    "live": [
+     "Biome",
+     "ESLint 9 flat config"
+    ]
+   },
+   {
+    "subject": "object storage",
+    "live": [
+     "AWS S3",
+     "Cloudflare R2"
+    ]
+   },
+   {
+    "subject": "search backend",
+    "live": [
+     "Meilisearch",
+     "OpenSearch 2"
+    ]
+   },
+   {
+    "subject": "payment provider",
+    "live": [
+     "Braintree",
+     "Stripe"
+    ]
+   },
+   {
+    "subject": "transactional email provider",
+    "live": [
+     "Amazon SES",
+     "Postmark"
+    ]
+   },
+   {
+    "subject": "monorepo build tool",
+    "live": [
+     "Nx",
+     "Turborepo"
+    ]
+   },
+   {
+    "subject": "public API style",
+    "live": [
+     "GraphQL",
+     "gRPC"
+    ]
+   },
+   {
+    "subject": "web app state management",
+    "live": [
+     "Redux Toolkit",
+     "Zustand"
+    ]
+   },
+   {
+    "subject": "release cadence",
+    "live": [
+     "biweekly releases on Thursday",
+     "weekly releases on Tuesday"
+    ]
+   },
+   {
+    "subject": "code review policy",
+    "live": [
+     "one approval required",
+     "two approvals required"
+    ]
+   },
+   {
+    "subject": "primary cloud region",
+    "live": [
+     "eu-central-1",
+     "us-west-2"
+    ]
+   },
+   {
+    "subject": "background job runner",
+    "live": [
+     "Dramatiq",
+     "RQ"
+    ]
+   },
+   {
+    "subject": "secrets management",
+    "live": [
+     "AWS Secrets Manager",
+     "HashiCorp Vault"
+    ]
+   },
+   {
+    "subject": "max upload size",
+    "live": [
+     "100 MB",
+     "25 MB"
+    ]
+   },
+   {
+    "subject": "session timeout",
+    "live": [
+     "15 minutes",
+     "8 hours"
+    ]
+   },
+   {
+    "subject": "API rate limit",
+    "live": [
+     "100 requests per minute",
+     "600 requests per minute"
+    ]
+   }
+  ],
+  "status_counts": {
+   "active": 78,
+   "superseded": 20
+  }
+ },
+ "history_intent_questions": [
+  "How long before an idle session times out?"
+ ],
+ "metrics": {
+  "A_bm25_turns_top5": {
+   "n_changed_q": 41,
+   "n_unchanged_q": 10,
+   "stale_exposure_pct": 80.5,
+   "current_hit_pct": 63.4,
+   "conflict_pct": 51.2,
+   "current_only_pct": 12.2,
+   "median_chars": 298,
+   "median_items": 5,
+   "distractor_current_hit_pct": 90.0,
+   "median_query_seconds": 0.0
+  },
+  "A_bm25_turns_top1": {
+   "n_changed_q": 41,
+   "n_unchanged_q": 10,
+   "stale_exposure_pct": 61.0,
+   "current_hit_pct": 24.4,
+   "conflict_pct": 0.0,
+   "current_only_pct": 24.4,
+   "median_chars": 60,
+   "median_items": 1,
+   "distractor_current_hit_pct": 90.0,
+   "median_query_seconds": 0.0
+  },
+  "B_mc_claims": {
+   "n_changed_q": 41,
+   "n_unchanged_q": 10,
+   "stale_exposure_pct": 100.0,
+   "current_hit_pct": 100.0,
+   "conflict_pct": 100.0,
+   "current_only_pct": 0.0,
+   "median_chars": 3860,
+   "median_items": 78,
+   "distractor_current_hit_pct": 100.0,
+   "median_query_seconds": 0.044
+  },
+  "B5_mc_claims_first5": {
+   "n_changed_q": 41,
+   "n_unchanged_q": 10,
+   "stale_exposure_pct": 9.8,
+   "current_hit_pct": 2.4,
+   "conflict_pct": 0.0,
+   "current_only_pct": 2.4,
+   "median_chars": 241,
+   "median_items": 5,
+   "distractor_current_hit_pct": 10.0,
+   "median_query_seconds": 0.04
+  },
+  "C_mc_claims_plus_episodes": {
+   "n_changed_q": 41,
+   "n_unchanged_q": 10,
+   "stale_exposure_pct": 100.0,
+   "current_hit_pct": 100.0,
+   "conflict_pct": 100.0,
+   "current_only_pct": 0.0,
+   "median_chars": 9968,
+   "median_items": 176,
+   "distractor_current_hit_pct": 100.0,
+   "median_query_seconds": 0.035
+  },
+  "D_mc_hook_injection": {
+   "n_changed_q": 41,
+   "n_unchanged_q": 10,
+   "stale_exposure_pct": 65.9,
+   "current_hit_pct": 65.9,
+   "conflict_pct": 46.3,
+   "current_only_pct": 19.5,
+   "median_chars": 188,
+   "median_items": 1,
+   "distractor_current_hit_pct": 90.0,
+   "median_query_seconds": 0.039
+  }
+ }
+}

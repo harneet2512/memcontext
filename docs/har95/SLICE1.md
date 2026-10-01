@@ -139,6 +139,10 @@ commit; the mutation checks above cover them.
 
 ## 11. Known limitations
 
+> **Status update:** GAP-1b, GAP-5 and GAP-6 were closed after slice 1. Three pre-existing
+> tenant-isolation bugs were also found and fixed. See [FOLLOWUPS.md](FOLLOWUPS.md). Still open:
+> GAP-7 (retraction), GAP-8 (duplicate serving), GAP-9 (lexical tie bias).
+
 - **GAP-9 (found after slice 1 was committed):** in lexical mode, five or six hybrid
   channels are nearly always tied (confidence, usage, frequency, trust, importance), and
   `_rrf_ranks` breaks ties by insertion order. Older claims win those channels, which can

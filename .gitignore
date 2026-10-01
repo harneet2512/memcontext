@@ -7,3 +7,7 @@ data/
 .agent_chrome_profile/
 .venv-clean/
 .claude/settings.json
+
+# Raw eval artifacts (HAR-95): commit summaries and the per-question files docs cite, not raw dumps
+evals/product/results/**/turns.json
+evals/product/results/supersession_matrix_*_*.json

@@ -1,0 +1,105 @@
+{
+ "tag": "after_lex",
+ "repo": "D:\\memcontext",
+ "repo_sha": "826331c1f7fe31d16c8ba13c61e454d4193faf2b",
+ "repo_sha_at_end": "826331c1f7fe31d16c8ba13c61e454d4193faf2b",
+ "mode": "lexical",
+ "layout": "per-change",
+ "subject_drift": false,
+ "backfill_claim_embeddings": false,
+ "top_k": 5,
+ "n_turns": 98,
+ "n_sessions": 98,
+ "ingest": {
+  "stored": 98,
+  "not_admitted": [],
+  "claims_created": 98,
+  "supersessions": 54,
+  "ingest_seconds": 0.1,
+  "claim_embeddings_stored": 0,
+  "turn_embeddings_stored": 0,
+  "slot_resolved": "34/34",
+  "slot_problems": [],
+  "status_counts": {
+   "active": 44,
+   "superseded": 54
+  }
+ },
+ "history_intent_questions": [
+  "How long before an idle session times out?"
+ ],
+ "metrics": {
+  "A_bm25_turns_top5": {
+   "n_changed_q": 41,
+   "n_unchanged_q": 10,
+   "stale_exposure_pct": 78.0,
+   "current_hit_pct": 80.5,
+   "conflict_pct": 73.2,
+   "current_only_pct": 7.3,
+   "median_chars": 298,
+   "median_items": 5,
+   "distractor_current_hit_pct": 90.0,
+   "median_query_seconds": 0.001
+  },
+  "A_bm25_turns_top1": {
+   "n_changed_q": 41,
+   "n_unchanged_q": 10,
+   "stale_exposure_pct": 51.2,
+   "current_hit_pct": 29.3,
+   "conflict_pct": 0.0,
+   "current_only_pct": 29.3,
+   "median_chars": 60,
+   "median_items": 1,
+   "distractor_current_hit_pct": 90.0,
+   "median_query_seconds": 0.001
+  },
+  "B_mc_claims": {
+   "n_changed_q": 41,
+   "n_unchanged_q": 10,
+   "stale_exposure_pct": 2.4,
+   "current_hit_pct": 100.0,
+   "conflict_pct": 2.4,
+   "current_only_pct": 97.6,
+   "median_chars": 2158,
+   "median_items": 44,
+   "distractor_current_hit_pct": 100.0,
+   "median_query_seconds": 0.039
+  },
+  "B5_mc_claims_first5": {
+   "n_changed_q": 41,
+   "n_unchanged_q": 10,
+   "stale_exposure_pct": 0.0,
+   "current_hit_pct": 9.8,
+   "conflict_pct": 0.0,
+   "current_only_pct": 9.8,
+   "median_chars": 222,
+   "median_items": 5,
+   "distractor_current_hit_pct": 0.0,
+   "median_query_seconds": 0.041
+  },
+  "C_mc_claims_plus_episodes": {
+   "n_changed_q": 41,
+   "n_unchanged_q": 10,
+   "stale_exposure_pct": 100.0,
+   "current_hit_pct": 100.0,
+   "conflict_pct": 100.0,
+   "current_only_pct": 0.0,
+   "median_chars": 8186,
+   "median_items": 142,
+   "distractor_current_hit_pct": 100.0,
+   "median_query_seconds": 0.038
+  },
+  "D_mc_hook_injection": {
+   "n_changed_q": 41,
+   "n_unchanged_q": 10,
+   "stale_exposure_pct": 0.0,
+   "current_hit_pct": 75.6,
+   "conflict_pct": 0.0,
+   "current_only_pct": 75.6,
+   "median_chars": 125,
+   "median_items": 1,
+   "distractor_current_hit_pct": 90.0,
+   "median_query_seconds": 0.04
+  }
+ }
+}

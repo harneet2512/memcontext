@@ -1,0 +1,66 @@
+wrote evals\product\results\supersession_matrix_deterministic_dev.json
+Fetching 30 files:   0%|          | 0/30 [00:00<?, ?it/s]Fetching 30 files: 100%|##########| 30/30 [00:00<?, ?it/s]
+You're using a XLMRobertaTokenizerFast tokenizer. Please note that with a fast tokenizer, using the `__call__` method is faster than using a method to encode the text followed by a call to the `pad` method to get a padded encoding.
+  [semantic] 20/96 cases
+  [semantic] 40/96 cases
+  [semantic] 60/96 cases
+  [semantic] 80/96 cases
+wrote evals\product\results\supersession_matrix_semantic_dev.json
+
+category                       deterministic          semantic
+--------------------------------------------------------------
+update                       6/8    75%        7/8    88%     
+update_no_overlap            6/6   100%  +1x   6/6   100%  +1x
+additive                     6/9    67%        6/9    67%     
+attribute_slot               4/7    57%        4/7    57%     
+history_window               7/7   100%        7/7   100%     
+quantity                     7/7   100%        7/7   100%     
+negation                     2/7    29%        3/7    43%     
+duplicate                    7/7   100%        7/7   100%     
+change_after_duplicates      6/7    86%        6/7    86%     
+cross_session                7/7   100%        7/7   100%     
+cross_namespace              7/7   100%        7/7   100%     
+trust_direction              5/7    71%        5/7    71%     
+out_of_order                 0/0    n/a  +2x   0/0    n/a  +2x
+nl_only                      5/5   100%  +2x   6/6   100%  +1x
+--------------------------------------------------------------
+OVERALL (scored)                75/91  82.4%      78/92  84.8%
+(+Nx = N ambiguous/expected_limitation cases, excluded)
+
+FAILURES [deterministic]
+  upd-06   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  upd-07   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  add-04   exp active=['a', 'b'] con=False | obs active=['b'] con=False | Logic memcontext/supersession.py:304
+  add-06   exp active=['a', 'b'] con=False | obs active=['b'] con=False | Logic memcontext/supersession.py:304
+  add-10   exp active=['a', 'b'] con=False | obs active=['b'] con=False | Logic memcontext/supersession.py:304
+  att-06   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  att-07   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:200
+  att-09   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  neg-02   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  neg-03   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  neg-04   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  neg-06   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  neg-07   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  cad-11   exp active=['b'] con=False | obs active=['a1', 'a2', 'b'] con=False | Logic memcontext/supersession.py:304
+  tru-05   exp active=['c'] con=False | obs active=['a', 'c'] con=False | Logic memcontext/supersession.py:346
+  tru-11   exp active=['a', 'c'] con=True | obs active=['a', 'c'] con=False | Logic memcontext/supersession.py:346
+FAILURES [semantic]
+  upd-06   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  add-04   exp active=['a', 'b'] con=False | obs active=['b'] con=False | Logic memcontext/supersession.py:304
+  add-06   exp active=['a', 'b'] con=False | obs active=['b'] con=False | Logic memcontext/supersession.py:304
+  add-10   exp active=['a', 'b'] con=False | obs active=['b'] con=False | Logic memcontext/supersession.py:304
+  att-06   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  att-07   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:200
+  att-09   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  neg-02   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  neg-04   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  neg-06   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  neg-07   exp active=['b'] con=False | obs active=['a', 'b'] con=False | Logic memcontext/supersession.py:304
+  cad-11   exp active=['b'] con=False | obs active=['a1', 'a2', 'b'] con=False | Logic memcontext/supersession.py:304
+  tru-05   exp active=['c'] con=False | obs active=['a', 'c'] con=False | Logic memcontext/supersession.py:346
+  tru-11   exp active=['a', 'c'] con=True | obs active=['a', 'c'] con=False | Logic memcontext/supersession.py:346
+
+DISAGREEMENTS deterministic vs semantic (3) -> evals\product\results\supersession_matrix_disagreements_dev.json
+  upd-07   det ok=False [] | sem ok=True  ['a->b:semantic_replace']
+  neg-03   det ok=False [] | sem ok=True  ['a->b:semantic_replace']
+  nl-06    det ok=False [] | sem ok=True  ['a->b:semantic_replace']

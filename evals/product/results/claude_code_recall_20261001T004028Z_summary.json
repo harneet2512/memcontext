@@ -1,0 +1,1855 @@
+{
+ "note": "Slim copy of the raw recall result: meta, summary and per-step verdicts; transcripts and debug logs dropped.",
+ "meta": {
+  "timestamp": "20261001T004028Z",
+  "model": "haiku",
+  "commit": "826331c1f7fe31d16c8ba13c61e454d4193faf2b",
+  "claude_version": "2.1.286 (Claude Code)",
+  "semantic": false,
+  "max_cost_usd": 5.0,
+  "run_dir": "D:/tmp/claude/D--memcontext/577da956-8da8-487b-bcf4-a29a7a638fba/scratchpad/recall_after/20261001T004028Z",
+  "dataset": "D:/memcontext/evals/product/datasets/recall_scenarios.json",
+  "scenario_ids": [
+   "db_engine_change",
+   "broker_changed_twice",
+   "two_topics_no_interference",
+   "user_vs_assistant_suggestion",
+   "actually_correction",
+   "stable_control"
+  ],
+  "claude_md": "# Project memory\n\nThis project keeps long-term memory in the `memcontext` MCP server.\n\n- Relevant memory may be injected into your context as a \"[MemContext] ...\" note.\n  Treat it as the current state of the project.\n- If you need a project decision that is not in that note, look it up with\n  `memory_query` before answering or writing code. Do not guess.\n- When the user makes or changes a project decision, record it with `memory_store`:\n  `text` = the user's statement, plus one structured claim with\n  `predicate` = \"decision_made\", `subject` = \"<project>/<topic>\" in lowercase\n  (for example \"billing-api/database\"), and `value` = the decision in a few words.\n- When a decision changes, store the new value with the SAME subject and predicate so\n  it replaces the old one. Reuse the subject already in memory; do not invent a new one.\n- Record only decisions the user made. Never store your own suggestions as decisions.\n",
+  "answer_suffix": "\n\nEnd your reply with one final line of the form `CURRENT: <value>` stating only the current value you relied on.",
+  "claude_md_sha256": "56786a7a4040f4962e8ad1c348b8e6d13b96ae76b8fa74bfdb68de6346db9e3d"
+ },
+ "summary": {
+  "sessions": 25,
+  "current_recall": {
+   "n": 11,
+   "hits": 11,
+   "rate": 1.0
+  },
+  "stale_answer": {
+   "n": 8,
+   "hits": 0,
+   "rate": 0.0
+  },
+  "action_correct": {
+   "n": 6,
+   "hits": 6,
+   "rate": 1.0
+  },
+  "stale_action": {
+   "n": 4,
+   "hits": 0,
+   "rate": 0.0
+  },
+  "step_fully_correct": {
+   "n": 11,
+   "hits": 11,
+   "rate": 1.0
+  },
+  "injection_hit": {
+   "n": 11,
+   "hits": 10,
+   "rate": 0.909
+  },
+  "tool_fallback": {
+   "n": 11,
+   "hits": 1,
+   "rate": 0.091
+  },
+  "state_steps_db_ok": {
+   "n": 14,
+   "hits": 13,
+   "rate": 0.929
+  },
+  "source_counts": {
+   "injection": 10,
+   "tool": 1,
+   "file": 0,
+   "none": 0
+  },
+  "failures_by_layer": {
+   "capture": 1
+  },
+  "total_cost_usd": 0.473,
+  "mean_cost_usd": 0.0189,
+  "mean_wall_s": 12.0
+ },
+ "scenarios": [
+  {
+   "id": "db_engine_change",
+   "split": "dev",
+   "steps": [
+    {
+     "index": 0,
+     "kind": "capture",
+     "prompt": "We've made a call on storage: this service will use PostgreSQL as its database. Please record that decision.",
+     "expect": {
+      "current": "postgres",
+      "stale": null,
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Done! I've recorded the decision that this service will use PostgreSQL as its database in the project memory.",
+     "cost_usd": 0.030865800000000002,
+     "num_turns": 4,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 16.9,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [
+       {
+        "text": "We've made a call on storage: this service will use PostgreSQL as its database.",
+        "claims": [
+         {
+          "predicate": "decision_made",
+          "subject": "service/database",
+          "value": "PostgreSQL"
+         }
+        ],
+        "speaker": "user"
+       }
+      ],
+      "source": "none"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_ff20d8a5dd89",
+       "subject": "service/database",
+       "predicate": "decision_made",
+       "value": "PostgreSQL",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 3
+      },
+      "post_tool_use": {
+       "200": 3
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 6690
+    },
+    {
+     "index": 1,
+     "kind": "recall",
+     "prompt": "Which database engine does this service use?\n\nEnd your reply with one final line of the form `CURRENT: <value>` stating only the current value you relied on.",
+     "expect": {
+      "current": "postgres",
+      "stale": null,
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "According to the project memory, this service uses **PostgreSQL** as its database engine.\n\nCURRENT: PostgreSQL",
+     "cost_usd": 0.010654,
+     "num_turns": 1,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 7.8,
+     "evidence": {
+      "injected_current": true,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [],
+      "source": "injection"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_ff20d8a5dd89",
+       "subject": "service/database",
+       "predicate": "decision_made",
+       "value": "PostgreSQL",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- service/database / decision_made: PostgreSQL"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": null
+    },
+    {
+     "index": 2,
+     "kind": "change",
+     "prompt": "Change of plan: we're moving this service's database from PostgreSQL to SQLite to keep deployment simple. Please record the new decision.",
+     "expect": {
+      "current": "sqlite",
+      "stale": [
+       "postgres"
+      ],
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Done! I've recorded the database decision change. The new decision **SQLite** has replaced the previous **PostgreSQL** decision for `service/database`. The memory system confirms 1 supersession\u2014the old decision was replaced with the new one.",
+     "cost_usd": 0.0312228,
+     "num_turns": 6,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 26.4,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": true,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [
+       {
+        "text": "We're moving this service's database from PostgreSQL to SQLite to keep deployment simple.",
+        "claims": [
+         {
+          "predicate": "decision_made",
+          "subject": "service/database",
+          "value": "SQLite"
+         }
+        ]
+       }
+      ],
+      "source": "none"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_ff20d8a5dd89",
+       "subject": "service/database",
+       "predicate": "decision_made",
+       "value": "PostgreSQL",
+       "status": "superseded",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_298394e6ff3d",
+       "subject": "service/database",
+       "predicate": "decision_made",
+       "value": "SQLite",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- service/database / decision_made: PostgreSQL"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 5
+      },
+      "post_tool_use": {
+       "200": 4
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 7030
+    },
+    {
+     "index": 3,
+     "kind": "act",
+     "prompt": "Create config/db.py containing a single line DB_ENGINE = \"<engine>\" with the lowercase name of the database engine we currently use.\n\nEnd your reply with one final line of the form `CURRENT: <value>` stating only the current value you relied on.",
+     "expect": {
+      "current": "sqlite",
+      "stale": [
+       "postgres"
+      ],
+      "also_live": null,
+      "file": "config/db.py",
+      "var": "DB_ENGINE"
+     },
+     "final": "CURRENT: sqlite",
+     "cost_usd": 0.015390000000000001,
+     "num_turns": 2,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 10.3,
+     "evidence": {
+      "injected_current": true,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [],
+      "source": "injection"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_ff20d8a5dd89",
+       "subject": "service/database",
+       "predicate": "decision_made",
+       "value": "PostgreSQL",
+       "status": "superseded",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_298394e6ff3d",
+       "subject": "service/database",
+       "predicate": "decision_made",
+       "value": "SQLite",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- service/database / decision_made: SQLite"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 1
+      },
+      "post_tool_use": {
+       "200": 1
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 7049
+    }
+   ]
+  },
+  {
+   "id": "broker_changed_twice",
+   "split": "dev",
+   "steps": [
+    {
+     "index": 0,
+     "kind": "capture",
+     "prompt": "Decision: we'll use RabbitMQ as the message broker for publishing order events. Please record it.",
+     "expect": {
+      "current": "rabbitmq",
+      "stale": null,
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Done! I've recorded your decision to use RabbitMQ as the message broker for publishing order events in the project memory. This will be available for reference in future work.",
+     "cost_usd": 0.0219081,
+     "num_turns": 3,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 15.1,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [
+       {
+        "text": "We'll use RabbitMQ as the message broker for publishing order events.",
+        "claims": [
+         {
+          "predicate": "decision_made",
+          "subject": "order-events/message-broker",
+          "value": "use RabbitMQ"
+         }
+        ]
+       }
+      ],
+      "source": "none"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_2e28017b6f3b",
+       "subject": "order-events/message-broker",
+       "predicate": "decision_made",
+       "value": "use RabbitMQ",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 2
+      },
+      "post_tool_use": {
+       "200": 2
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 6741
+    },
+    {
+     "index": 1,
+     "kind": "change",
+     "prompt": "We've reconsidered the message broker: switching from RabbitMQ to Kafka for its replay support. Please update the decision.",
+     "expect": {
+      "current": "kafka",
+      "stale": [
+       "rabbitmq"
+      ],
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Done! The project decision has been updated: **order-events/message-broker** is now set to **use Kafka** instead of RabbitMQ, reflecting the replay support requirement.",
+     "cost_usd": 0.021767099999999998,
+     "num_turns": 3,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 14.7,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": true,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [
+       {
+        "text": "Switching message broker from RabbitMQ to Kafka for its replay support capabilities.",
+        "claims": [
+         {
+          "subject": "order-events/message-broker",
+          "predicate": "decision_made",
+          "value": "use Kafka"
+         }
+        ]
+       }
+      ],
+      "source": "none"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_2e28017b6f3b",
+       "subject": "order-events/message-broker",
+       "predicate": "decision_made",
+       "value": "use RabbitMQ",
+       "status": "superseded",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_481e15e8cdb4",
+       "subject": "order-events/message-broker",
+       "predicate": "decision_made",
+       "value": "use Kafka",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- order-events/message-broker / decision_made: use RabbitMQ"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 2
+      },
+      "post_tool_use": {
+       "200": 2
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 7671
+    },
+    {
+     "index": 2,
+     "kind": "recall",
+     "prompt": "What message broker are we publishing order events to?\n\nEnd your reply with one final line of the form `CURRENT: <value>` stating only the current value you relied on.",
+     "expect": {
+      "current": "kafka",
+      "stale": [
+       "rabbitmq"
+      ],
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "According to the project memory, we're publishing order events to **Kafka**.\n\nCURRENT: Kafka",
+     "cost_usd": 0.010873,
+     "num_turns": 1,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 8.3,
+     "evidence": {
+      "injected_current": true,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [],
+      "source": "injection"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_2e28017b6f3b",
+       "subject": "order-events/message-broker",
+       "predicate": "decision_made",
+       "value": "use RabbitMQ",
+       "status": "superseded",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_481e15e8cdb4",
+       "subject": "order-events/message-broker",
+       "predicate": "decision_made",
+       "value": "use Kafka",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- order-events/message-broker / decision_made: use Kafka"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": null
+    },
+    {
+     "index": 3,
+     "kind": "change",
+     "prompt": "One more change on the broker: Kafka is too heavy for our ops team, so we're going with NATS instead. Record that.",
+     "expect": {
+      "current": "nats",
+      "stale": [
+       "kafka",
+       "rabbitmq"
+      ],
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Done. The broker decision has been updated in memory from Kafka to NATS, replacing the previous decision.",
+     "cost_usd": 0.020504599999999998,
+     "num_turns": 3,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 12.8,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": true,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [
+       {
+        "text": "Changing message broker decision: Kafka is too heavy for ops team, switching to NATS instead.",
+        "claims": [
+         {
+          "subject": "order-events/message-broker",
+          "predicate": "decision_made",
+          "value": "NATS"
+         }
+        ]
+       }
+      ],
+      "source": "none"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_2e28017b6f3b",
+       "subject": "order-events/message-broker",
+       "predicate": "decision_made",
+       "value": "use RabbitMQ",
+       "status": "superseded",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_481e15e8cdb4",
+       "subject": "order-events/message-broker",
+       "predicate": "decision_made",
+       "value": "use Kafka",
+       "status": "superseded",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_56c1d6da240e",
+       "subject": "order-events/message-broker",
+       "predicate": "decision_made",
+       "value": "NATS",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- order-events/message-broker / decision_made: use Kafka"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 2
+      },
+      "post_tool_use": {
+       "200": 2
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 6485
+    },
+    {
+     "index": 4,
+     "kind": "act",
+     "prompt": "Write config/broker.py with one line BROKER = \"<name>\" (lowercase) for the message broker we currently use.\n\nEnd your reply with one final line of the form `CURRENT: <value>` stating only the current value you relied on.",
+     "expect": {
+      "current": "nats",
+      "stale": [
+       "kafka",
+       "rabbitmq"
+      ],
+      "also_live": null,
+      "file": "config/broker.py",
+      "var": "BROKER"
+     },
+     "final": "Done. Created config/broker.py with the current broker setting based on the project memory.\n\nCURRENT: nats",
+     "cost_usd": 0.015228199999999999,
+     "num_turns": 2,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 9.0,
+     "evidence": {
+      "injected_current": true,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [],
+      "source": "injection"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_2e28017b6f3b",
+       "subject": "order-events/message-broker",
+       "predicate": "decision_made",
+       "value": "use RabbitMQ",
+       "status": "superseded",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_481e15e8cdb4",
+       "subject": "order-events/message-broker",
+       "predicate": "decision_made",
+       "value": "use Kafka",
+       "status": "superseded",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_56c1d6da240e",
+       "subject": "order-events/message-broker",
+       "predicate": "decision_made",
+       "value": "NATS",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- order-events/message-broker / decision_made: NATS"
+      },
+      {
+       "event": "PreToolUse",
+       "context": "[MemContext] Relevant context:\n- order-events/message-broker / decision_made: NATS"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 1
+      },
+      "post_tool_use": {
+       "200": 1
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5873
+    }
+   ]
+  },
+  {
+   "id": "two_topics_no_interference",
+   "split": "dev",
+   "steps": [
+    {
+     "index": 0,
+     "kind": "capture",
+     "prompt": "Frontend decision: the UI will be built with Svelte. Please record it.",
+     "expect": {
+      "current": "svelte",
+      "stale": null,
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Done! I've recorded the frontend framework decision to project memory: **UI will be built with Svelte**. This will be available for reference in future work on this project.",
+     "cost_usd": 0.0220974,
+     "num_turns": 3,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 14.1,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [
+       {
+        "text": "Frontend decision: the UI will be built with Svelte.",
+        "claims": [
+         {
+          "predicate": "decision_made",
+          "subject": "frontend/ui-framework",
+          "value": "Svelte"
+         }
+        ]
+       }
+      ],
+      "source": "none"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_a36ec3bf7414",
+       "subject": "frontend/ui-framework",
+       "predicate": "decision_made",
+       "value": "Svelte",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 2
+      },
+      "post_tool_use": {
+       "200": 2
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5617
+    },
+    {
+     "index": 1,
+     "kind": "capture",
+     "prompt": "Separate decision, about hosting: we'll deploy this app on Fly.io. Please record it.",
+     "expect": {
+      "current": "flyio",
+      "stale": null,
+      "also_live": [
+       "svelte"
+      ],
+      "file": null,
+      "var": null
+     },
+     "final": "Done. I've recorded that you'll deploy this app on Fly.io in the project memory.",
+     "cost_usd": 0.021326900000000003,
+     "num_turns": 3,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 12.4,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [
+       {
+        "text": "User decision: deploy this app on Fly.io",
+        "claims": [
+         {
+          "predicate": "decision_made",
+          "subject": "app/hosting",
+          "value": "Fly.io"
+         }
+        ]
+       }
+      ],
+      "source": "none"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_a36ec3bf7414",
+       "subject": "frontend/ui-framework",
+       "predicate": "decision_made",
+       "value": "Svelte",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_fbaab1aec68f",
+       "subject": "app/hosting",
+       "predicate": "decision_made",
+       "value": "Fly.io",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 2
+      },
+      "post_tool_use": {
+       "200": 2
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5609
+    },
+    {
+     "index": 2,
+     "kind": "change",
+     "prompt": "Hosting update: we're moving deployment from Fly.io to Render. Please record the change.",
+     "expect": {
+      "current": "render",
+      "stale": [
+       "flyio"
+      ],
+      "also_live": [
+       "svelte"
+      ],
+      "file": null,
+      "var": null
+     },
+     "final": "Done! I've updated the project memory to record that the hosting platform is changing from Fly.io to Render. The previous decision has been superseded with the new one.",
+     "cost_usd": 0.0201953,
+     "num_turns": 3,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 11.2,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": true,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [
+       {
+        "text": "Hosting update: we're moving deployment from Fly.io to Render.",
+        "claims": [
+         {
+          "subject": "app/hosting",
+          "predicate": "decision_made",
+          "value": "Render"
+         }
+        ]
+       }
+      ],
+      "source": "none"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_a36ec3bf7414",
+       "subject": "frontend/ui-framework",
+       "predicate": "decision_made",
+       "value": "Svelte",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_fbaab1aec68f",
+       "subject": "app/hosting",
+       "predicate": "decision_made",
+       "value": "Fly.io",
+       "status": "superseded",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_bc4bff0b03f2",
+       "subject": "app/hosting",
+       "predicate": "decision_made",
+       "value": "Render",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- app/hosting / decision_made: Fly.io"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 2
+      },
+      "post_tool_use": {
+       "200": 2
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5638
+    },
+    {
+     "index": 3,
+     "kind": "act",
+     "prompt": "Create config/frontend.py with one line UI_FRAMEWORK = \"<name>\" (lowercase) naming the frontend framework we decided on.\n\nEnd your reply with one final line of the form `CURRENT: <value>` stating only the current value you relied on.",
+     "expect": {
+      "current": "svelte",
+      "stale": null,
+      "also_live": null,
+      "file": "config/frontend.py",
+      "var": "UI_FRAMEWORK"
+     },
+     "final": "Done. Created config/frontend.py with the UI framework decision from project memory.\n\nCURRENT: svelte",
+     "cost_usd": 0.0156016,
+     "num_turns": 2,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 8.4,
+     "evidence": {
+      "injected_current": true,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [],
+      "source": "injection"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_a36ec3bf7414",
+       "subject": "frontend/ui-framework",
+       "predicate": "decision_made",
+       "value": "Svelte",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_fbaab1aec68f",
+       "subject": "app/hosting",
+       "predicate": "decision_made",
+       "value": "Fly.io",
+       "status": "superseded",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_bc4bff0b03f2",
+       "subject": "app/hosting",
+       "predicate": "decision_made",
+       "value": "Render",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- frontend/ui-framework / decision_made: Svelte"
+      },
+      {
+       "event": "PreToolUse",
+       "context": "[MemContext] Relevant context:\n- frontend/ui-framework / decision_made: Svelte"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 1
+      },
+      "post_tool_use": {
+       "200": 1
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5594
+    },
+    {
+     "index": 4,
+     "kind": "recall",
+     "prompt": "Where are we deploying this app now?\n\nEnd your reply with one final line of the form `CURRENT: <value>` stating only the current value you relied on.",
+     "expect": {
+      "current": "render",
+      "stale": [
+       "flyio"
+      ],
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Based on the project memory, the app is currently being deployed to **Render**.\n\nCURRENT: Render",
+     "cost_usd": 0.010894000000000001,
+     "num_turns": 1,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 7.5,
+     "evidence": {
+      "injected_current": true,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [],
+      "source": "injection"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_a36ec3bf7414",
+       "subject": "frontend/ui-framework",
+       "predicate": "decision_made",
+       "value": "Svelte",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_fbaab1aec68f",
+       "subject": "app/hosting",
+       "predicate": "decision_made",
+       "value": "Fly.io",
+       "status": "superseded",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_bc4bff0b03f2",
+       "subject": "app/hosting",
+       "predicate": "decision_made",
+       "value": "Render",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- app/hosting / decision_made: Render"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5599
+    }
+   ]
+  },
+  {
+   "id": "user_vs_assistant_suggestion",
+   "split": "dev",
+   "steps": [
+    {
+     "index": 0,
+     "kind": "capture",
+     "prompt": "We've decided to build this API with FastAPI. Please record that decision.",
+     "expect": {
+      "current": "fastapi",
+      "stale": null,
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Done! I've recorded that the decision has been made to build this API with FastAPI. The decision is now stored in your project memory and will be available for future context.",
+     "cost_usd": 0.024425,
+     "num_turns": 4,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 13.7,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [
+       {
+        "text": "We've decided to build this API with FastAPI.",
+        "claims": [
+         {
+          "predicate": "decision_made",
+          "subject": "api/framework",
+          "value": "FastAPI"
+         }
+        ],
+        "speaker": "user"
+       }
+      ],
+      "source": "none"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_bb8f87f01bd5",
+       "subject": "api/framework",
+       "predicate": "decision_made",
+       "value": "FastAPI",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 3
+      },
+      "post_tool_use": {
+       "200": 3
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5575
+    },
+    {
+     "index": 1,
+     "kind": "suggest",
+     "prompt": "Play devil's advocate for a moment: make the strongest case, in three sentences, for switching this API to Flask. This is only a thought exercise, not a decision; don't change anything.",
+     "expect": {
+      "current": "fastapi",
+      "stale": [
+       "flask"
+      ],
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Here's the strongest case for Flask:\n\n**Flask's simplicity and maturity mean you'd get a production-ready API with less boilerplate and a vastly larger pool of tutorials, Stack Overflow answers, and developers who already know it deeply\u2014FastAPI's advantages only pay off if you're actually using async endpoints, type validation, or auto-generated OpenAPI docs at scale.** **Flask's minimal abstractions force explicit code that's easier to debug and reason about, especially for a small team, whereas FastAPI's \"magic\" around dependency injection and auto-validation can obscure what's actually happening when something breaks.** **Flask's ecosystem is proven in thousands of production systems, so you'd be choosing predictability and long-term maintainability over chasing a newer framework that might have its API or community support change in three years.**\n\nThat said, FastAPI won the decision presumably because async support, type safety, or rapid validation matter for your use case. But that's the strongest counterargument you'd encounter.",
+     "cost_usd": 0.011795,
+     "num_turns": 1,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 9.7,
+     "evidence": {
+      "injected_current": true,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [],
+      "source": "injection"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_bb8f87f01bd5",
+       "subject": "api/framework",
+       "predicate": "decision_made",
+       "value": "FastAPI",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- api/framework / decision_made: FastAPI"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5611
+    },
+    {
+     "index": 2,
+     "kind": "recall",
+     "prompt": "Which web framework is this API built on?\n\nEnd your reply with one final line of the form `CURRENT: <value>` stating only the current value you relied on.",
+     "expect": {
+      "current": "fastapi",
+      "stale": [
+       "flask"
+      ],
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Based on the project memory, the API is built on **FastAPI**.\n\nCURRENT: FastAPI",
+     "cost_usd": 0.010629,
+     "num_turns": 1,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 6.3,
+     "evidence": {
+      "injected_current": true,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [],
+      "source": "injection"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_bb8f87f01bd5",
+       "subject": "api/framework",
+       "predicate": "decision_made",
+       "value": "FastAPI",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- api/framework / decision_made: FastAPI"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": null
+    },
+    {
+     "index": 3,
+     "kind": "act",
+     "prompt": "Create config/web.py with one line WEB_FRAMEWORK = \"<name>\" (lowercase) for the web framework we're using.\n\nEnd your reply with one final line of the form `CURRENT: <value>` stating only the current value you relied on.",
+     "expect": {
+      "current": "fastapi",
+      "stale": [
+       "flask"
+      ],
+      "also_live": null,
+      "file": "config/web.py",
+      "var": "WEB_FRAMEWORK"
+     },
+     "final": "Done. Created config/web.py with the FastAPI framework setting from the project memory.\n\nCURRENT: fastapi",
+     "cost_usd": 0.0161314,
+     "num_turns": 2,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 9.4,
+     "evidence": {
+      "injected_current": true,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [],
+      "source": "injection"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_bb8f87f01bd5",
+       "subject": "api/framework",
+       "predicate": "decision_made",
+       "value": "FastAPI",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- api/framework / decision_made: FastAPI"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 1
+      },
+      "post_tool_use": {
+       "200": 1
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5581
+    }
+   ]
+  },
+  {
+   "id": "actually_correction",
+   "split": "dev",
+   "steps": [
+    {
+     "index": 0,
+     "kind": "capture",
+     "prompt": "For authentication we'll use JWTs (JSON Web Tokens). Please record that decision.",
+     "expect": {
+      "current": "jwt",
+      "stale": null,
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Done! I've recorded the decision that the project will use **JWTs (JSON Web Tokens) for authentication**. This is now stored in the project memory for future reference.",
+     "cost_usd": 0.0220852,
+     "num_turns": 3,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 15.2,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [
+       {
+        "text": "For authentication we'll use JWTs (JSON Web Tokens).",
+        "claims": [
+         {
+          "predicate": "decision_made",
+          "subject": "project/authentication",
+          "value": "JWT (JSON Web Tokens)"
+         }
+        ]
+       }
+      ],
+      "source": "none"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_9ce385ecf69d",
+       "subject": "project/authentication",
+       "predicate": "decision_made",
+       "value": "JWT (JSON Web Tokens)",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 2
+      },
+      "post_tool_use": {
+       "200": 2
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5650
+    },
+    {
+     "index": 1,
+     "kind": "change",
+     "prompt": "Actually, scratch that: we'll use server-side session cookies for auth, not JWTs.",
+     "expect": {
+      "current": "cookie",
+      "stale": [
+       "jwt"
+      ],
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Got it\u2014recorded that you're using server-side session cookies for auth instead of JWTs.",
+     "cost_usd": 0.0194974,
+     "num_turns": 3,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 10.3,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [
+       {
+        "text": "User decision: Using server-side session cookies for authentication instead of JWTs.",
+        "claims": [
+         {
+          "subject": "auth-system/authentication-method",
+          "predicate": "decision_made",
+          "value": "server-side session cookies instead of JWTs"
+         }
+        ],
+        "speaker": "user"
+       }
+      ],
+      "source": "none"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_9ce385ecf69d",
+       "subject": "project/authentication",
+       "predicate": "decision_made",
+       "value": "JWT (JSON Web Tokens)",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_0e8a22ba5149",
+       "subject": "auth-system/authentication-method",
+       "predicate": "decision_made",
+       "value": "server-side session cookies instead of JWTs",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 2
+      },
+      "post_tool_use": {
+       "200": 2
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5622
+    },
+    {
+     "index": 2,
+     "kind": "act",
+     "prompt": "Create config/auth.py with one line AUTH_METHOD = \"<method>\" where the method is \"jwt\" or \"session_cookie\", per our auth decision.\n\nEnd your reply with one final line of the form `CURRENT: <value>` stating only the current value you relied on.",
+     "expect": {
+      "current": "cookie",
+      "stale": [
+       "jwt"
+      ],
+      "also_live": null,
+      "file": "config/auth.py",
+      "var": "AUTH_METHOD"
+     },
+     "final": "Done. Created `config/auth.py` with the authentication method set based on the project decision.\n\nCURRENT: session_cookie",
+     "cost_usd": 0.018379,
+     "num_turns": 2,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 12.3,
+     "evidence": {
+      "injected_current": true,
+      "injected_stale": true,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [],
+      "source": "injection"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_9ce385ecf69d",
+       "subject": "project/authentication",
+       "predicate": "decision_made",
+       "value": "JWT (JSON Web Tokens)",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_0e8a22ba5149",
+       "subject": "auth-system/authentication-method",
+       "predicate": "decision_made",
+       "value": "server-side session cookies instead of JWTs",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- project/authentication / decision_made: JWT (JSON Web Tokens)\n- auth-system/authentication-method / decision_made: server-side session cookies instead of JWTs"
+      },
+      {
+       "event": "PreToolUse",
+       "context": "[MemContext] Relevant context:\n- auth-system/authentication-method / decision_made: server-side session cookies instead of JWTs"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 1
+      },
+      "post_tool_use": {
+       "200": 1
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5590
+    },
+    {
+     "index": 3,
+     "kind": "recall",
+     "prompt": "How do users authenticate with this service?\n\nEnd your reply with one final line of the form `CURRENT: <value>` stating only the current value you relied on.",
+     "expect": {
+      "current": "cookie",
+      "stale": [
+       "jwt"
+      ],
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Based on the project memory, I found a clear decision about authentication for this chat-relay service.\n\nThe project has decided to use **server-side session cookies** for authentication. This decision replaced an earlier approach that was considering JWTs (JSON Web Tokens), but the user clarified that server-side session cookies would be used instead.\n\nCURRENT: server-side session cookies",
+     "cost_usd": 0.0290738,
+     "num_turns": 6,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 17.7,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": false,
+      "tool_called": true,
+      "tool_current": true,
+      "tool_errors": [],
+      "stored": [],
+      "source": "tool"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_9ce385ecf69d",
+       "subject": "project/authentication",
+       "predicate": "decision_made",
+       "value": "JWT (JSON Web Tokens)",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      },
+      {
+       "claim_id": "cl_0e8a22ba5149",
+       "subject": "auth-system/authentication-method",
+       "predicate": "decision_made",
+       "value": "server-side session cookies instead of JWTs",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 5
+      },
+      "post_tool_use": {
+       "200": 5
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5612
+    }
+   ]
+  },
+  {
+   "id": "stable_control",
+   "split": "dev",
+   "steps": [
+    {
+     "index": 0,
+     "kind": "capture",
+     "prompt": "We'll build the documentation site with MkDocs. Please record that decision.",
+     "expect": {
+      "current": "mkdocs",
+      "stale": null,
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Done! I've recorded the decision that the documentation site will be built with MkDocs in the project memory.",
+     "cost_usd": 0.0206391,
+     "num_turns": 3,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 11.8,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [
+       {
+        "text": "Building the documentation site with MkDocs.",
+        "claims": [
+         {
+          "predicate": "decision_made",
+          "subject": "documentation-site/builder",
+          "value": "MkDocs"
+         }
+        ]
+       }
+      ],
+      "source": "none"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_c031ccfb866b",
+       "subject": "documentation-site/builder",
+       "predicate": "decision_made",
+       "value": "MkDocs",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 2
+      },
+      "post_tool_use": {
+       "200": 2
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5616
+    },
+    {
+     "index": 1,
+     "kind": "other",
+     "prompt": "Add a CONTRIBUTING.md file with three short lines of contribution guidelines.",
+     "expect": {
+      "current": "mkdocs",
+      "stale": null,
+      "also_live": null,
+      "file": null,
+      "var": null
+     },
+     "final": "Done. I've created a CONTRIBUTING.md file with three practical contribution guidelines covering branching strategy, commit quality, and the pull request process.",
+     "cost_usd": 0.0155409,
+     "num_turns": 2,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 9.2,
+     "evidence": {
+      "injected_current": false,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [],
+      "source": "none"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_c031ccfb866b",
+       "subject": "documentation-site/builder",
+       "predicate": "decision_made",
+       "value": "MkDocs",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 1
+      },
+      "post_tool_use": {
+       "200": 1
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5626
+    },
+    {
+     "index": 2,
+     "kind": "act",
+     "prompt": "Create config/docs.py with one line DOCS_TOOL = \"<name>\" (lowercase) for the documentation generator we chose.\n\nEnd your reply with one final line of the form `CURRENT: <value>` stating only the current value you relied on.",
+     "expect": {
+      "current": "mkdocs",
+      "stale": null,
+      "also_live": null,
+      "file": "config/docs.py",
+      "var": "DOCS_TOOL"
+     },
+     "final": "Done. Created config/docs.py with the MkDocs configuration based on the project memory.\n\nCURRENT: mkdocs",
+     "cost_usd": 0.0162756,
+     "num_turns": 2,
+     "is_error": false,
+     "timed_out": false,
+     "wall_s": 10.0,
+     "evidence": {
+      "injected_current": true,
+      "injected_stale": false,
+      "tool_called": false,
+      "tool_current": false,
+      "tool_errors": [],
+      "stored": [],
+      "source": "injection"
+     },
+     "claims_after": [
+      {
+       "claim_id": "cl_c031ccfb866b",
+       "subject": "documentation-site/builder",
+       "predicate": "decision_made",
+       "value": "MkDocs",
+       "status": "active",
+       "session_id": "default",
+       "speaker": "user"
+      }
+     ],
+     "injected": [
+      {
+       "event": "UserPromptSubmit",
+       "context": "[MemContext] Current project memory relevant to this prompt:\n- documentation-site/builder / decision_made: MkDocs"
+      }
+     ],
+     "hook_http": {
+      "user_prompt_submit": {
+       "200": 1
+      },
+      "pre_tool_use": {
+       "200": 1
+      },
+      "post_tool_use": {
+       "200": 1
+      },
+      "stop": {
+       "200": 1
+      }
+     },
+     "mcp_connect_ms": 5646
+    }
+   ]
+  }
+ ]
+}
