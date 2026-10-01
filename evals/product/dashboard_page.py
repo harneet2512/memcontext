@@ -103,6 +103,23 @@ a { color: var(--accent); text-decoration: none; }
 .tile .vs { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 9px; }
 .tile .vs b { color: var(--fg2); font-variant-numeric: tabular-nums; }
 
+/* card visuals */
+.viz { min-height: 34px; display: grid; align-content: center; }
+.arms { display: grid; gap: 5px; }
+.arms div { display: grid; grid-template-columns: 112px minmax(0, 1fr) 40px; gap: 8px; align-items: center; font-size: 11.5px; color: var(--muted); }
+.arms .tr { height: 6px; background: var(--hover); border-radius: 3px; overflow: hidden; }
+.arms .tr i { display: block; height: 100%; border-radius: 3px; min-width: 2px; }
+.arms span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arms b { font-weight: 600; color: var(--fg2); text-align: right; font-variant-numeric: tabular-nums; }
+.dots { display: grid; grid-template-columns: repeat(15, 1fr); gap: 3px; max-width: 220px; }
+.dots i { aspect-ratio: 1; border-radius: 2px; background: var(--hover); border: 1px solid var(--line); }
+.checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; font-size: 12px; color: var(--fg2); }
+.checks span::before { content: "\2713"; color: var(--good); font-weight: 700; margin-right: 6px; }
+.checks span.no::before { content: "\2715"; color: var(--bad); }
+.stack { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 2px; }
+.spark { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 11.5px; color: var(--muted); }
+.spark svg { width: 100%; height: 30px; display: block; }
+
 /* issues */
 .issues { display: grid; }
 .iss { border-bottom: 1px solid var(--line); }
@@ -221,6 +238,39 @@ $("nav").append(navButton("overview", "Overview"), el("div", "grp", "Evals"));
 D.evals.forEach(e => $("nav").append(navButton(e.eval, e.title, e.status)));
 $("foot").textContent = "Built " + when(D.generated_utc);
 
+/* ---------- card visuals ---------- */
+function vizEl(c) {
+  const box = el("div", "viz");
+  if (!c) return box;
+  if (c.type === "arms") {
+    const g = el("div", "arms");
+    c.rows.forEach(r => { const d = el("div"), tr = el("span", "tr"), i = el("i");
+      i.style.width = Math.max(0, Math.min(100, r.pct || 0)) + "%"; i.style.background = col(r.tone); tr.append(i);
+      d.append(el("span", null, r.label), tr, el("b", null, r.value)); g.append(d); });
+    box.append(g);
+  } else if (c.type === "dots") {
+    const g = el("div", "dots");
+    for (let k = 0; k < c.n; k++) { const i = el("i"); if (k < c.hits) { i.style.background = col(c.tone); i.style.borderColor = "transparent"; } g.append(i); }
+    box.append(g);
+  } else if (c.type === "checks") {
+    const g = el("div", "checks"); c.items.forEach(it => g.append(el("span", it.ok ? "" : "no", it.label))); box.append(g);
+  } else if (c.type === "stack") {
+    const g = el("div", "stack"), tot = c.parts.reduce((a, p) => a + p.value, 0) || 1;
+    c.parts.forEach(p => { const i = el("i"); i.style.flex = String(p.value / tot); i.style.background = col(p.tone); g.append(i); });
+    box.append(g);
+  } else if (c.type === "spark") {
+    const NS = "http://www.w3.org/2000/svg", W = 160, H = 30, v = c.values, mx = Math.max(...v, 1), mn = Math.min(...v, 0);
+    const x = k => 3 + k * (W - 6) / Math.max(1, v.length - 1), y = val => 3 + (H - 6) * (1 - (val - mn) / ((mx - mn) || 1));
+    const svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("preserveAspectRatio", "none");
+    const pl = document.createElementNS(NS, "polyline");
+    pl.setAttribute("points", v.map((val, k) => x(k) + "," + y(val)).join(" ")); pl.setAttribute("fill", "none");
+    pl.setAttribute("stroke", col(c.tone)); pl.setAttribute("stroke-width", "2"); pl.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.append(pl);
+    const g = el("div", "spark"); g.append(el("span", null, c.from || ""), svg, el("span", null, c.to || "")); box.append(g);
+  }
+  return box;
+}
+
 /* ---------- overview ---------- */
 const ov = el("section", "view"); views.overview = ov;
 {
@@ -248,8 +298,7 @@ const ov = el("section", "view"); views.overview = ov;
   for (const e of D.evals) {
     const t = el("button", "tile"); t.type = "button"; t.onclick = () => show(e.eval);
     const top = el("div", "top"); top.append(el("span", "nm", e.title), pill(e.status));
-    t.append(top, el("div", "big", e.headline.value), el("div", "lb", e.short || e.headline.label));
-    if (e.headline.baseline) { const vs = el("div", "vs"); vs.append(e.vs_label || "Baseline", ": ", el("b", null, e.headline.baseline.value)); t.append(vs); }
+    t.append(top, el("div", "big", e.headline.value), el("div", "lb", e.short || e.headline.label), vizEl(e.card));
     grid.append(t);
   }
   ov.append(grid);

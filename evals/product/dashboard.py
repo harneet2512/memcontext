@@ -282,6 +282,62 @@ def _auto_chart(e: dict) -> None:
         e["charts"] = [{"type": "hbar", "title": "Metrics", "unit": "%", "items": items}]
 
 
+ARM_NAMES = {"memcontext": "MemContext", "notes": "Decisions file", "self_notes": "Claude's own notes",
+             "none": "Claude's own notes"}
+
+
+def _split(value: str) -> tuple[int, int] | None:
+    m = re.fullmatch(r"\s*(\d+)\s*/\s*(\d+)\s*", str(value))
+    return (int(m[1]), int(m[2])) if m else None
+
+
+def _normalize_ab(e: dict) -> None:
+    """A/B headline: the MemContext arm's number, with the best other arm as the baseline."""
+    by = e["headline"].get("by_arm")
+    if not by or "memcontext" not in by:
+        return
+    others = {k: v for k, v in by.items() if k != "memcontext"}
+    best = min(others, key=lambda k: (_split(others[k]) or (0, 1))[0] / max(1, (_split(others[k]) or (0, 1))[1]))
+    e["headline"].update({"value": by["memcontext"], "pct": _pct_of(by["memcontext"]),
+                          "baseline": {"label": ARM_NAMES.get(best, best), "value": others[best],
+                                       "pct": _pct_of(others[best])}})
+    e["vs_label"] = ARM_NAMES.get(best, best)
+    e["card"] = {"type": "arms", "rows": [{"label": ARM_NAMES.get(k, k), "value": v, "pct": _pct_of(v) or 0,
+                                           "tone": "accent" if k == "memcontext" else "base"} for k, v in by.items()]}
+
+
+def card_spec(e: dict) -> dict | None:
+    """A small visual per eval card, chosen to fit what that eval measures."""
+    h, name = e["headline"], e["eval"]
+    if e.get("card"):
+        return e["card"]
+    if name == "stale_exposure" and h.get("baseline"):
+        return {"type": "arms", "rows": [{"label": "MemContext", "value": h["value"], "pct": h["pct"], "tone": "good"},
+                                         {"label": "Plain search", "value": h["baseline"]["value"],
+                                          "pct": h["baseline"]["pct"], "tone": "bad"}]}
+    if name == "scale" and e.get("series", {}).get("hook_current_pct"):
+        return {"type": "spark", "values": e["series"]["hook_current_pct"], "tone": "bad",
+                "from": f"{e['series']['sizes'][0]:,}", "to": f"{e['series']['sizes'][-1]:,} stored"}
+    if name == "claude_code_recall":
+        chart = (e.get("charts") or [{}])[0]
+        stale = next((s for s in chart.get("series", []) if "Outdated" in s["name"]), None)
+        if stale:
+            return {"type": "spark", "values": stale["values"], "tone": "warn", "from": "run 1",
+                    "to": f"run {len(stale['values'])}"}
+    if name == "provenance_trace":
+        return {"type": "checks", "items": [{"label": m["name"], "ok": m.get("status") == "pass"}
+                                            for m in e.get("metrics", [])[:4]]}
+    split = _split(h["value"])
+    if not split:
+        return None
+    hits, n = split
+    if n <= 40:
+        bad = h.get("better") == "lower"
+        return {"type": "dots", "n": n, "hits": hits, "tone": "bad" if bad else "good"}
+    return {"type": "stack", "parts": [{"value": hits, "tone": "good" if h.get("better") == "higher" else "bad"},
+                                       {"value": n - hits, "tone": "base"}]}
+
+
 def finalize(e: dict) -> dict:
     """Status per metric and per eval; the eval is the worst of its headline and any gate metric."""
     if e["eval"] == "scale":
@@ -302,6 +358,11 @@ def finalize(e: dict) -> dict:
     e.setdefault("short", SHORT.get(e["eval"], ""))
     e.setdefault("vs_label", VS.get(e["eval"], "Baseline"))
     e.setdefault("n", None)
+    if e["eval"] == "recall_ab":
+        _normalize_ab(e)
+        e["headline"]["better"] = "lower"
+        e["status"] = grade(e["headline"]["pct"], "lower")
+    e["card"] = card_spec(e)
     e["commit"] = (e.get("commit") or "")[:10]
     ts = str(e.get("timestamp_utc") or "")
     if re.fullmatch(r"\d{8}T\d{6}Z", ts):  # compact run ids, e.g. 20261001T012926Z
