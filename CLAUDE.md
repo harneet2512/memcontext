@@ -12,21 +12,28 @@ There is exactly **one product branch: `master` (main)**. Everything that *is*
 the product — the `memcontext/` package, its unit tests, `predicate_packs/`,
 product docs — lives and ships on `master`.
 
+**Product evals live on `master` too:** `evals/product/` (stale exposure,
+supersession matrix, real-embedder canary, Claude Code recall) checks MemContext's
+own promises and evolves with the product, so it ships beside it. Its dev/held-out
+split and the rules in `evals/product/README.md` keep it from becoming a tuning
+target. Commit eval summaries and the per-question files docs cite, not raw dumps.
+
 The other branches are **not** the product:
 - a **feature-trial** branch — where new feature trials are explored
 - a **release-hardening** branch — pre-release stabilization
 - **all other branches are trials** — and trials are **reproducible benchmark
   artifacts**: self-contained so anyone can download the branch and re-run the
-  trial to verify the result. Benchmark harnesses, eval scripts, run configs,
-  dataset wiring, and trial scratch live here, never on `master`.
+  trial to verify the result. Benchmark harnesses (LongMemEval, AMB), their eval
+  scripts, run configs, dataset wiring, and trial scratch live here, never on `master`.
 
 **The rule:** product code is released to **`master`**. Do **NOT** make a product
 release on a trial/benchmark branch — those exist to be reproduced and checked,
 not to ship from. When product work was done on a trial branch, promote *only the
 product files* (`memcontext/`, `tests/`, `predicate_packs/`, product docs) to
-`master`; leave `evals/`, benchmark harnesses, and trial artifacts on the trial
-branch. This is the structural side of the Anti-Overfitting / benchmark-isolation
-rule: the product and the instrument that measures it never share a branch.
+`master`; leave benchmark harnesses (anything under `evals/` except `evals/product/`)
+and trial artifacts on the trial branch. This is the structural side of the
+Anti-Overfitting / benchmark-isolation rule: the product and the external benchmark
+that measures it never share a branch.
 
 ## Project Structure
 
