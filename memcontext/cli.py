@@ -241,6 +241,36 @@ def brain(db: str, session: str, pack: str, as_json: bool) -> None:
         click.echo(format_world_state(ws))
 
 
+@main.command("watch")
+@click.option("--db", default="memcontext.db", help="Database file path.")
+@click.option("--interval", default=2.0, help="Refresh every N seconds.")
+@click.option("--limit", default=5, help="Rows per section.")
+@click.option("--width", default=100, help="Maximum line width.")
+@click.option("--once", is_flag=True, default=False, help="Print one snapshot and exit.")
+def watch(db: str, interval: float, limit: int, width: int, once: bool) -> None:
+    """Live view of the memory pipeline: captured -> decisions -> changes -> served."""
+    import time
+
+    from memcontext.schema import open_database
+    from memcontext.watch import render_memory_view
+
+    conn = open_database(db)
+    try:
+        while True:
+            view = render_memory_view(conn, limit=limit, width=width,
+                                      title=os.path.basename(db))
+            if once:
+                click.echo(view)
+                return
+            click.clear()
+            click.echo(view)
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        conn.close()
+
+
 @main.command()
 @click.option("--db", default="memcontext.db", help="Database file path.")
 @click.option("--session", default="default", help="Session ID.")
