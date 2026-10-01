@@ -139,6 +139,17 @@ commit; the mutation checks above cover them.
 
 ## 11. Known limitations
 
+- **GAP-9 (found after slice 1 was committed):** in lexical mode, five or six hybrid
+  channels are nearly always tied (confidence, usage, frequency, trust, importance), and
+  `_rrf_ranks` breaks ties by insertion order. Older claims win those channels, which can
+  outweigh BM25. Claims created in the same millisecond also come back in random-id order.
+  As a result, `test_state_question_still_serves_current_state`, reported as passing in
+  slice 1, was **flaky (3 of 12 runs failed)**: Acme's current status sits at the `top_k`
+  cut. The test now checks state with a non-binding `top_k`. The bias is pinned as a
+  strict xfail in `tests/test_lexical_tie_bias.py`. Sharing ranks between ties fixes it
+  but re-ranks every query (12 tests move), so it needs a ranking decision and a
+  benchmark re-run.
+
 - **GAP-1b:** budget-level slot dedup needs a documented migration of `claims` consumers (the hooks).
 - **GAP-5:** `memory_trace(subject, predicate)` picks the newest active claim, even a quarantined one.
 - **GAP-6:** "how did X change" does not switch on history mode, so evolution questions need `memory_trace`.

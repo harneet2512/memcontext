@@ -203,12 +203,18 @@ def test_served_episodes_carry_trust(sc):
             assert 0.0 <= e["trust"] <= 1.0
 
 
-def test_state_question_still_serves_current_state(sc):
-    out = handle_memory_query(sc.conn, query=Q_STATUS, session_id=SESSION)
-    confirmed = [c for c in out["claims"] if c["fact"] == "acme renewal_status confirmed"]
-    confirmed += [c for e in out["episodes"] for c in e["claims"]
-                  if c["fact"] == "acme renewal_status confirmed"]
+def test_state_question_serves_current_state_never_the_superseded_value(sc):
+    """top_k covers the whole store, so this checks state, not the lexical cut:
+    whether Acme's status ranks inside a tight cut is GAP-9 (insertion-order ties)."""
+    out = handle_memory_query(sc.conn, query=Q_STATUS, session_id=SESSION, top_k=60)
+    top = out["claims"]
+    nested = [c for e in out["episodes"] for c in e["claims"]]
+    confirmed = [c for c in top + nested if c["fact"] == "acme renewal_status confirmed"]
     assert confirmed and all(c["status"] == "active" for c in confirmed)
+    # the superseded value is never served as ranked state, only as marked history
+    assert all(c["fact"] != "acme renewal_status probable" for c in top)
+    assert all(c["status"] == "superseded" for c in nested
+               if c["fact"] == "acme renewal_status probable")
 
 
 @pytest.mark.parametrize("question", QUESTIONS)
