@@ -234,7 +234,14 @@ def handle_memory_query(
             conn, session_id=session_id, query=query, top_k=top_k, explain=explain,
             include_superseded=history, namespace=namespace,
         )
-        total = len(list_active_claims(conn, session_id))
+        active = list_active_claims(conn, session_id)
+        if namespace is not None:  # a colliding session id must not reveal another tenant
+            mine = {r[0] for r in conn.execute(
+                "SELECT turn_id FROM turns WHERE session_id = ? AND namespace = ?",
+                (session_id, namespace),
+            ).fetchall()}
+            active = [c for c in active if c.source_turn_id in mine]
+        total = len(active)
     else:
         # Every session that has episodes — episodes exist even when a session's
         # facts are absent/pending (the Tier-1 floor), so scope by turns, not claims.
@@ -253,10 +260,17 @@ def handle_memory_query(
             conn, session_ids=sids, query=query, top_k=top_k, explain=explain,
             include_superseded=history, namespace=namespace,
         )
-        total = conn.execute(
-            "SELECT COUNT(*) FROM claims"
-            " WHERE status IN ('active','confirmed','audited')"
-        ).fetchone()[0]
+        if namespace is not None:  # the store size of other tenants is not the caller's
+            total = conn.execute(
+                "SELECT COUNT(*) FROM claims c JOIN turns t ON t.turn_id = c.source_turn_id"
+                " WHERE c.status IN ('active','confirmed','audited') AND t.namespace = ?",
+                (namespace,),
+            ).fetchone()[0]
+        else:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM claims"
+                " WHERE status IN ('active','confirmed','audited')"
+            ).fetchone()[0]
 
     max_score = hits[0][1] if hits and hits[0][1] > 0 else 1.0
 

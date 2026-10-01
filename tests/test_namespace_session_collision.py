@@ -69,3 +69,18 @@ def test_unshared_session_keeps_its_resolved_view():
                                  "value": "Docker Compose"}])
     out = handle_memory_query(c, query="How do we deploy?", session_id="own", namespace="tenantA")
     assert "world_state" in out and "resolved_view_withheld" not in out
+
+
+@pytest.mark.parametrize("session_id", [None, "shared"])
+def test_total_counts_only_the_callers_namespace(conn, session_id):
+    """`total` must not reveal the size of another tenant's store."""
+    handle_memory_store(conn, text="Decision: logs go to Loki.", session_id="other",
+                        namespace="tenantB",
+                        claims=[{"subject": "log sink", "predicate": "user_fact", "value": "Loki"}])
+    out = handle_memory_query(conn, query="How do we deploy?", session_id=session_id,
+                              namespace="tenantA")
+    assert out["total"] == 1  # tenantA's one active claim; tenantB holds two
+
+
+def test_unscoped_total_is_unchanged(conn):
+    assert handle_memory_query(conn, query="How do we deploy?")["total"] == 2
