@@ -239,6 +239,9 @@ def live(repo: Path, db: Path, port: int) -> None:
 
     token = secrets.token_urlsafe(24)
     env = _env(token)
+    activity = work / "hook_activity.jsonl"
+    activity.write_text("", encoding="utf-8")  # each take starts with an empty feed
+    env["MEMCONTEXT_HOOK_ACTIVITY_LOG"] = str(activity)
     _run(["hooks", "install", "--port", str(port), "--project-dir", str(repo)], env)
 
     mcp_path = repo / ".mcp.json"
@@ -268,12 +271,30 @@ def live(repo: Path, db: Path, port: int) -> None:
         f"claude --setting-sources project,local --append-system-prompt \"{LIVE_BRIEF}\" %*\r\n",
         encoding="utf-8")
 
+    _check_claude_sees_memcontext(repo)
     print(f"live session ready: {repo}")
     print(f"  memory db : {db}  (backup: {backup})")
     print(f"  start     : {work / 'start-claude.cmd'}")
-    print(f"  watch     : memcontext watch --db \"{db}\"")
+    print(f"  watch     : memcontext watch --db \"{db}\" --activity \"{activity}\"")
     print(f"  good take : python {Path(__file__).name} finish --db \"{db}\"   (keeps memory)")
     print(f"  bad take  : python {Path(__file__).name} restore --db \"{db}\"  (rolls memory back)")
+
+
+def _check_claude_sees_memcontext(repo: Path) -> None:
+    """Ask Claude Code itself whether the memcontext MCP server connects in this repo."""
+    claude = shutil.which("claude")
+    if claude is None:
+        print("  check     : claude CLI not found; skipped the MCP connection check")
+        return
+    try:
+        out = subprocess.run([claude, "mcp", "list"], cwd=repo, capture_output=True,
+                             text=True, encoding="utf-8", timeout=120).stdout
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SystemExit(f"MCP connection check failed to run: {type(exc).__name__}") from exc
+    line = next((ln for ln in out.splitlines() if ln.startswith("memcontext")), "")
+    if "Connected" not in line:
+        raise SystemExit(f"Claude Code cannot connect to memcontext in {repo}: {line or out[-300:]}")
+    print("  check     : Claude Code -> memcontext MCP: connected")
 
 
 def restore(repo: Path, db: Path) -> None:
