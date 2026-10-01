@@ -1,0 +1,162 @@
+{
+ "eval": "provenance_trace",
+ "title": "Provenance integrity",
+ "promise": "Current, not stale: when a decision changes, the old value is kept as traceable history, never lost and never served as current.",
+ "question": "When a decision has changed, does memory_trace give back its complete, correctly ordered history, each version tied to the message that said it?",
+ "method": "44 hand-written decision histories (34 changed 1-2 times, 10 never changed) stored through the public API, one structured decision_made claim per message; then the real memory_trace tool (handle_memory_trace, session 'default') per history. Scored against documented behaviour, not current output. Deterministic, lexical mode, no LLM.",
+ "commit": "7ce571adc8a5b3937234723b038d2490c36a6f04",
+ "product_code_dirty": false,
+ "timestamp_utc": "2026-10-01T20:06:10+00:00",
+ "deterministic": true,
+ "headline": {
+  "label": "changed decisions with a fully correct trace",
+  "value": "34/34",
+  "pct": 100.0,
+  "better": "higher"
+ },
+ "metrics": [
+  {
+   "name": "complete",
+   "value": "34/34",
+   "pct": 100.0,
+   "n": 34,
+   "definition": "the trace holds exactly the history's values, one version each",
+   "better": "higher"
+  },
+  {
+   "name": "ordered",
+   "value": "34/34",
+   "pct": 100.0,
+   "n": 34,
+   "definition": "versions in decision order; exactly one live version, the current one",
+   "better": "higher"
+  },
+  {
+   "name": "grounded",
+   "value": "34/34",
+   "pct": 100.0,
+   "n": 34,
+   "definition": "each version's source message contains that version's value",
+   "better": "higher"
+  },
+  {
+   "name": "edges",
+   "value": "34/34",
+   "pct": 100.0,
+   "n": 34,
+   "definition": "each older version superseded by the next with the documented edge type",
+   "better": "higher"
+  },
+  {
+   "name": "unchanged-correct",
+   "value": "10/10",
+   "pct": 100.0,
+   "n": 10,
+   "definition": "a never-changed decision traces to one live version, no supersession",
+   "better": "higher"
+  }
+ ],
+ "tables": [
+  {
+   "title": "Checks passed by layout (changed decisions)",
+   "columns": [
+    "layout",
+    "n",
+    "complete",
+    "ordered",
+    "grounded",
+    "edges",
+    "fully correct",
+    "unchanged correct",
+    "label"
+   ],
+   "rows": [
+    [
+     "per-change",
+     34,
+     34,
+     34,
+     34,
+     34,
+     34,
+     "10/10",
+     "normal"
+    ],
+    [
+     "epoch",
+     34,
+     34,
+     34,
+     34,
+     34,
+     34,
+     "10/10",
+     "normal"
+    ]
+   ]
+  },
+  {
+   "title": "Stress: subject drift (final change saved under a reworded subject)",
+   "columns": [
+    "condition",
+    "n",
+    "old subject traces to current value",
+    "new subject has full history",
+    "old subject's trace flags the new value",
+    "label"
+   ],
+   "rows": [
+    [
+     "subject drift (stress)",
+     34,
+     0,
+     0,
+     0,
+     "expected_limitation"
+    ]
+   ]
+  },
+  {
+   "title": "Edge types on the per-change traces",
+   "columns": [
+    "edge type",
+    "count"
+   ],
+   "rows": [
+    [
+     "user_correction",
+     54
+    ]
+   ]
+  }
+ ],
+ "examples": [
+  {
+   "kind": "correct",
+   "subject": "orders-service database",
+   "versions": [
+    {
+     "value": "PostgreSQL 15",
+     "status": "superseded",
+     "source_text": "Decision: we will use PostgreSQL 15 for the orders-service database.",
+     "edge": "user_correction"
+    },
+    {
+     "value": "SQLite",
+     "status": "active",
+     "source_text": "Update: going forward, the orders-service database is SQLite.",
+     "edge": "active"
+    }
+   ]
+  }
+ ],
+ "limits": [
+  "Hand-written synthetic histories, one author; every value is stored as a structured claim, so extraction quality is not tested here.",
+  "All changes come from the user; assistant-sourced changes and the trust guard are covered by the supersession matrix, not this eval.",
+  "Subject drift is an expected limitation: decisions are linked by subject name, not by meaning."
+ ],
+ "findings": [
+  "subject drift: trace of the original subject still names the outdated value as current in 34/34 histories; the new subject's trace has no history in 34/34; the old subject's trace lists the newer value under conflicts in 0/34 (LIPI Logic: decisions are linked by subject words, memcontext/conflicts.py:51 live_same_kind; reworded subjects share none)",
+  "coverage gap: no history changes to a token-subset of its old value, so the REFINES edge (memcontext/supersession.py:52) is never exercised here"
+ ]
+}

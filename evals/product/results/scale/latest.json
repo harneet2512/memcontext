@@ -1,0 +1,232 @@
+{
+ "eval": "scale",
+ "title": "Scale",
+ "promise": "Current, not stale, at any memory size, without making every prompt slower or longer.",
+ "question": "As unrelated decisions pile up, does the Claude Code hook still inject only current values, still find them, and stay small and fast?",
+ "method": "44 scored decision histories (41 changed-fact questions) interleaved in time with N unrelated decisions (N = 0, 250, 500, 1000, 2000), all stored through handle_memory_store; questions asked through http_server._prompt_context (the hook) and BM25 over every stored turn (top 5). Lexical mode.",
+ "commit": "7ce571adc8a5b3937234723b038d2490c36a6f04",
+ "product_code_dirty": false,
+ "product_dirty_files": [],
+ "timestamp_utc": "2026-10-01T20:07:39+00:00",
+ "deterministic": true,
+ "deterministic_note": "Scores are deterministic; latency and ingest time are wall-clock on this machine.",
+ "headline": {
+  "label": "Outdated values injected with 2,000 unrelated decisions in memory",
+  "value": "0/41",
+  "pct": 0.0,
+  "better": "lower"
+ },
+ "metrics": [
+  {
+   "name": "Hook stale exposure",
+   "value": "0/41",
+   "pct": 0.0,
+   "n": 41,
+   "better": "lower",
+   "definition": "Changed-fact questions whose injected context contains an outdated value, at N=2,000."
+  },
+  {
+   "name": "Hook current-value hit",
+   "value": "17/41",
+   "pct": 41.5,
+   "n": 41,
+   "better": "higher",
+   "definition": "Changed-fact questions whose injected context contains the current value, at N=2,000."
+  },
+  {
+   "name": "BM25 stale exposure (baseline)",
+   "value": "32/41",
+   "pct": 78.0,
+   "n": 41,
+   "better": "lower",
+   "definition": "Same questions, BM25 top 5 over every stored turn, at N=2,000."
+  },
+  {
+   "name": "Hook latency p95",
+   "value": "273.12 ms",
+   "pct": null,
+   "n": 51,
+   "better": "lower",
+   "definition": "95th percentile wall time of one prompt-hook call (warm)."
+  },
+  {
+   "name": "Median injected context",
+   "value": "119 chars",
+   "pct": null,
+   "n": 51,
+   "better": "lower",
+   "definition": "Median characters the hook adds to a prompt."
+  },
+  {
+   "name": "Ingest cost",
+   "value": "25.78 ms/turn",
+   "pct": null,
+   "n": 2098,
+   "better": "lower",
+   "definition": "Mean wall time of handle_memory_store per stored turn."
+  }
+ ],
+ "tables": [
+  {
+   "title": "By memory size",
+   "columns": [
+    "decisions in memory",
+    "hook stale",
+    "hook current",
+    "BM25 stale",
+    "median injected chars",
+    "p95 injected chars",
+    "hook p50 ms",
+    "hook p95 ms",
+    "ingest ms/turn",
+    "false CONFLICT warnings"
+   ],
+   "rows": [
+    [
+     "44",
+     "0/41",
+     "31/41",
+     "32/41",
+     113,
+     218,
+     1.49,
+     2.66,
+     1.96,
+     "0/51"
+    ],
+    [
+     "294",
+     "0/41",
+     "31/41",
+     "33/41",
+     115,
+     454,
+     10.58,
+     47.21,
+     3.56,
+     "1/51"
+    ],
+    [
+     "544",
+     "0/41",
+     "28/41",
+     "33/41",
+     117,
+     474,
+     20.56,
+     97.24,
+     6.66,
+     "1/51"
+    ],
+    [
+     "1,044",
+     "0/41",
+     "23/41",
+     "32/41",
+     117,
+     720,
+     37.59,
+     220.38,
+     12.29,
+     "4/51"
+    ],
+    [
+     "2,044",
+     "0/41",
+     "17/41",
+     "32/41",
+     119,
+     463,
+     49.22,
+     273.12,
+     25.78,
+     "1/51"
+    ]
+   ]
+  }
+ ],
+ "series": {
+  "sizes": [
+   0,
+   250,
+   500,
+   1000,
+   2000
+  ],
+  "hook_stale_pct": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "hook_current_pct": [
+   75.6,
+   75.6,
+   68.3,
+   56.1,
+   41.5
+  ],
+  "bm25_stale_pct": [
+   78.0,
+   80.5,
+   80.5,
+   78.0,
+   78.0
+  ],
+  "hook_p95_ms": [
+   2.66,
+   47.21,
+   97.24,
+   220.38,
+   273.12
+  ],
+  "median_chars": [
+   113,
+   115,
+   117,
+   117,
+   119
+  ],
+  "db_mb": [
+   0.32,
+   0.53,
+   0.75,
+   1.13,
+   1.9
+  ],
+  "slot_resolved": [
+   "34/34",
+   "34/34",
+   "34/34",
+   "34/34",
+   "34/34"
+  ],
+  "false_conflicts": [
+   0,
+   1,
+   1,
+   4,
+   1
+  ],
+  "ingest_ms_per_turn": [
+   1.96,
+   3.56,
+   6.66,
+   12.29,
+   25.78
+  ]
+ },
+ "limits": [
+  "Distractors are template-generated, single-valued decisions; real memories also change and carry longer free text.",
+  "Lexical mode only; semantic mode would add embedding cost per turn.",
+  "Measures what the hook injects, not the model's final answer.",
+  "Latency is one machine, one process, warm cache."
+ ],
+ "findings": [
+  "Current-value hit falls from 31/41 to 17/41 at 2,000 unrelated decisions while storage stays correct (34/34 slots resolved). Diagnosed at 7ce571a, Logic: the hook scores only the 500 newest live claims (memcontext/http_server.py:768 _TOOL_CONTEXT_ROW_LIMIT, applied at :777), so an older current decision is never a candidate.",
+  "1/51 prompts get a false CONFLICT warning at 2,000 decisions. Diagnosed at 7ce571a, Logic: unprefixed subjects all share prefix '' and a subset of topic words counts as the same decision, so 'message queue' matches 'inventory worker message queue' (memcontext/conflicts.py:44).",
+  "Hook p95 latency grows from 2.66 ms to 273.12 ms. Diagnosed at 7ce571a, Implementation: each injected candidate re-reads every live claim of its predicate and regex-compares subjects (memcontext/conflicts.py:51 live_same_kind, called per candidate from memcontext/http_server.py:550 _with_conflicts).",
+  "Ingest cost per stored turn grows from 1.96 ms to 25.78 ms (linear per store, quadratic in total). Diagnosed at 7ce571a, Implementation: the subject-drift warning rescans every live subject and recomputes corpus word statistics on every store (memcontext/mcp_tools.py:117 _subject_drift -> memcontext/conflicts.py:227 similar_subjects, :207 _corpus_common_words); importance.recompute_all_importance (memcontext/on_new_turn.py:326) rescans all claims periodically."
+ ]
+}

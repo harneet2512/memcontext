@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>MemContext Stale Exposure</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600;700&display=swap">
+<style>
+/* Layout: verdict first (two scorecards, one square per question), then one question opened up side by side. */
+:root {
+  color-scheme: dark;
+  --bg: #0e1116; --panel: #161b23; --line: #263040; --fg: #e6ebf2; --muted: #8f9bb0;
+  --stale: #ff6b5e; --stale-bg: rgba(255, 107, 94, .15);
+  --fresh: #43d18a; --fresh-bg: rgba(67, 209, 138, .15);
+  --empty: #2f3a4b; --focus: #8fb3ff;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f5f7fa; --panel: #ffffff; --line: #dde3ec; --fg: #141a23; --muted: #5a667a;
+    --stale: #c9372c; --stale-bg: rgba(201, 55, 44, .1);
+    --fresh: #13804b; --fresh-bg: rgba(19, 128, 75, .1);
+    --empty: #d3dae5; --focus: #2f5bd3;
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f7fa; --panel: #ffffff; --line: #dde3ec; --fg: #141a23; --muted: #5a667a;
+  --stale: #c9372c; --stale-bg: rgba(201, 55, 44, .1);
+  --fresh: #13804b; --fresh-bg: rgba(19, 128, 75, .1);
+  --empty: #d3dae5; --focus: #2f5bd3;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 var(--sans); }
+main { max-width: 1240px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 40px;
+  display: grid; gap: 18px; }
+h1 { font-size: clamp(24px, 3vw, 32px); line-height: 1.2; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 6px 0 0; max-width: 75ch; }
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.card, .detail { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  padding: 20px 22px; min-width: 0; }
+.card h2 { font-size: 16px; font-weight: 600; margin: 0; }
+.card .how { color: var(--muted); font-size: 13px; margin: 2px 0 14px; font-family: var(--mono); }
+.big { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.big .n { font-size: 64px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.big .of { font-size: 26px; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.big .what { font-size: 15px; color: var(--muted); }
+.bad .n { color: var(--stale); }
+.good .n { color: var(--fresh); }
+.second { margin: 10px 0 16px; font-size: 14px; color: var(--muted); }
+.second b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.dots { display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); gap: 5px; }
+.dot { aspect-ratio: 1; max-width: 100%; min-width: 0; border-radius: 4px; border: 0; padding: 0;
+  cursor: pointer; background: var(--empty); }
+.dot.s { background: var(--stale); }
+.dot.c { background: var(--fresh); }
+.dot.sel { outline: 2px solid var(--fg); outline-offset: 2px; }
+button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font-size: 13px; margin: -4px 0 0; }
+.legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.qbar { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; }
+.qbar .q { font-size: 20px; font-weight: 700; flex: 1 1 320px; min-width: 0; text-wrap: balance; }
+.qbar button { background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+.nav { display: flex; align-items: center; gap: 8px; }
+.qbar .count { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.timeline { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 14px 0 18px; font-size: 14px; }
+.timeline .lbl { color: var(--muted); }
+.chip { border-radius: 999px; padding: 3px 12px; font-family: var(--mono); font-size: 13px; }
+.chip.old { color: var(--stale); background: var(--stale-bg); text-decoration: line-through; }
+.chip.cur { color: var(--fresh); background: var(--fresh-bg); font-weight: 600; }
+.arrow { color: var(--muted); }
+.cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.col { min-width: 0; }
+.col h3 { font-size: 14px; margin: 0 0 8px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; }
+.verdict { font-weight: 600; }
+.verdict.s { color: var(--stale); }
+.verdict.c { color: var(--fresh); }
+.verdict.n { color: var(--muted); }
+.served { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.served li { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0;
+  font: 13.5px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.served li.none { color: var(--muted); font-family: var(--sans); }
+mark { border-radius: 4px; padding: 0 3px; font-weight: 600; }
+mark.s { background: var(--stale-bg); color: var(--stale); text-decoration: line-through; }
+mark.c { background: var(--fresh-bg); color: var(--fresh); }
+footer { color: var(--muted); font-size: 13px; max-width: 110ch; }
+@media (max-width: 760px) {
+  .cards, .cols { grid-template-columns: minmax(0, 1fr); }
+  .dots { grid-template-columns: repeat(14, minmax(0, 1fr)); }
+  .big .n { font-size: 48px; }
+}
+</style>
+
+<main>
+  <header>
+    <h1>Does the agent get handed an outdated decision?</h1>
+    <p class="sub" id="sub"></p>
+  </header>
+
+  <section class="cards" aria-label="Results">
+    <div class="card bad">
+      <h2>Plain search over the conversation history</h2>
+      <div class="how">BM25 over every stored message, top 5</div>
+      <div class="big"><span class="n" id="baseN"></span><span class="of" id="baseOf"></span><span class="what">served an outdated value</span></div>
+      <div class="second" id="baseCur"></div>
+      <div class="dots" id="baseDots"></div>
+    </div>
+    <div class="card good">
+      <h2>MemContext, injected into Claude Code</h2>
+      <div class="how">the prompt hook's context: current decisions only</div>
+      <div class="big"><span class="n" id="mcN"></span><span class="of" id="mcOf"></span><span class="what">served an outdated value</span></div>
+      <div class="second" id="mcCur"></div>
+      <div class="dots" id="mcDots"></div>
+    </div>
+  </section>
+  <div class="legend">
+    <span><i style="background:var(--stale)"></i>outdated value served</span>
+    <span><i style="background:var(--fresh)"></i>current value only</span>
+    <span><i style="background:var(--empty)"></i>neither value served</span>
+    <span>One square per question. Click a square or use the arrow keys.</span>
+  </div>
+
+  <section class="detail" aria-label="One question side by side">
+    <div class="qbar">
+      <div class="q" id="q"></div>
+      <div class="nav">
+        <span class="count" id="count"></span>
+        <button id="prev" aria-label="Previous question">&larr;</button>
+        <button id="next" aria-label="Next question">&rarr;</button>
+      </div>
+    </div>
+    <div class="timeline" id="timeline"></div>
+    <div class="cols">
+      <div class="col"><h3><span>Plain search served</span><span class="verdict" id="baseV"></span></h3><ul class="served" id="baseServed"></ul></div>
+      <div class="col"><h3><span>MemContext injected</span><span class="verdict" id="mcV"></span></h3><ul class="served" id="mcServed"></ul></div>
+    </div>
+  </section>
+
+  <footer id="foot"></footer>
+</main>
+<script>
+const D = {"sha": "7ce571adc8", "n_histories": 44, "rows": [{"q": "What database does the orders service use?", "subject": "orders-service database", "history": ["PostgreSQL 15", "SQLite"], "base": {"served": ["Update: going forward, the orders-service database is SQLite.", "Decision: we will use PostgreSQL 15 for the orders-service database.", "Decision: we will use Sentry for the error tracking service.", "Decision: we will use logrus for the Go service logging library.", "Decision: we will use Go 1.22 for the billing service language."], "stale": ["PostgreSQL 15"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- orders-service_database / decision_made: SQLite"], "stale": [], "cur": true}}, {"q": "Which DB should I write the orders-service migrations for?", "subject": "orders-service database", "history": ["PostgreSQL 15", "SQLite"], "base": {"served": ["Decision: we will use PostgreSQL 15 for the orders-service database.", "Update: going forward, the orders-service database is SQLite.", "Decision: we will use Sentry for the error tracking service.", "Decision: we will use logrus for the Go service logging library.", "Decision: we will use Go 1.22 for the billing service language."], "stale": ["PostgreSQL 15"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- orders-service_database / decision_made: SQLite"], "stale": [], "cur": true}}, {"q": "Where do we deploy the app?", "subject": "deploy target", "history": ["Fly.io", "Render", "AWS ECS"], "base": {"served": ["Heads up, we switched the deploy target to Render.", "Decision: we will use Fly.io for the deploy target.", "Decision: we will use Create React App for the frontend framework.", "Heads up, we switched the web app state management to Zustand.", "Decision: we will use Redux Toolkit for the web app state management."], "stale": ["Fly.io", "Render"], "cur": false}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- deploy_target / decision_made: AWS ECS\n- web_app_state_management / decision_made: Zustand"], "stale": [], "cur": true}}, {"q": "What platform is production hosted on?", "subject": "deploy target", "history": ["Fly.io", "Render", "AWS ECS"], "base": {"served": ["Change of plan: the release cadence is now biweekly releases on Thursday.", "Heads up, we switched the feature flag system to Unleash self-hosted.", "Decision: we will use PagerDuty for the on-call paging tool.", "Decision: we will use weekly releases on Tuesday for the release cadence.", "Update: going forward, the message queue is Kafka."], "stale": [], "cur": false}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- feature_flag_system / decision_made: Unleash self-hosted"], "stale": [], "cur": false}}, {"q": "How should list endpoints paginate results?", "subject": "API pagination scheme", "history": ["offset pagination", "cursor pagination"], "base": {"served": [], "stale": [], "cur": false}, "mc": {"served": [], "stale": [], "cur": false}}, {"q": "How do users authenticate with the API?", "subject": "authentication mechanism", "history": ["server-side sessions", "JWT access tokens", "OAuth 2.1 with PKCE"], "base": {"served": ["Decision: we will use REST with JSON for the public API style.", "Heads up, we switched the authentication mechanism to OAuth 2.1 with PKCE.", "Update: going forward, the public API style is GraphQL.", "Heads up, we switched the public API style to gRPC.", "Decision: we will use offset pagination for the API pagination scheme."], "stale": [], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- public_api_style / decision_made: gRPC\n- api_rate_limit / decision_made: 600 requests per minute\n- api_pagination_scheme / decision_made: cursor pagination"], "stale": [], "cur": false}}, {"q": "What auth approach does the backend use?", "subject": "authentication mechanism", "history": ["server-side sessions", "JWT access tokens", "OAuth 2.1 with PKCE"], "base": {"served": ["Decision: we will use Tailwind CSS for the CSS approach.", "Decision: we will use unittest for the backend test runner.", "Decision: we will use Elasticsearch 7 for the search backend.", "Update: going forward, the search backend is Meilisearch.", "Change of plan: the backend test runner is now pytest."], "stale": [], "cur": false}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- css_approach / decision_made: Tailwind CSS\n- search_backend / decision_made: Meilisearch\n- backend_test_runner / decision_made: pytest"], "stale": [], "cur": false}}, {"q": "Which Python version does the backend run on?", "subject": "Python runtime version", "history": ["Python 3.11", "Python 3.12", "Python 3.13"], "base": {"served": ["Decision: we will use Python 3.11 for the Python runtime version.", "Heads up, we switched the Python runtime version to Python 3.12.", "Change of plan: the Python runtime version is now Python 3.13.", "Decision: we will use PagerDuty for the on-call paging tool.", "Update: going forward, the search backend is Meilisearch."], "stale": ["Python 3.11", "Python 3.12"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- python_runtime_version / decision_made: Python 3.13"], "stale": [], "cur": true}}, {"q": "What framework is the frontend built with?", "subject": "frontend framework", "history": ["Create React App", "Vite + React", "Next.js 15"], "base": {"served": ["Change of plan: the frontend framework is now Vite + React.", "Update: going forward, the frontend framework is Next.js 15.", "Decision: we will use Create React App for the frontend framework.", "Change of plan: the frontend package manager is now pnpm.", "Decision: we will use REST with JSON for the public API style."], "stale": ["Create React App", "Vite + React"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- frontend_framework / decision_made: Next.js 15"], "stale": [], "cur": true}}, {"q": "Which CI system runs our tests?", "subject": "CI provider", "history": ["Travis CI", "GitHub Actions"], "base": {"served": ["Decision: we will use Travis CI for the CI provider.", "Update: going forward, the CI provider is GitHub Actions.", "Decision: we will use LaunchDarkly for the feature flag system.", "Heads up, we switched the feature flag system to Unleash self-hosted."], "stale": ["Travis CI"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- feature_flag_system / decision_made: Unleash self-hosted"], "stale": [], "cur": false}}, {"q": "Where should I add the new CI job?", "subject": "CI provider", "history": ["Travis CI", "GitHub Actions"], "base": {"served": ["Decision: we will use Travis CI for the CI provider.", "Update: going forward, the CI provider is GitHub Actions.", "Update: going forward, the background job runner is Dramatiq.", "Decision: we will use Celery for the background job runner.", "Change of plan: the background job runner is now RQ."], "stale": ["Travis CI"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- background_job_runner / decision_made: Dramatiq"], "stale": [], "cur": false}}, {"q": "Which package manager do we use for the frontend?", "subject": "frontend package manager", "history": ["npm", "Yarn Berry", "pnpm"], "base": {"served": ["Decision: we will use npm for the frontend package manager.", "Heads up, we switched the frontend package manager to Yarn Berry.", "Change of plan: the frontend package manager is now pnpm.", "Decision: we will use Create React App for the frontend framework.", "Heads up, we switched the secrets management to AWS Secrets Manager."], "stale": ["npm", "Yarn Berry"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- frontend_package_manager / decision_made: pnpm"], "stale": [], "cur": true}}, {"q": "What logging library do the Go services use?", "subject": "Go service logging library", "history": ["logrus", "zap", "slog"], "base": {"served": ["Decision: we will use logrus for the Go service logging library.", "Update: going forward, the Go service logging library is slog.", "Change of plan: the Go service logging library is now zap.", "Decision: we will use Go 1.22 for the billing service language.", "Decision: we will use RabbitMQ for the message queue."], "stale": ["logrus", "zap"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- go_service_logging_library / decision_made: slog"], "stale": [], "cur": true}}, {"q": "What message queue connects the services?", "subject": "message queue", "history": ["RabbitMQ", "Kafka", "AWS SQS"], "base": {"served": ["Update: going forward, the message queue is Kafka.", "Decision: we will use RabbitMQ for the message queue.", "Heads up, we switched the message queue to AWS SQS.", "Decision: we will use Conventional Commits for the commit message convention.", "Update: going forward, the payment provider is Stripe."], "stale": ["RabbitMQ", "Kafka"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- message_queue / decision_made: AWS SQS"], "stale": [], "cur": true}}, {"q": "What do we use for caching?", "subject": "cache layer", "history": ["Memcached", "Redis 7"], "base": {"served": ["Decision: we will use RabbitMQ for the message queue.", "Decision: we will use Memcached for the cache layer.", "Decision: we will use TSLint for the TypeScript linter.", "Decision: we will use Braintree for the payment provider.", "Decision: we will use Fly.io for the deploy target."], "stale": ["Memcached"], "cur": false}, "mc": {"served": [], "stale": [], "cur": false}}, {"q": "Which test runner should backend tests be written for?", "subject": "backend test runner", "history": ["unittest", "pytest"], "base": {"served": ["Decision: we will use unittest for the backend test runner.", "Change of plan: the backend test runner is now pytest.", "Decision: we will use Elasticsearch 7 for the search backend.", "Decision: we will use Celery for the background job runner.", "Update: going forward, the search backend is Meilisearch."], "stale": ["unittest"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- backend_test_runner / decision_made: pytest"], "stale": [], "cur": true}}, {"q": "Which ORM version is the backend on?", "subject": "ORM", "history": ["SQLAlchemy 1.4", "SQLAlchemy 2.0"], "base": {"served": ["Update: going forward, the ORM is SQLAlchemy 2.0.", "Update: going forward, the search backend is Meilisearch.", "Change of plan: the release cadence is now biweekly releases on Thursday.", "Change of plan: the backend test runner is now pytest.", "Change of plan: the search backend is now OpenSearch 2."], "stale": [], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- search_backend / decision_made: Meilisearch\n- node.js_version / decision_made: Node 22 LTS\n- python_runtime_version / decision_made: Python 3.13\n- orm / decision_made: SQLAlchemy 2.0\n- backend_test_runner / decision_made: pytest"], "stale": [], "cur": true}}, {"q": "What Node version do we target?", "subject": "Node.js version", "history": ["Node 18 LTS", "Node 20 LTS", "Node 22 LTS"], "base": {"served": ["Decision: we will use Node 18 LTS for the Node.js version.", "Heads up, we switched the Node.js version to Node 20 LTS.", "Change of plan: the Node.js version is now Node 22 LTS.", "Heads up, we switched the deploy target to Render.", "Decision: we will use Fly.io for the deploy target."], "stale": ["Node 18 LTS", "Node 20 LTS"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- node.js_version / decision_made: Node 22 LTS"], "stale": [], "cur": true}}, {"q": "What base image do our containers use?", "subject": "container base image", "history": ["Debian slim", "distroless", "Chainguard Wolfi"], "base": {"served": ["Decision: we will use Debian slim for the container base image.", "Change of plan: the container base image is now distroless.", "Update: going forward, the container base image is Chainguard Wolfi.", "Decision: we will use RabbitMQ for the message queue.", "Decision: we will use Memcached for the cache layer."], "stale": ["Debian slim", "distroless"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- container_base_image / decision_made: Chainguard Wolfi"], "stale": [], "cur": true}}, {"q": "Where do production errors get reported?", "subject": "error tracking service", "history": ["Sentry", "Rollbar", "Honeybadger"], "base": {"served": [], "stale": [], "cur": false}, "mc": {"served": [], "stale": [], "cur": false}}, {"q": "Which error tracker are we on?", "subject": "error tracking service", "history": ["Sentry", "Rollbar", "Honeybadger"], "base": {"served": ["Decision: we will use Sentry for the error tracking service.", "Heads up, we switched the error tracking service to Honeybadger.", "Decision: we will use PagerDuty for the on-call paging tool.", "Decision: we will use weekly releases on Tuesday for the release cadence.", "Update: going forward, the error tracking service is Rollbar."], "stale": ["Sentry", "Rollbar"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- error_tracking_service / decision_made: Honeybadger"], "stale": [], "cur": true}}, {"q": "What do we use for feature flags?", "subject": "feature flag system", "history": ["LaunchDarkly", "Unleash self-hosted"], "base": {"served": ["Decision: we will use LaunchDarkly for the feature flag system.", "Heads up, we switched the feature flag system to Unleash self-hosted.", "Decision: we will use RabbitMQ for the message queue.", "Decision: we will use Memcached for the cache layer.", "Decision: we will use TSLint for the TypeScript linter."], "stale": ["LaunchDarkly"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- feature_flag_system / decision_made: Unleash self-hosted"], "stale": [], "cur": true}}, {"q": "Which formatter should I run on Python code?", "subject": "Python code formatter", "history": ["black", "ruff format"], "base": {"served": ["Decision: we will use black for the Python code formatter.", "Change of plan: the Python code formatter is now ruff format.", "Decision: we will use Python 3.11 for the Python runtime version.", "Heads up, we switched the Python runtime version to Python 3.12.", "Change of plan: the Python runtime version is now Python 3.13."], "stale": ["black"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- python_code_formatter / decision_made: ruff format"], "stale": [], "cur": true}}, {"q": "What linter do we use for TypeScript?", "subject": "TypeScript linter", "history": ["TSLint", "ESLint 9 flat config", "Biome"], "base": {"served": ["Decision: we will use TSLint for the TypeScript linter.", "Heads up, we switched the TypeScript linter to Biome.", "Update: going forward, the TypeScript linter is ESLint 9 flat config.", "Decision: we will use RabbitMQ for the message queue.", "Decision: we will use Memcached for the cache layer."], "stale": ["TSLint", "ESLint 9 flat config"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- typescript_linter / decision_made: Biome"], "stale": [], "cur": true}}, {"q": "Where are uploaded files stored?", "subject": "object storage", "history": ["AWS S3", "Cloudflare R2"], "base": {"served": ["Decision: we will use .env files for the secrets management."], "stale": [], "cur": false}, "mc": {"served": [], "stale": [], "cur": false}}, {"q": "What powers product search?", "subject": "search backend", "history": ["Elasticsearch 7", "OpenSearch 2", "Meilisearch"], "base": {"served": ["Update: going forward, the search backend is Meilisearch.", "Decision: we will use Elasticsearch 7 for the search backend.", "Change of plan: the search backend is now OpenSearch 2."], "stale": ["Elasticsearch 7", "OpenSearch 2"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- search_backend / decision_made: Meilisearch"], "stale": [], "cur": true}}, {"q": "Which payment provider do we integrate with?", "subject": "payment provider", "history": ["Braintree", "Stripe"], "base": {"served": ["Decision: we will use Braintree for the payment provider.", "Update: going forward, the payment provider is Stripe.", "Decision: we will use REST with JSON for the public API style.", "Heads up, we switched the authentication mechanism to OAuth 2.1 with PKCE.", "Decision: we will use Travis CI for the CI provider."], "stale": ["Braintree"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- payment_provider / decision_made: Stripe"], "stale": [], "cur": true}}, {"q": "What service sends our transactional emails?", "subject": "transactional email provider", "history": ["SendGrid", "Postmark", "Amazon SES"], "base": {"served": ["Decision: we will use SendGrid for the transactional email provider.", "Heads up, we switched the transactional email provider to Postmark.", "Change of plan: the transactional email provider is now Amazon SES.", "Update: going forward, the orders-service database is SQLite.", "Update: going forward, the error tracking service is Rollbar."], "stale": ["SendGrid", "Postmark"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- transactional_email_provider / decision_made: Amazon SES\n- error_tracking_service / decision_made: Honeybadger\n- go_service_logging_library / decision_made: slog\n- billing_service_language / decision_made: Go 1.22\n- orders-service_database / decision_made: SQLite"], "stale": [], "cur": true}}, {"q": "What tool manages the monorepo builds?", "subject": "monorepo build tool", "history": ["Lerna", "Nx", "Turborepo"], "base": {"served": ["Update: going forward, the monorepo build tool is Turborepo.", "Decision: we will use Lerna for the monorepo build tool.", "Change of plan: the monorepo build tool is now Nx.", "Decision: we will use Terraform for the infrastructure as code tool.", "Decision: we will use PagerDuty for the on-call paging tool."], "stale": ["Lerna", "Nx"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- monorepo_build_tool / decision_made: Turborepo"], "stale": [], "cur": true}}, {"q": "What style is our public API?", "subject": "public API style", "history": ["REST with JSON", "GraphQL", "gRPC"], "base": {"served": ["Update: going forward, the public API style is GraphQL.", "Heads up, we switched the public API style to gRPC.", "Decision: we will use REST with JSON for the public API style.", "Change of plan: the API pagination scheme is now cursor pagination.", "Update: going forward, the API rate limit is 600 requests per minute."], "stale": ["REST with JSON", "GraphQL"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- public_api_style / decision_made: gRPC"], "stale": [], "cur": true}}, {"q": "What state management library does the web app use?", "subject": "web app state management", "history": ["Redux Toolkit", "Zustand"], "base": {"served": ["Decision: we will use Redux Toolkit for the web app state management.", "Heads up, we switched the web app state management to Zustand.", "Decision: we will use Create React App for the frontend framework.", "Decision: we will use logrus for the Go service logging library.", "Decision: we will use .env files for the secrets management."], "stale": ["Redux Toolkit"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- web_app_state_management / decision_made: Zustand"], "stale": [], "cur": true}}, {"q": "When do we ship releases?", "subject": "release cadence", "history": ["weekly releases on Tuesday", "biweekly releases on Thursday"], "base": {"served": ["Decision: we will use weekly releases on Tuesday for the release cadence.", "Change of plan: the release cadence is now biweekly releases on Thursday.", "Decision: we will use RabbitMQ for the message queue.", "Decision: we will use Memcached for the cache layer.", "Decision: we will use TSLint for the TypeScript linter."], "stale": ["weekly releases on Tuesday"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- release_cadence / decision_made: biweekly releases on Thursday"], "stale": [], "cur": true}}, {"q": "What is our release schedule?", "subject": "release cadence", "history": ["weekly releases on Tuesday", "biweekly releases on Thursday"], "base": {"served": ["Change of plan: the release cadence is now biweekly releases on Thursday.", "Decision: we will use weekly releases on Tuesday for the release cadence.", "Update: going forward, the message queue is Kafka.", "Update: going forward, the payment provider is Stripe.", "Update: going forward, the search backend is Meilisearch."], "stale": ["weekly releases on Tuesday"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- release_cadence / decision_made: biweekly releases on Thursday"], "stale": [], "cur": true}}, {"q": "How many approvals does a pull request need?", "subject": "code review policy", "history": ["one approval required", "two approvals required"], "base": {"served": ["Update: going forward, the code review policy is two approvals required."], "stale": [], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- code_review_policy / decision_made: two approvals required"], "stale": [], "cur": true}}, {"q": "Which region is the primary deployment in?", "subject": "primary cloud region", "history": ["us-east-1", "us-west-2", "eu-central-1"], "base": {"served": ["Change of plan: the primary cloud region is now eu-central-1.", "Decision: we will use us-east-1 for the primary cloud region.", "Heads up, we switched the primary cloud region to us-west-2.", "Update: going forward, the message queue is Kafka.", "Update: going forward, the payment provider is Stripe."], "stale": ["us-east-1", "us-west-2"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- primary_cloud_region / decision_made: eu-central-1"], "stale": [], "cur": true}}, {"q": "What runs our background jobs?", "subject": "background job runner", "history": ["Celery", "RQ", "Dramatiq"], "base": {"served": ["Update: going forward, the background job runner is Dramatiq.", "Decision: we will use Celery for the background job runner.", "Change of plan: the background job runner is now RQ."], "stale": ["Celery", "RQ"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- background_job_runner / decision_made: Dramatiq"], "stale": [], "cur": true}}, {"q": "Where are application secrets stored?", "subject": "secrets management", "history": [".env files", "HashiCorp Vault", "AWS Secrets Manager"], "base": {"served": ["Heads up, we switched the secrets management to AWS Secrets Manager.", "Update: going forward, the secrets management is HashiCorp Vault.", "Decision: we will use .env files for the secrets management."], "stale": [".env files", "HashiCorp Vault"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- secrets_management / decision_made: AWS Secrets Manager"], "stale": [], "cur": true}}, {"q": "How do I add a new secret for the API?", "subject": "secrets management", "history": [".env files", "HashiCorp Vault", "AWS Secrets Manager"], "base": {"served": ["Decision: we will use offset pagination for the API pagination scheme.", "Decision: we will use REST with JSON for the public API style.", "Decision: we will use 100 requests per minute for the API rate limit.", "Update: going forward, the public API style is GraphQL.", "Heads up, we switched the public API style to gRPC."], "stale": [], "cur": false}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- public_api_style / decision_made: gRPC\n- api_rate_limit / decision_made: 600 requests per minute\n- api_pagination_scheme / decision_made: cursor pagination"], "stale": [], "cur": false}}, {"q": "What is the maximum file upload size?", "subject": "max upload size", "history": ["10 MB", "25 MB", "100 MB"], "base": {"served": ["Change of plan: the max upload size is now 100 MB.", "Decision: we will use 10 MB for the max upload size.", "Heads up, we switched the max upload size to 25 MB.", "Update: going forward, the message queue is Kafka.", "Update: going forward, the payment provider is Stripe."], "stale": ["10 MB", "25 MB"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- max_upload_size / decision_made: 100 MB"], "stale": [], "cur": true}}, {"q": "How long before an idle session times out?", "subject": "session timeout", "history": ["30 minutes", "15 minutes", "8 hours"], "base": {"served": ["Update: going forward, the session timeout is 8 hours.", "Decision: we will use 30 minutes for the session timeout.", "Change of plan: the session timeout is now 15 minutes."], "stale": ["30 minutes", "15 minutes"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- session_timeout / decision_made: 8 hours"], "stale": [], "cur": true}}, {"q": "What is the API rate limit?", "subject": "API rate limit", "history": ["100 requests per minute", "600 requests per minute"], "base": {"served": ["Update: going forward, the API rate limit is 600 requests per minute.", "Decision: we will use 100 requests per minute for the API rate limit.", "Update: going forward, the public API style is GraphQL.", "Change of plan: the API pagination scheme is now cursor pagination.", "Heads up, we switched the public API style to gRPC."], "stale": ["100 requests per minute"], "cur": true}, "mc": {"served": ["[MemContext] Current project memory relevant to this prompt:\n- api_rate_limit / decision_made: 600 requests per minute"], "stale": [], "cur": true}}], "default_q": "What database does the orders service use?"};
+const rows = D.rows, n = rows.length;
+const $ = id => document.getElementById(id);
+const kind = side => side.stale.length ? "s" : side.cur ? "c" : "n";
+const count = (key, f) => rows.filter(r => f(r[key])).length;
+
+$("sub").textContent = `${D.n_histories} decision histories, ${n} questions about decisions that changed. ` +
+  `Both sides get the same questions and are scored on exactly what they served. ` +
+  `Deterministic, no LLM judge. Code at ${D.sha}.`;
+for (const key of ["base", "mc"]) {
+  $(key + "N").textContent = count(key, s => s.stale.length);
+  $(key + "Of").textContent = "/ " + n;
+  const b = document.createElement("b");
+  b.textContent = `${count(key, s => s.cur)} / ${n}`;
+  $(key + "Cur").replaceChildren("current value present: ", b);
+}
+$("foot").textContent = "Limits: the decision histories are a synthetic set, and the score is what each side served, " +
+  "not the model's final answer. The hook matches on shared words, so it misses the current value on some questions.";
+
+let sel = Math.max(0, rows.findIndex(r => r.q === D.default_q));
+const dots = {base: [], mc: []};
+for (const key of ["base", "mc"]) {
+  rows.forEach((r, i) => {
+    const b = document.createElement("button");
+    b.className = "dot " + kind(r[key]);
+    b.title = r.q;
+    b.setAttribute("aria-label", r.q);
+    b.onclick = () => show(i);
+    $(key + "Dots").append(b);
+    dots[key].push(b);
+  });
+}
+
+const norm = s => s.toLowerCase().replace(/\s+/g, " ");
+function marked(text, row) {
+  // whole-value matches, case-insensitive and whitespace-tolerant, like the eval's own scoring
+  const last = row.history.length - 1;
+  const vals = row.history.map((v, i) => ({v: norm(v), cls: i === last ? "c" : "s"}));
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "\\s+");
+  const alts = vals.map(x => esc(x.v)).sort((a, b) => b.length - a.length).join("|");
+  const re = new RegExp("(?<![a-z0-9])(" + alts + ")(?![a-z0-9])", "gi");
+  const frag = document.createDocumentFragment();
+  let at = 0;
+  for (const m of text.matchAll(re)) {
+    frag.append(text.slice(at, m.index));
+    const el = document.createElement("mark");
+    el.className = (vals.find(x => x.v === norm(m[0])) || {cls: "s"}).cls;
+    el.textContent = m[0];
+    frag.append(el);
+    at = m.index + m[0].length;
+  }
+  frag.append(text.slice(at));
+  return frag;
+}
+
+function fill(listId, items, row) {
+  const ul = $(listId);
+  ul.replaceChildren();
+  if (!items.length) {
+    const li = document.createElement("li");
+    li.className = "none";
+    li.textContent = "Nothing served for this question.";
+    ul.append(li);
+  }
+  for (const t of items) {
+    const li = document.createElement("li");
+    li.append(marked(t, row));
+    ul.append(li);
+  }
+}
+
+function verdict(id, side) {
+  const k = kind(side), el = $(id);
+  el.className = "verdict " + k;
+  el.textContent = k === "s" ? "outdated value served" : k === "c" ? "current value only" : "neither value served";
+}
+
+function show(i) {
+  sel = (i + n) % n;
+  const r = rows[sel], last = r.history.length - 1;
+  $("q").textContent = r.q;
+  $("count").textContent = `question ${sel + 1} of ${n}`;
+  const tl = $("timeline");
+  const lbl = document.createElement("span");
+  lbl.className = "lbl";
+  lbl.textContent = "How the decision changed:";
+  tl.replaceChildren(lbl);
+  r.history.forEach((v, j) => {
+    if (j) {
+      const a = document.createElement("span");
+      a.className = "arrow";
+      a.textContent = "\u2192";
+      tl.append(a);
+    }
+    const c = document.createElement("span");
+    c.className = "chip " + (j === last ? "cur" : "old");
+    c.textContent = j === last ? v + " (current)" : v;
+    tl.append(c);
+  });
+  fill("baseServed", r.base.served, r);
+  fill("mcServed", r.mc.served, r);
+  verdict("baseV", r.base);
+  verdict("mcV", r.mc);
+  for (const key of ["base", "mc"]) dots[key].forEach((d, j) => d.classList.toggle("sel", j === sel));
+}
+
+$("prev").onclick = () => show(sel - 1);
+$("next").onclick = () => show(sel + 1);
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") show(sel + 1);
+  if (e.key === "ArrowLeft") show(sel - 1);
+});
+show(sel);
+</script>
+</body>
+</html>

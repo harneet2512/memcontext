@@ -1,0 +1,726 @@
+{
+ "eval": "injection_noise",
+ "title": "Injection noise",
+ "promise": "Memory helps where it is relevant and stays out of the way where it is not.",
+ "question": "When a prompt or edit does not need any stored decision, does the hook stay quiet? When it does, is the injected context about that decision and current?",
+ "method": "44 decision histories stored through the real API (stale_exposure.json); hand-written prompts and Edit/Write/Bash payloads sent through the real UserPromptSubmit and PreToolUse hook functions; lexical mode; deterministic string scoring, no LLM judge.",
+ "commit": "7ce571adc8a5b3937234723b038d2490c36a6f04",
+ "product_code_dirty": false,
+ "timestamp_utc": "2026-10-01T20:06:08+00:00",
+ "split": "dev",
+ "deterministic": true,
+ "seconds": 1.3,
+ "headline": {
+  "label": "Unrelated prompts that got memory injected",
+  "value": "10/30",
+  "pct": 33.3,
+  "better": "lower"
+ },
+ "metrics": [
+  {
+   "name": "Unrelated prompts with memory injected",
+   "value": "10/30",
+   "pct": 33.3,
+   "n": 30,
+   "better": "lower",
+   "definition": "UserPromptSubmit added any memory to a prompt whose task needs no stored decision"
+  },
+  {
+   "name": "Chars injected into unrelated prompts (median when injected)",
+   "value": "113.5",
+   "pct": null,
+   "n": 10,
+   "better": "lower",
+   "definition": "size of the injected block on noisy prompts"
+  },
+  {
+   "name": "Unrelated edits/commands with memory injected",
+   "value": "1/10",
+   "pct": 10.0,
+   "n": 10,
+   "better": "lower",
+   "definition": "PreToolUse added memory before an edit or command that needs no stored decision"
+  },
+  {
+   "name": "Related prompts: current decision present",
+   "value": "14/20",
+   "pct": 70.0,
+   "n": 20,
+   "better": "higher",
+   "definition": "the asked subject's current value appears in the injected block"
+  },
+  {
+   "name": "Related prompts: outdated value present",
+   "value": "0/20",
+   "pct": 0.0,
+   "n": 20,
+   "better": "lower",
+   "definition": "any superseded value of the asked subject appears in the injected block"
+  },
+  {
+   "name": "Related prompts: injected lines on the asked subject",
+   "value": "14/32",
+   "pct": 43.8,
+   "n": 32,
+   "better": "higher",
+   "definition": "precision of the injected block: lines about the subject the task depends on"
+  },
+  {
+   "name": "Related edits: current decision present",
+   "value": "5/8",
+   "pct": 62.5,
+   "n": 8,
+   "better": "higher",
+   "definition": "right before the edit, the decision it depends on is in context"
+  },
+  {
+   "name": "Related edits: injected lines on the asked subject",
+   "value": "5/9",
+   "pct": 55.6,
+   "n": 9,
+   "better": "higher",
+   "definition": "precision of the pre-edit block"
+  }
+ ],
+ "tables": [
+  {
+   "title": "Trigger words behind noisy injections",
+   "columns": [
+    "word",
+    "injected entries"
+   ],
+   "rows": [
+    [
+     "python",
+     4
+    ],
+    [
+     "tool",
+     3
+    ],
+    [
+     "error",
+     2
+    ],
+    [
+     "message",
+     2
+    ],
+    [
+     "based",
+     1
+    ],
+    [
+     "everywhere",
+     1
+    ],
+    [
+     "flag",
+     1
+    ],
+    [
+     "format",
+     1
+    ]
+   ]
+  },
+  {
+   "title": "Unrelated prompts",
+   "columns": [
+    "prompt",
+    "lines",
+    "chars",
+    "injected subjects"
+   ],
+   "rows": [
+    [
+     "Rename the variable tmp to parsed_rows in utils/csv_reader.py.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Why does test_parse_dates fail on Windows but pass on my Mac?",
+     1,
+     106,
+     "backend_test_runner / decision_made"
+    ],
+    [
+     "Explain what this regex does: ^(?:[a-z0-9-]+\\.)+[a-z]{2,}$",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Add a docstring to parse_args in cli.py.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Fix the off-by-one error in the loop that chunks the input list.",
+     1,
+     114,
+     "error_tracking_service / decision_made"
+    ],
+    [
+     "Make this function shorter without changing what it does.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "What does the walrus operator do in this comprehension?",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Convert this callback-based function to async/await.",
+     1,
+     119,
+     "branching_model / decision_made"
+    ],
+    [
+     "Add type hints to every function in helpers.py.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Sort the contributors list alphabetically by last name.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Rewrite slugify so it handles accented characters.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Why am I getting a KeyError on 'user_id' here?",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Remove the unused imports from report.py.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Split this 200-line function into smaller helpers.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "What's the time complexity of this dedupe loop?",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Replace the print statements with proper logging.",
+     1,
+     111,
+     "go_service_logging_library / decision_made"
+    ],
+    [
+     "Add a --verbose flag to the command line tool.",
+     4,
+     274,
+     "on-call_paging_tool / decision_made; monorepo_build_tool / decision_made; infrastructure_as_code_tool / decision_made; feature_flag_system / decision_made"
+    ],
+    [
+     "Translate this bash one-liner into Python.",
+     2,
+     167,
+     "python_runtime_version / decision_made; python_code_formatter / decision_made"
+    ],
+    [
+     "Undo my last change to config_loader.py.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Why is this list comprehension slower than the for loop?",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Format the dates in the export as YYYY-MM-DD.",
+     1,
+     113,
+     "python_code_formatter / decision_made"
+    ],
+    [
+     "Add input validation so negative quantities are rejected.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Explain the difference between deepcopy and copy here.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Clean up the README typos in the installation section.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Handle the case where the input file is empty.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Rename the class OrderItem to LineItem everywhere.",
+     1,
+     113,
+     "timestamp_timezone / decision_made"
+    ],
+    [
+     "Write a short summary of what this module does.",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Make the error message for a missing config key clearer.",
+     3,
+     221,
+     "error_tracking_service / decision_made; message_queue / decision_made; commit_message_convention / decision_made"
+    ],
+    [
+     "Can you add comments explaining the retry loop?",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Change the default timeout for the HTTP client to 5 seconds.",
+     1,
+     103,
+     "session_timeout / decision_made"
+    ]
+   ]
+  },
+  {
+   "title": "Unrelated edits and commands",
+   "columns": [
+    "tool call",
+    "lines",
+    "chars",
+    "injected subjects"
+   ],
+   "rows": [
+    [
+     "Edit src/utils/strings.py",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Edit app/cli.py",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Edit README.md",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Edit lib/dates.py",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Edit app/models/invoice.py",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Write scripts/count_todos.py",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Edit app/config_loader.py",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Edit app/retry.py",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Edit app/report.py",
+     0,
+     0,
+     ""
+    ],
+    [
+     "Bash python scripts/rebuild_index.py --dry-run",
+     2,
+     137,
+     "python_runtime_version / decision_made; python_code_formatter / decision_made"
+    ]
+   ]
+  },
+  {
+   "title": "Related prompts",
+   "columns": [
+    "prompt",
+    "lines",
+    "chars",
+    "needs",
+    "current present",
+    "lines on subject"
+   ],
+   "rows": [
+    [
+     "Write the migration that adds a refunds table for the orders service.",
+     1,
+     110,
+     "orders-service_database",
+     "yes",
+     1
+    ],
+    [
+     "Set up deployment for the new notifications worker.",
+     0,
+     0,
+     "deploy_target",
+     "no",
+     0
+    ],
+    [
+     "Add paging to the GET /invoices list endpoint.",
+     1,
+     109,
+     "api_pagination_scheme",
+     "no",
+     0
+    ],
+    [
+     "Protect the new /reports endpoint so only logged-in users can call it.",
+     1,
+     109,
+     "authentication_mechanism",
+     "no",
+     0
+    ],
+    [
+     "Bump the backend Dockerfile to the Python version we standardized on.",
+     1,
+     114,
+     "python_runtime_version",
+     "yes",
+     1
+    ],
+    [
+     "Scaffold a settings page in the frontend.",
+     2,
+     158,
+     "frontend_framework",
+     "yes",
+     1
+    ],
+    [
+     "Add a CI job that runs the integration tests nightly.",
+     1,
+     110,
+     "ci_provider",
+     "no",
+     0
+    ],
+    [
+     "Add date-fns as a frontend dependency.",
+     2,
+     158,
+     "frontend_package_manager",
+     "yes",
+     1
+    ],
+    [
+     "Add structured logging to the Go inventory service.",
+     1,
+     111,
+     "go_service_logging_library",
+     "yes",
+     1
+    ],
+    [
+     "Publish an event when an order ships so the email service can react.",
+     5,
+     326,
+     "message_queue",
+     "no",
+     0
+    ],
+    [
+     "Cache the product catalog lookups.",
+     1,
+     99,
+     "cache_layer",
+     "yes",
+     1
+    ],
+    [
+     "Write backend tests for the discount calculator.",
+     2,
+     152,
+     "backend_test_runner",
+     "yes",
+     1
+    ],
+    [
+     "Add a container image for the new reporting job.",
+     1,
+     117,
+     "container_base_image",
+     "yes",
+     1
+    ],
+    [
+     "Make sure exceptions in the export job get reported to our error tracker.",
+     2,
+     164,
+     "error_tracking_service",
+     "yes",
+     1
+    ],
+    [
+     "Put the new checkout flow behind a feature flag.",
+     1,
+     119,
+     "feature_flag_system",
+     "yes",
+     1
+    ],
+    [
+     "Run the formatter over the new Python module before I commit.",
+     1,
+     113,
+     "python_code_formatter",
+     "yes",
+     1
+    ],
+    [
+     "Fix the lint errors in the TypeScript dashboard code.",
+     4,
+     274,
+     "typescript_linter",
+     "yes",
+     1
+    ],
+    [
+     "Store user avatar uploads somewhere durable.",
+     0,
+     0,
+     "object_storage",
+     "no",
+     0
+    ],
+    [
+     "Add a background job that recomputes daily stats.",
+     1,
+     110,
+     "background_job_runner",
+     "yes",
+     1
+    ],
+    [
+     "Add a new API key for the shipping partner to our secrets.",
+     4,
+     276,
+     "secrets_management",
+     "yes",
+     1
+    ]
+   ]
+  },
+  {
+   "title": "Related edits",
+   "columns": [
+    "tool call",
+    "lines",
+    "chars",
+    "needs",
+    "current present",
+    "lines on subject"
+   ],
+   "rows": [
+    [
+     "Edit services/orders/migrations/0042_refunds.py",
+     1,
+     83,
+     "orders-service_database",
+     "no",
+     0
+    ],
+    [
+     "Write .github/workflows/nightly.yml",
+     0,
+     0,
+     "ci_provider",
+     "no",
+     0
+    ],
+    [
+     "Edit web/package.json",
+     1,
+     79,
+     "frontend_package_manager",
+     "yes",
+     1
+    ],
+    [
+     "Edit services/inventory/logger.go",
+     1,
+     81,
+     "go_service_logging_library",
+     "yes",
+     1
+    ],
+    [
+     "Write Dockerfile",
+     3,
+     189,
+     "python_runtime_version",
+     "yes",
+     1
+    ],
+    [
+     "Edit app/jobs/daily_stats.py",
+     1,
+     82,
+     "background_job_runner",
+     "no",
+     0
+    ],
+    [
+     "Edit app/payments/charge.py",
+     1,
+     73,
+     "payment_provider",
+     "yes",
+     1
+    ],
+    [
+     "Edit app/uploads/avatar.py",
+     1,
+     72,
+     "max_upload_size",
+     "yes",
+     1
+    ]
+   ]
+  }
+ ],
+ "examples": [
+  {
+   "prompt": "Add a --verbose flag to the command line tool.",
+   "injected": "[MemContext] Current project memory relevant to this prompt:\n- on-call_paging_tool / decision_made: PagerDuty\n- monorepo_build_tool / decision_made: Turborepo\n- infrastructure_as_code_tool / decision_made: Terraform\n- feature_flag_system / decision_made: Unleash self-hosted"
+  },
+  {
+   "prompt": "Make the error message for a missing config key clearer.",
+   "injected": "[MemContext] Current project memory relevant to this prompt:\n- error_tracking_service / decision_made: Honeybadger\n- message_queue / decision_made: AWS SQS\n- commit_message_convention / decision_made: Conventional Commits"
+  },
+  {
+   "prompt": "Translate this bash one-liner into Python.",
+   "injected": "[MemContext] Current project memory relevant to this prompt:\n- python_runtime_version / decision_made: Python 3.13\n- python_code_formatter / decision_made: ruff format"
+  },
+  {
+   "prompt": "Set up deployment for the new notifications worker.  (needs deploy_target)",
+   "injected": "(nothing injected)"
+  }
+ ],
+ "limits": [
+  "Hand-written prompts and tool calls by one author against a synthetic 44-decision memory.",
+  "Measures what the hooks inject, not whether the model is distracted by it.",
+  "Lexical mode only; 'unrelated' is labelled from intent, and some prompts deliberately share an everyday word (timeout, error, format, logging) with a stored subject.",
+  "PreToolUse has a 150-200 ms time budget; on this small memory it never trips."
+ ],
+ "findings": [
+  "10/30 unrelated prompts got memory injected. The prompt hook injects on a single shared word when no stored claim shares two; the most frequent trigger words were: python (4), tool (3), error (2), message (2), based (1). (Logic: http_server._prompt_context relevance floor.)",
+  "1/10 unrelated edits/commands got memory injected before the tool ran; PreToolUse injects on any shared keyword. (Logic: http_server._tool_context.)",
+  "6/20 related task prompts did not get the decision they depend on: task wording rarely repeats the stored subject's words (lexical match only)."
+ ],
+ "raw": {
+  "unrelated_prompts": {
+   "n": 30,
+   "injected": 10,
+   "injected_pct": 33.3,
+   "chars_total": 1441,
+   "chars_median_when_injected": 113.5,
+   "lines_total": 16
+  },
+  "unrelated_tools": {
+   "n": 10,
+   "injected": 1,
+   "injected_pct": 10.0,
+   "chars_total": 137,
+   "chars_median_when_injected": 137,
+   "lines_total": 2
+  },
+  "related_prompts": {
+   "n": 20,
+   "injected": 18,
+   "injected_pct": 90.0,
+   "current_present": 14,
+   "current_present_pct": 70.0,
+   "stale_present": 0,
+   "stale_present_pct": 0.0,
+   "on_subject_lines": 14,
+   "lines_total": 32,
+   "on_subject_pct": 43.8
+  },
+  "related_tools": {
+   "n": 8,
+   "injected": 7,
+   "injected_pct": 87.5,
+   "current_present": 5,
+   "current_present_pct": 62.5,
+   "stale_present": 0,
+   "stale_present_pct": 0.0,
+   "on_subject_lines": 5,
+   "lines_total": 9,
+   "on_subject_pct": 55.6
+  },
+  "ingest": {
+   "stored": 98,
+   "not_admitted": [],
+   "claims_created": 98,
+   "supersessions": 54,
+   "ingest_seconds": 0.1,
+   "claim_embeddings_stored": 0,
+   "turn_embeddings_stored": 0,
+   "slot_resolved": "34/34",
+   "slot_problems": [],
+   "status_counts": {
+    "active": 44,
+    "superseded": 54
+   }
+  }
+ }
+}

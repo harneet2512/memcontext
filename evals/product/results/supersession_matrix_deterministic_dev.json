@@ -1,0 +1,4659 @@
+{
+ "meta": {
+  "eval": "supersession_matrix",
+  "mode": "deterministic",
+  "split": "dev",
+  "git_commit": "826331c1f7fe31d16c8ba13c61e454d4193faf2b",
+  "product_code_dirty": false,
+  "product_dirty_files": [],
+  "decision_path_sha256": {
+   "memcontext/supersession.py": "fc5fc99c46117cae",
+   "memcontext/supersession_semantic.py": "450911291f6a7152",
+   "memcontext/on_new_turn.py": "da0625f248e72d28",
+   "memcontext/claims.py": "4c1d6406c49bca22",
+   "memcontext/mcp_tools.py": "d185569c937ff151",
+   "memcontext/retrieval.py": "972f06ff44e5889b",
+   "predicate_packs/general/predicates.json": "c8df1c3f73a0e10e",
+   "predicate_packs/developer/predicates.json": "c81c83e99ea9ef87"
+  },
+  "timestamp_utc": "2026-10-01T00:40:25+00:00",
+  "python": "3.12.0",
+  "active_pack": "general,developer",
+  "datasets_sha256": {
+   "supersession_dev.json": "67a4d450192501cc3b02837a2fa44244ad94f5d95345b4d60f448ef88db2fab2"
+  }
+ },
+ "per_category": {
+  "update": {
+   "n": 8,
+   "correct": 6,
+   "excluded": 0,
+   "excluded_correct": 0,
+   "accuracy": 0.75
+  },
+  "update_no_overlap": {
+   "n": 6,
+   "correct": 6,
+   "excluded": 1,
+   "excluded_correct": 0,
+   "accuracy": 1.0
+  },
+  "additive": {
+   "n": 9,
+   "correct": 6,
+   "excluded": 0,
+   "excluded_correct": 0,
+   "accuracy": 0.667
+  },
+  "attribute_slot": {
+   "n": 7,
+   "correct": 4,
+   "excluded": 0,
+   "excluded_correct": 0,
+   "accuracy": 0.571
+  },
+  "history_window": {
+   "n": 7,
+   "correct": 7,
+   "excluded": 0,
+   "excluded_correct": 0,
+   "accuracy": 1.0
+  },
+  "quantity": {
+   "n": 7,
+   "correct": 7,
+   "excluded": 0,
+   "excluded_correct": 0,
+   "accuracy": 1.0
+  },
+  "negation": {
+   "n": 7,
+   "correct": 2,
+   "excluded": 0,
+   "excluded_correct": 0,
+   "accuracy": 0.286
+  },
+  "duplicate": {
+   "n": 7,
+   "correct": 7,
+   "excluded": 0,
+   "excluded_correct": 0,
+   "accuracy": 1.0
+  },
+  "change_after_duplicates": {
+   "n": 7,
+   "correct": 6,
+   "excluded": 0,
+   "excluded_correct": 0,
+   "accuracy": 0.857
+  },
+  "cross_session": {
+   "n": 7,
+   "correct": 7,
+   "excluded": 0,
+   "excluded_correct": 0,
+   "accuracy": 1.0
+  },
+  "cross_namespace": {
+   "n": 7,
+   "correct": 7,
+   "excluded": 0,
+   "excluded_correct": 0,
+   "accuracy": 1.0
+  },
+  "trust_direction": {
+   "n": 7,
+   "correct": 5,
+   "excluded": 0,
+   "excluded_correct": 0,
+   "accuracy": 0.714
+  },
+  "out_of_order": {
+   "n": 0,
+   "correct": 0,
+   "excluded": 2,
+   "excluded_correct": 0,
+   "accuracy": null
+  },
+  "nl_only": {
+   "n": 5,
+   "correct": 5,
+   "excluded": 2,
+   "excluded_correct": 1,
+   "accuracy": 1.0
+  }
+ },
+ "overall": {
+  "n": 91,
+  "correct": 75,
+  "accuracy": 0.824,
+  "excluded": 5
+ },
+ "failures": [
+  {
+   "id": "upd-06",
+   "category": "update",
+   "split": "dev",
+   "label": "normal",
+   "description": "manager changes (one manager at a time)",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['manager'] jaccard=0.17 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "upd-07",
+   "category": "update",
+   "split": "dev",
+   "label": "normal",
+   "description": "meeting-time preference flips (low overlap)",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['meetings', 'prefers'] jaccard=0.25 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "add-04",
+   "category": "additive",
+   "split": "dev",
+   "label": "normal",
+   "description": "two migration todos on different tables",
+   "correct": false,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a->b (user_correction): >=2 shared content tokens and J>=0.3 read as an update; additive facts sharing template words collapse (shared content tokens=['migration', 'table', 'tests', 'write'] jaccard=0.67)"
+    }
+   ]
+  },
+  {
+   "id": "add-06",
+   "category": "additive",
+   "split": "dev",
+   "label": "normal",
+   "description": "two races run",
+   "correct": false,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.005,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a->b (user_correction): >=2 shared content tokens and J>=0.3 read as an update; additive facts sharing template words collapse (shared content tokens=['race', 'ran'] jaccard=0.33)"
+    }
+   ]
+  },
+  {
+   "id": "add-10",
+   "category": "additive",
+   "split": "dev",
+   "label": "normal",
+   "description": "two public-API todos",
+   "correct": false,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a->b (user_correction): >=2 shared content tokens and J>=0.3 read as an update; additive facts sharing template words collapse (shared content tokens=['add', 'api', 'public'] jaccard=0.43)"
+    }
+   ]
+  },
+  {
+   "id": "att-06",
+   "category": "attribute_slot",
+   "split": "dev",
+   "label": "normal",
+   "description": "job title promotion",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['engineer'] jaccard=0.17 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "att-07",
+   "category": "attribute_slot",
+   "split": "dev",
+   "label": "normal",
+   "description": "residence change stored under a different predicate",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:200",
+     "why": "a should be retired by b: Pass-1/Pass-2 candidates require the SAME predicate (user_fact vs user_event); one slot under two predicates is never linked"
+    }
+   ]
+  },
+  {
+   "id": "att-09",
+   "category": "attribute_slot",
+   "split": "dev",
+   "label": "normal",
+   "description": "car replaced",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['drives'] jaccard=0.14 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "neg-02",
+   "category": "negation",
+   "split": "dev",
+   "label": "normal",
+   "description": "stopped drinking coffee",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no polarity/negation rule -- the negated restatement shares too few content tokens with the positive fact (shared content tokens=['coffee'] jaccard=0.17)."
+    }
+   ]
+  },
+  {
+   "id": "neg-03",
+   "category": "negation",
+   "split": "dev",
+   "label": "normal",
+   "description": "not vegetarian anymore",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no polarity/negation rule -- the negated restatement shares too few content tokens with the positive fact (shared content tokens=['vegetarian'] jaccard=0.50)."
+    }
+   ]
+  },
+  {
+   "id": "neg-04",
+   "category": "negation",
+   "split": "dev",
+   "label": "normal",
+   "description": "lodash removed",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no polarity/negation rule -- the negated restatement shares too few content tokens with the positive fact (shared content tokens=['lodash'] jaccard=0.12)."
+    }
+   ]
+  },
+  {
+   "id": "neg-06",
+   "category": "negation",
+   "split": "dev",
+   "label": "normal",
+   "description": "doesn't like spicy food anymore",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no polarity/negation rule -- the negated restatement shares too few content tokens with the positive fact (shared content tokens=['food', 'spicy'] jaccard=0.29)."
+    }
+   ]
+  },
+  {
+   "id": "neg-07",
+   "category": "negation",
+   "split": "dev",
+   "label": "normal",
+   "description": "tennis stopped",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no polarity/negation rule -- the negated restatement shares too few content tokens with the positive fact (shared content tokens=['tennis'] jaccard=0.14)."
+    }
+   ]
+  },
+  {
+   "id": "cad-11",
+   "category": "change_after_duplicates",
+   "split": "dev",
+   "label": "normal",
+   "description": "manager restated then changed (low overlap)",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a1",
+     "a2",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a1": "active",
+     "a2": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.005,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a1 should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['manager'] jaccard=0.17 is below >=2 tokens / J>=0.3."
+    },
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a2 should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['manager'] jaccard=0.17 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "tru-05",
+   "category": "trust_direction",
+   "split": "dev",
+   "label": "normal",
+   "description": "user A, assistant B, user C",
+   "correct": false,
+   "expected": {
+    "active": [
+     "c"
+    ],
+    "superseded": [
+     "a",
+     "b"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "c"
+    ],
+    "superseded": [
+     "b"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "contradicts",
+      "score": null
+     },
+     {
+      "old": "b",
+      "new": "c",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "active",
+     "b": "superseded",
+     "c": "active"
+    }
+   },
+   "seconds": 0.005,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:346",
+     "why": "a should be retired by c: the correction retires only the newest prior value plus exact copies of it; an older divergent value kept alive by the trust guard's CONTRADICTS edge (a<->b) survives, leaving two current values"
+    }
+   ]
+  },
+  {
+   "id": "tru-11",
+   "category": "trust_direction",
+   "split": "dev",
+   "label": "normal",
+   "description": "user A, assistant B, assistant C",
+   "correct": false,
+   "expected": {
+    "active": [
+     "a",
+     "c"
+    ],
+    "superseded": [
+     "b"
+    ],
+    "contradiction": true
+   },
+   "observed": {
+    "active": [
+     "a",
+     "c"
+    ],
+    "superseded": [
+     "b"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "contradicts",
+      "score": null
+     },
+     {
+      "old": "b",
+      "new": "c",
+      "type": "assistant_confirm",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "active",
+     "b": "superseded",
+     "c": "active"
+    }
+   },
+   "seconds": 0.006,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:346",
+     "why": "conflict was recorded as CONTRADICTS against a value that was later replaced; nothing re-links the user fact to the NEW conflicting value, so memory_contradictions goes silent"
+    }
+   ]
+  }
+ ],
+ "excluded_cases": [
+  {
+   "id": "uno-11",
+   "category": "update_no_overlap",
+   "split": "dev",
+   "label": "ambiguous",
+   "description": "favorite editor on a multi-valued predicate",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=[] jaccard=0.00 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "ooo-01",
+   "category": "out_of_order",
+   "split": "dev",
+   "label": "expected_limitation",
+   "description": "old decision backfilled after the newer one",
+   "correct": false,
+   "expected": {
+    "active": [
+     "a"
+    ],
+    "superseded": [
+     "b"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:? (anchor not found: 'if new_claim.predicate in active_pack().single_valued:')",
+     "why": "a->b (user_correction): declared single_valued predicate -- the cardinality rule retires any different value, so distinct concurrent facts on one subject collapse"
+    },
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "b should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['sqlite'] jaccard=1.00 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "ooo-03",
+   "category": "out_of_order",
+   "split": "dev",
+   "label": "expected_limitation",
+   "description": "stale status report arrives late",
+   "correct": false,
+   "expected": {
+    "active": [
+     "a"
+    ],
+    "superseded": [
+     "b"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:? (anchor not found: 'if new_claim.predicate in active_pack().single_valued:')",
+     "why": "a->b (user_correction): declared single_valued predicate -- the cardinality rule retires any different value, so distinct concurrent facts on one subject collapse"
+    },
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "b should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['beta'] jaccard=1.00 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "nl-05",
+   "category": "nl_only",
+   "split": "dev",
+   "label": "ambiguous",
+   "description": "exact NL restatement, same session",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002
+  },
+  {
+   "id": "nl-06",
+   "category": "nl_only",
+   "split": "dev",
+   "label": "expected_limitation",
+   "description": "on-call handoff moves",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003,
+   "root_causes": [
+    {
+     "layer": "Integration",
+     "where": "memcontext/supersession.py:190",
+     "why": "a should be retired by b: NL-only facts have no triple, Pass-1 returns early and Pass-2 is off in this mode"
+    }
+   ]
+  }
+ ],
+ "cases": [
+  {
+   "id": "upd-02",
+   "category": "update",
+   "split": "dev",
+   "label": "normal",
+   "description": "standup time moves",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.02
+  },
+  {
+   "id": "upd-03",
+   "category": "update",
+   "split": "dev",
+   "label": "normal",
+   "description": "auth token transport changes",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "upd-04",
+   "category": "update",
+   "split": "dev",
+   "label": "normal",
+   "description": "numpy pin moves",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "upd-06",
+   "category": "update",
+   "split": "dev",
+   "label": "normal",
+   "description": "manager changes (one manager at a time)",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['manager'] jaccard=0.17 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "upd-07",
+   "category": "update",
+   "split": "dev",
+   "label": "normal",
+   "description": "meeting-time preference flips (low overlap)",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['meetings', 'prefers'] jaccard=0.25 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "upd-09",
+   "category": "update",
+   "split": "dev",
+   "label": "normal",
+   "description": "python dependency tool preference",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "upd-10",
+   "category": "update",
+   "split": "dev",
+   "label": "normal",
+   "description": "sprint focus changes",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "upd-12",
+   "category": "update",
+   "split": "dev",
+   "label": "normal",
+   "description": "phone number changes",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "uno-01",
+   "category": "update_no_overlap",
+   "split": "dev",
+   "label": "normal",
+   "description": "primary datastore decision",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "uno-03",
+   "category": "update_no_overlap",
+   "split": "dev",
+   "label": "normal",
+   "description": "mobile app status",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "uno-04",
+   "category": "update_no_overlap",
+   "split": "dev",
+   "label": "normal",
+   "description": "file purpose changes",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "uno-07",
+   "category": "update_no_overlap",
+   "split": "dev",
+   "label": "normal",
+   "description": "JSON casing convention",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "uno-10",
+   "category": "update_no_overlap",
+   "split": "dev",
+   "label": "normal",
+   "description": "seed script repurposed",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "uno-11",
+   "category": "update_no_overlap",
+   "split": "dev",
+   "label": "ambiguous",
+   "description": "favorite editor on a multi-valued predicate",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=[] jaccard=0.00 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "uno-12",
+   "category": "update_no_overlap",
+   "split": "dev",
+   "label": "normal",
+   "description": "deployment target decision",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "add-01",
+   "category": "additive",
+   "split": "dev",
+   "label": "normal",
+   "description": "food likes",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "add-02",
+   "category": "additive",
+   "split": "dev",
+   "label": "normal",
+   "description": "two allergies",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "add-03",
+   "category": "additive",
+   "split": "dev",
+   "label": "normal",
+   "description": "two siblings",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "add-04",
+   "category": "additive",
+   "split": "dev",
+   "label": "normal",
+   "description": "two migration todos on different tables",
+   "correct": false,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a->b (user_correction): >=2 shared content tokens and J>=0.3 read as an update; additive facts sharing template words collapse (shared content tokens=['migration', 'table', 'tests', 'write'] jaccard=0.67)"
+    }
+   ]
+  },
+  {
+   "id": "add-05",
+   "category": "additive",
+   "split": "dev",
+   "label": "normal",
+   "description": "two unrelated bug fixes",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.005
+  },
+  {
+   "id": "add-06",
+   "category": "additive",
+   "split": "dev",
+   "label": "normal",
+   "description": "two races run",
+   "correct": false,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.005,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a->b (user_correction): >=2 shared content tokens and J>=0.3 read as an update; additive facts sharing template words collapse (shared content tokens=['race', 'ran'] jaccard=0.33)"
+    }
+   ]
+  },
+  {
+   "id": "add-10",
+   "category": "additive",
+   "split": "dev",
+   "label": "normal",
+   "description": "two public-API todos",
+   "correct": false,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a->b (user_correction): >=2 shared content tokens and J>=0.3 read as an update; additive facts sharing template words collapse (shared content tokens=['add', 'api', 'public'] jaccard=0.43)"
+    }
+   ]
+  },
+  {
+   "id": "add-13",
+   "category": "additive",
+   "split": "dev",
+   "label": "normal",
+   "description": "two endpoint contracts",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "add-14",
+   "category": "additive",
+   "split": "dev",
+   "label": "normal",
+   "description": "decisions for two different components (same single_valued predicate)",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "att-01",
+   "category": "attribute_slot",
+   "split": "dev",
+   "label": "normal",
+   "description": "NYC -> Boston",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "att-03",
+   "category": "attribute_slot",
+   "split": "dev",
+   "label": "normal",
+   "description": "Brooklyn -> Austin",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "att-04",
+   "category": "attribute_slot",
+   "split": "dev",
+   "label": "normal",
+   "description": "employed by -> working at",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "att-06",
+   "category": "attribute_slot",
+   "split": "dev",
+   "label": "normal",
+   "description": "job title promotion",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['engineer'] jaccard=0.17 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "att-07",
+   "category": "attribute_slot",
+   "split": "dev",
+   "label": "normal",
+   "description": "residence change stored under a different predicate",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:200",
+     "why": "a should be retired by b: Pass-1/Pass-2 candidates require the SAME predicate (user_fact vs user_event); one slot under two predicates is never linked"
+    }
+   ]
+  },
+  {
+   "id": "att-09",
+   "category": "attribute_slot",
+   "split": "dev",
+   "label": "normal",
+   "description": "car replaced",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['drives'] jaccard=0.14 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "att-10",
+   "category": "attribute_slot",
+   "split": "dev",
+   "label": "normal",
+   "description": "residence and employer are different slots",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "his-03",
+   "category": "history_window",
+   "split": "dev",
+   "label": "normal",
+   "description": "worked-until then works-at",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002
+  },
+  {
+   "id": "his-05",
+   "category": "history_window",
+   "split": "dev",
+   "label": "normal",
+   "description": "'used to live in' then current",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002
+  },
+  {
+   "id": "his-08",
+   "category": "history_window",
+   "split": "dev",
+   "label": "normal",
+   "description": "current Austin then 'previously lived'",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "his-09",
+   "category": "history_window",
+   "split": "dev",
+   "label": "normal",
+   "description": "'until last year' then current employer",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "his-10",
+   "category": "history_window",
+   "split": "dev",
+   "label": "normal",
+   "description": "current Berlin then university-years Munich",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "his-11",
+   "category": "history_window",
+   "split": "dev",
+   "label": "normal",
+   "description": "current employer then past internship at the same company",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002
+  },
+  {
+   "id": "his-12",
+   "category": "history_window",
+   "split": "dev",
+   "label": "normal",
+   "description": "'used to work at' then current",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "qty-01",
+   "category": "quantity",
+   "split": "dev",
+   "label": "normal",
+   "description": "two kids -> three kids",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.005
+  },
+  {
+   "id": "qty-02",
+   "category": "quantity",
+   "split": "dev",
+   "label": "normal",
+   "description": "team size grows",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "qty-03",
+   "category": "quantity",
+   "split": "dev",
+   "label": "normal",
+   "description": "rate limit raised",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "qty-05",
+   "category": "quantity",
+   "split": "dev",
+   "label": "normal",
+   "description": "running distance",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "qty-08",
+   "category": "quantity",
+   "split": "dev",
+   "label": "normal",
+   "description": "timeout unit change",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "qty-10",
+   "category": "quantity",
+   "split": "dev",
+   "label": "normal",
+   "description": "sleep hours",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.005
+  },
+  {
+   "id": "qty-11",
+   "category": "quantity",
+   "split": "dev",
+   "label": "normal",
+   "description": "on-call rotation size",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "neg-01",
+   "category": "negation",
+   "split": "dev",
+   "label": "normal",
+   "description": "no longer uses Redis",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "neg-02",
+   "category": "negation",
+   "split": "dev",
+   "label": "normal",
+   "description": "stopped drinking coffee",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no polarity/negation rule -- the negated restatement shares too few content tokens with the positive fact (shared content tokens=['coffee'] jaccard=0.17)."
+    }
+   ]
+  },
+  {
+   "id": "neg-03",
+   "category": "negation",
+   "split": "dev",
+   "label": "normal",
+   "description": "not vegetarian anymore",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no polarity/negation rule -- the negated restatement shares too few content tokens with the positive fact (shared content tokens=['vegetarian'] jaccard=0.50)."
+    }
+   ]
+  },
+  {
+   "id": "neg-04",
+   "category": "negation",
+   "split": "dev",
+   "label": "normal",
+   "description": "lodash removed",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no polarity/negation rule -- the negated restatement shares too few content tokens with the positive fact (shared content tokens=['lodash'] jaccard=0.12)."
+    }
+   ]
+  },
+  {
+   "id": "neg-06",
+   "category": "negation",
+   "split": "dev",
+   "label": "normal",
+   "description": "doesn't like spicy food anymore",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no polarity/negation rule -- the negated restatement shares too few content tokens with the positive fact (shared content tokens=['food', 'spicy'] jaccard=0.29)."
+    }
+   ]
+  },
+  {
+   "id": "neg-07",
+   "category": "negation",
+   "split": "dev",
+   "label": "normal",
+   "description": "tennis stopped",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a should be retired by b: no polarity/negation rule -- the negated restatement shares too few content tokens with the positive fact (shared content tokens=['tennis'] jaccard=0.14)."
+    }
+   ]
+  },
+  {
+   "id": "neg-11",
+   "category": "negation",
+   "split": "dev",
+   "label": "normal",
+   "description": "todo cancelled",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "dup-01",
+   "category": "duplicate",
+   "split": "dev",
+   "label": "normal",
+   "description": "aisle seat preference restated",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "dup-02",
+   "category": "duplicate",
+   "split": "dev",
+   "label": "normal",
+   "description": "decision restated in a later session (single_valued)",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "dup-03",
+   "category": "duplicate",
+   "split": "dev",
+   "label": "normal",
+   "description": "case-only variant",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002
+  },
+  {
+   "id": "dup-05",
+   "category": "duplicate",
+   "split": "dev",
+   "label": "normal",
+   "description": "allergy restated across sessions",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "dup-07",
+   "category": "duplicate",
+   "split": "dev",
+   "label": "normal",
+   "description": "convention restated (single_valued)",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "dup-08",
+   "category": "duplicate",
+   "split": "dev",
+   "label": "normal",
+   "description": "spouse name restated with different wording",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "dup-10",
+   "category": "duplicate",
+   "split": "dev",
+   "label": "normal",
+   "description": "trailing-punctuation variant",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "cad-04",
+   "category": "change_after_duplicates",
+   "split": "dev",
+   "label": "normal",
+   "description": "user A, assistant echo A, user B",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a2",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     },
+     {
+      "old": "a1",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a1": "superseded",
+     "a2": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.005
+  },
+  {
+   "id": "cad-05",
+   "category": "change_after_duplicates",
+   "split": "dev",
+   "label": "normal",
+   "description": "case variants of A then B",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a2",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     },
+     {
+      "old": "a1",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a1": "superseded",
+     "a2": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.005
+  },
+  {
+   "id": "cad-06",
+   "category": "change_after_duplicates",
+   "split": "dev",
+   "label": "normal",
+   "description": "user A twice then assistant B",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a1",
+     "a2",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": true
+   },
+   "observed": {
+    "active": [
+     "a1",
+     "a2",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": true,
+    "edges": [
+     {
+      "old": "a2",
+      "new": "b",
+      "type": "contradicts",
+      "score": null
+     }
+    ],
+    "status": {
+     "a1": "active",
+     "a2": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "cad-07",
+   "category": "change_after_duplicates",
+   "split": "dev",
+   "label": "normal",
+   "description": "two kids twice then three",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a2",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     },
+     {
+      "old": "a1",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a1": "superseded",
+     "a2": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.005
+  },
+  {
+   "id": "cad-08",
+   "category": "change_after_duplicates",
+   "split": "dev",
+   "label": "normal",
+   "description": "beta, beta, GA",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a2",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     },
+     {
+      "old": "a1",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a1": "superseded",
+     "a2": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.006
+  },
+  {
+   "id": "cad-09",
+   "category": "change_after_duplicates",
+   "split": "dev",
+   "label": "normal",
+   "description": "A, A in one namespace; B in another",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a1",
+     "a2",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a1",
+     "a2",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a1": "active",
+     "a2": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "cad-11",
+   "category": "change_after_duplicates",
+   "split": "dev",
+   "label": "normal",
+   "description": "manager restated then changed (low overlap)",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a1",
+     "a2"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a1",
+     "a2",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a1": "active",
+     "a2": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.005,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a1 should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['manager'] jaccard=0.17 is below >=2 tokens / J>=0.3."
+    },
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "a2 should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['manager'] jaccard=0.17 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "xs-02",
+   "category": "cross_session",
+   "split": "dev",
+   "label": "normal",
+   "description": "theme preference across sessions",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.007
+  },
+  {
+   "id": "xs-03",
+   "category": "cross_session",
+   "split": "dev",
+   "label": "normal",
+   "description": "residence across sessions",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.005
+  },
+  {
+   "id": "xs-05",
+   "category": "cross_session",
+   "split": "dev",
+   "label": "normal",
+   "description": "convention across sessions",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "xs-06",
+   "category": "cross_session",
+   "split": "dev",
+   "label": "normal",
+   "description": "assistant then user across sessions",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "xs-09",
+   "category": "cross_session",
+   "split": "dev",
+   "label": "normal",
+   "description": "negation across sessions",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "xs-10",
+   "category": "cross_session",
+   "split": "dev",
+   "label": "normal",
+   "description": "additive facts across sessions",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "xs-12",
+   "category": "cross_session",
+   "split": "dev",
+   "label": "normal",
+   "description": "employer change across sessions",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.005
+  },
+  {
+   "id": "xn-04",
+   "category": "cross_namespace",
+   "split": "dev",
+   "label": "normal",
+   "description": "quantity in two tenants",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "xn-05",
+   "category": "cross_namespace",
+   "split": "dev",
+   "label": "normal",
+   "description": "user vs assistant across tenants",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "xn-06",
+   "category": "cross_namespace",
+   "split": "dev",
+   "label": "normal",
+   "description": "identical NL fact in two tenants",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "xn-07",
+   "category": "cross_namespace",
+   "split": "dev",
+   "label": "normal",
+   "description": "NL update in another tenant",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002
+  },
+  {
+   "id": "xn-08",
+   "category": "cross_namespace",
+   "split": "dev",
+   "label": "normal",
+   "description": "convention in two tenants",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "xn-11",
+   "category": "cross_namespace",
+   "split": "dev",
+   "label": "normal",
+   "description": "negation in another tenant",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "xn-12",
+   "category": "cross_namespace",
+   "split": "dev",
+   "label": "normal",
+   "description": "NL paraphrase in another tenant",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "tru-02",
+   "category": "trust_direction",
+   "split": "dev",
+   "label": "normal",
+   "description": "assistant then user different value",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.005
+  },
+  {
+   "id": "tru-04",
+   "category": "trust_direction",
+   "split": "dev",
+   "label": "normal",
+   "description": "user then assistant, multi-valued with overlap",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": true
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": true,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "contradicts",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "tru-05",
+   "category": "trust_direction",
+   "split": "dev",
+   "label": "normal",
+   "description": "user A, assistant B, user C",
+   "correct": false,
+   "expected": {
+    "active": [
+     "c"
+    ],
+    "superseded": [
+     "a",
+     "b"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "c"
+    ],
+    "superseded": [
+     "b"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "contradicts",
+      "score": null
+     },
+     {
+      "old": "b",
+      "new": "c",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "active",
+     "b": "superseded",
+     "c": "active"
+    }
+   },
+   "seconds": 0.005,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:346",
+     "why": "a should be retired by c: the correction retires only the newest prior value plus exact copies of it; an older divergent value kept alive by the trust guard's CONTRADICTS edge (a<->b) survives, leaving two current values"
+    }
+   ]
+  },
+  {
+   "id": "tru-07",
+   "category": "trust_direction",
+   "split": "dev",
+   "label": "normal",
+   "description": "user count then assistant count",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": true
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": true,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "contradicts",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "tru-09",
+   "category": "trust_direction",
+   "split": "dev",
+   "label": "normal",
+   "description": "assistant then user, multi-valued with overlap",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "tru-11",
+   "category": "trust_direction",
+   "split": "dev",
+   "label": "normal",
+   "description": "user A, assistant B, assistant C",
+   "correct": false,
+   "expected": {
+    "active": [
+     "a",
+     "c"
+    ],
+    "superseded": [
+     "b"
+    ],
+    "contradiction": true
+   },
+   "observed": {
+    "active": [
+     "a",
+     "c"
+    ],
+    "superseded": [
+     "b"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "contradicts",
+      "score": null
+     },
+     {
+      "old": "b",
+      "new": "c",
+      "type": "assistant_confirm",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "active",
+     "b": "superseded",
+     "c": "active"
+    }
+   },
+   "seconds": 0.006,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:346",
+     "why": "conflict was recorded as CONTRADICTS against a value that was later replaced; nothing re-links the user fact to the NEW conflicting value, so memory_contradictions goes silent"
+    }
+   ]
+  },
+  {
+   "id": "tru-12",
+   "category": "trust_direction",
+   "split": "dev",
+   "label": "normal",
+   "description": "assistant then user, attribute slot",
+   "correct": true,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004
+  },
+  {
+   "id": "ooo-01",
+   "category": "out_of_order",
+   "split": "dev",
+   "label": "expected_limitation",
+   "description": "old decision backfilled after the newer one",
+   "correct": false,
+   "expected": {
+    "active": [
+     "a"
+    ],
+    "superseded": [
+     "b"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:? (anchor not found: 'if new_claim.predicate in active_pack().single_valued:')",
+     "why": "a->b (user_correction): declared single_valued predicate -- the cardinality rule retires any different value, so distinct concurrent facts on one subject collapse"
+    },
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "b should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['sqlite'] jaccard=1.00 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "ooo-03",
+   "category": "out_of_order",
+   "split": "dev",
+   "label": "expected_limitation",
+   "description": "stale status report arrives late",
+   "correct": false,
+   "expected": {
+    "active": [
+     "a"
+    ],
+    "superseded": [
+     "b"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "other": {},
+    "contradiction": false,
+    "edges": [
+     {
+      "old": "a",
+      "new": "b",
+      "type": "user_correction",
+      "score": null
+     }
+    ],
+    "status": {
+     "a": "superseded",
+     "b": "active"
+    }
+   },
+   "seconds": 0.004,
+   "root_causes": [
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:? (anchor not found: 'if new_claim.predicate in active_pack().single_valued:')",
+     "why": "a->b (user_correction): declared single_valued predicate -- the cardinality rule retires any different value, so distinct concurrent facts on one subject collapse"
+    },
+    {
+     "layer": "Logic",
+     "where": "memcontext/supersession.py:304",
+     "why": "b should be retired by b: no Pass-1 rule fired -- not single_valued, no attribute slot (memcontext/supersession.py:113), no pure-quantity change, and shared content tokens=['beta'] jaccard=1.00 is below >=2 tokens / J>=0.3."
+    }
+   ]
+  },
+  {
+   "id": "nl-02",
+   "category": "nl_only",
+   "split": "dev",
+   "label": "normal",
+   "description": "unrelated NL facts",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "nl-03",
+   "category": "nl_only",
+   "split": "dev",
+   "label": "normal",
+   "description": "two weekend hobbies (NL)",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "nl-04",
+   "category": "nl_only",
+   "split": "dev",
+   "label": "normal",
+   "description": "NL update in a later session",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  },
+  {
+   "id": "nl-05",
+   "category": "nl_only",
+   "split": "dev",
+   "label": "ambiguous",
+   "description": "exact NL restatement, same session",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002
+  },
+  {
+   "id": "nl-06",
+   "category": "nl_only",
+   "split": "dev",
+   "label": "expected_limitation",
+   "description": "on-call handoff moves",
+   "correct": false,
+   "expected": {
+    "active": [
+     "b"
+    ],
+    "superseded": [
+     "a"
+    ],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003,
+   "root_causes": [
+    {
+     "layer": "Integration",
+     "where": "memcontext/supersession.py:190",
+     "why": "a should be retired by b: NL-only facts have no triple, Pass-1 returns early and Pass-2 is off in this mode"
+    }
+   ]
+  },
+  {
+   "id": "nl-07",
+   "category": "nl_only",
+   "split": "dev",
+   "label": "normal",
+   "description": "structured fact then unrelated NL fact",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.002
+  },
+  {
+   "id": "nl-08",
+   "category": "nl_only",
+   "split": "dev",
+   "label": "normal",
+   "description": "two platform facts with the same template",
+   "correct": true,
+   "expected": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "contradiction": false
+   },
+   "observed": {
+    "active": [
+     "a",
+     "b"
+    ],
+    "superseded": [],
+    "other": {},
+    "contradiction": false,
+    "edges": [],
+    "status": {
+     "a": "active",
+     "b": "active"
+    }
+   },
+   "seconds": 0.003
+  }
+ ]
+}

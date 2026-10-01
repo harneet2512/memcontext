@@ -21,6 +21,9 @@ MemContext promises three things. Each eval below checks one of them.
 | `supersession_matrix.py` | 2 | For update / additive / history / duplicate / negation / cross-session / cross-namespace / trust-direction cases, is the final state right, in deterministic and semantic mode, and where do the two disagree? | Assistant claims overriding user facts; decisions changed in a later session never retiring the old one; concurrent writes superseding each other. | seconds (deterministic), ~1 min (semantic) |
 | `canary_real_embedder.py` | 2 | Is semantic memory actually on when the product says it is? | A type-checker fix made the local embedder raise on every call for 19 days while CI and `status` said ON. | < 2 min, needs the model |
 | `claude_code_recall.py` | 3 | Across real, separate `claude -p` sessions: current-decision recall, stale answers, stale *actions* (code written with an old decision), and whether the answer came from hook injection or a tool call. | Hooks rejected with 401 on every call; a fresh session answering `DB_ENGINE = 'unknown'`. | a few dollars per full run |
+| `injection_noise.py` | 1, 3 | When a prompt or edit has nothing to do with stored decisions, does the hook stay silent? When it is related, how much of what it injects is on-topic, and is the current decision there? | Unrelated prompts drawing in unrelated decisions on a single shared word. | seconds |
+| `provenance_trace.py` | 1 | For every changed decision, does `memory_trace` return every version, in order, one live, each grounded in the source turn that states it, with the documented edge? Subject drift is a separate stress row. | A reworded subject silently breaking the history chain. | seconds |
+| `scale.py` | 1, 3 | With 0 to 2,000 unrelated decisions in memory: hook stale exposure, current-value hit, injected size, hook p50/p95 latency, ingest cost per store, false CONFLICT warnings. | Older current decisions dropping out of the hook's candidate window; latency growing per stored decision. | ~1.5 min |
 
 ## Rules
 
@@ -50,7 +53,15 @@ python -m evals.product.stale_exposure
 python -m evals.product.supersession_matrix --mode both --split dev
 python -m evals.product.canary_real_embedder
 python -m evals.product.claude_code_recall --model haiku --max-cost-usd 5
+python evals/product/injection_noise.py run --split dev
+python evals/product/provenance_trace.py run
+python evals/product/scale.py run
 ```
+
+`python evals/product/dashboard.py` builds `results/dashboard.html` from the latest results of
+every eval (method, n, baseline, metrics, findings, limits) and opens it; `--run` re-runs the
+fast deterministic evals first. Pass `--repo PATH` to an eval to measure another checkout
+(for example a clean build while the working tree has local edits).
 
 These are not part of the CI test gate; `tests/` is. Run them before a release,
 after changing supersession/retrieval/hooks, and before quoting any number.
