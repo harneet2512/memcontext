@@ -128,6 +128,8 @@ def _hooks(activity_path: Path, limit: int, width: int, facts: int = 3) -> list[
         raw = activity_path.read_text(encoding="utf-8").splitlines()[-limit:]
     except OSError:
         return out + ["  (no hook activity yet)"]
+    if not any(line.strip() for line in raw):
+        return out + ["  (waiting for the first hook call from Claude Code)"]
     for line in reversed(raw):
         try:
             ev = json.loads(line)
