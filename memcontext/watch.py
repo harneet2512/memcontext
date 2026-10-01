@@ -13,9 +13,11 @@ Reads only; safe to run next to a live server (SQLite WAL).
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 import textwrap
 from datetime import datetime
+from pathlib import Path
 
 _LIVE = ("active", "confirmed", "audited")
 
@@ -103,16 +105,51 @@ def _served(conn: sqlite3.Connection, limit: int, width: int) -> list[str]:
     return out
 
 
+_HOOK_LABEL = {"UserPromptSubmit": "UserPromptSubmit", "PreToolUse": "PreToolUse",
+               "PostToolUse": "PostToolUse"}
+
+
+def _hooks(activity_path: Path, limit: int, width: int) -> list[str]:
+    """What the Claude Code hooks just did: queried, injected, captured (newest first)."""
+    out = _section("LIVE HOOKS (what memory did for the agent, as it happened)")
+    try:
+        raw = activity_path.read_text(encoding="utf-8").splitlines()[-limit:]
+    except OSError:
+        return out + ["  (no hook activity yet)"]
+    for line in reversed(raw):
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        label = _HOOK_LABEL.get(ev.get("event", ""), ev.get("event", "?"))
+        when = _clock(ev.get("ts"))
+        if ev.get("event") == "PostToolUse":
+            out.append(f"  {when}  {label:<16} {ev.get('tool', '')} {ev.get('target', '')}"
+                       "  -> captured as an episode")
+            continue
+        injected = ev.get("injected") or []
+        what = (f"{ev.get('tool', '')} {ev.get('target', '')}" if ev.get("event") == "PreToolUse"
+                else f"\"{_one_line(ev.get('prompt'), 40)}\"")
+        out.append(f"  {when}  {label:<16} {_one_line(what, 44)}  -> "
+                   f"{len(injected)} fact(s) injected  ({ev.get('ms', '?')} ms)")
+        if ev.get("query"):
+            out.append("      query: " + _one_line(ev["query"], width - 13))
+        out.extend("      + " + _one_line(fact, width - 8) for fact in injected[:3])
+    return out
+
+
 def render_memory_view(conn: sqlite3.Connection, *, limit: int = 5, width: int = 100,
-                       title: str = "") -> str:
-    """Render the four pipeline stages as plain ASCII, at most ``width`` columns."""
+                       title: str = "", activity_path: Path | str | None = None) -> str:
+    """Render the pipeline stages as plain ASCII, at most ``width`` columns."""
     conn.row_factory = sqlite3.Row
     turns = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
     header = _one_line(f"MEMCONTEXT  .  live memory  .  {title}  .  "
                        f"{datetime.now().strftime('%H:%M:%S')}", width)
-    if not turns:
-        return header + "\n\n  (no memory yet)"
     lines = [header]
+    if activity_path is not None:
+        lines += _hooks(Path(activity_path), limit, width)
+    if not turns:
+        return "\n".join(lines + ["", "  (no memory yet)"])
     lines += _captured(conn, limit, width)
     lines += _decisions(conn, limit + 3, width)
     lines += _changes(conn, limit, width)

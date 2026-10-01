@@ -10,6 +10,7 @@ Same database, same memory. Two doors in.
 """
 from __future__ import annotations
 
+import contextlib
 import functools
 import os
 import re
@@ -350,7 +351,8 @@ _GENERIC_PATH_TOKENS = frozenset({
     "node", "modules", "site", "packages", "dist", "build", "venv", "scripts",
     "txt", "json", "yaml", "yml", "toml", "html", "css", "tsx", "jsx", "exe",
 })
-_MAX_QUERY_KEYWORDS = 8
+_MAX_QUERY_KEYWORDS = 12
+_WRITTEN_TEXT_CHARS = 400
 
 
 def _tool_query_text(tool_input: dict | str) -> str:
@@ -362,10 +364,15 @@ def _tool_query_text(tool_input: dict | str) -> str:
     if isinstance(fp, str) and fp:
         base = re.split(r"[\\/]", fp)[-1]
         parts.append(base.rsplit(".", 1)[0] if "." in base else base)
-    for key in ("command", "prompt", "query"):
+    for key in ("command", "prompt", "query", "description"):
         val = tool_input.get(key)
         if isinstance(val, str) and val:
             parts.append(val)
+    # What is about to be written: decisions about THIS change should surface now,
+    # even when the file name says nothing about them.
+    written = [tool_input.get("new_string"), tool_input.get("content")]
+    written += [e.get("new_string") for e in tool_input.get("edits") or [] if isinstance(e, dict)]
+    parts += [w[:_WRITTEN_TEXT_CHARS] for w in written if isinstance(w, str) and w]
     return " ".join(parts)
 
 
@@ -380,6 +387,33 @@ def _extract_query_keywords(tool_name: str, tool_input: dict | str) -> str | Non
         if len(keywords) >= _MAX_QUERY_KEYWORDS:
             break
     return " ".join(keywords) if keywords else None
+
+
+# ── Hook activity log (opt-in, for watching hooks in real time) ──────────────
+
+def _record_activity(event: str, **fields: object) -> None:
+    """Append one JSON line per memory-touching hook call to
+    MEMCONTEXT_HOOK_ACTIVITY_LOG (unset = off). Never fails a hook."""
+    path = os.environ.get("MEMCONTEXT_HOOK_ACTIVITY_LOG", "").strip()
+    if not path:
+        return
+    import json
+
+    with contextlib.suppress(OSError, TypeError, ValueError), open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"ts": time.time_ns(), "event": event, **fields}) + "\n")
+
+
+def _injected_lines(response: dict) -> list[str]:
+    ctx = (response.get("hookSpecificOutput") or {}).get("additionalContext") or ""
+    return [line[2:] for line in ctx.splitlines() if line.startswith("- ")]
+
+
+def _target(tool_input: object) -> str:
+    fp = tool_input.get("file_path") if isinstance(tool_input, dict) else None
+    if isinstance(fp, str) and fp:
+        return re.split(r"[\\/]", fp)[-1]
+    cmd = tool_input.get("command") if isinstance(tool_input, dict) else None
+    return " ".join(str(cmd or "").split())[:60]
 
 
 # ── Hook endpoints ───────────────────────────────────────
@@ -466,6 +500,7 @@ def _capture_tool_use(body: dict, namespace: str) -> dict:
         namespace=namespace,
         extractor=_episode_only,
     )
+    _record_activity("PostToolUse", tool=tool_name, target=_target(tool_input), stored=True)
     return {"status": "ok"}
 
 
@@ -584,7 +619,12 @@ def _capture_prompt(body: dict, namespace: str | None) -> dict:
         return {}  # never query with (and so never log) text admission rejected
 
     # Retrieve before storing, so the prompt never retrieves itself.
+    started = time.monotonic()
     context = _prompt_context(prompt, namespace)
+    response = _hook_context("UserPromptSubmit", context)
+    _record_activity("UserPromptSubmit", prompt=" ".join(prompt.split())[:200],
+                     injected=_injected_lines(response),
+                     ms=round((time.monotonic() - started) * 1000, 1))
 
     from memcontext import mcp_tools
     mcp_tools.handle_memory_store(
@@ -595,7 +635,7 @@ def _capture_prompt(body: dict, namespace: str | None) -> dict:
         namespace=namespace or "default",
         extractor=_get_hook_extractor(),
     )
-    return _hook_context("UserPromptSubmit", context)
+    return response
 
 
 _TOOL_CONTEXT_MAX_LINES = 5
@@ -628,7 +668,14 @@ def _context_for_tool(body: dict, namespace: str | None) -> dict:
         return {}
 
     start = time.monotonic()
+    response = _tool_context(keywords, namespace, start)
+    _record_activity("PreToolUse", tool=tool_name, target=_target(tool_input), query=keywords,
+                     injected=_injected_lines(response),
+                     ms=round((time.monotonic() - start) * 1000, 1))
+    return response
 
+
+def _tool_context(keywords: str, namespace: str | None, start: float) -> dict:
     from memcontext.claims import row_to_claim
     rows = _active_claim_rows(namespace)
 
