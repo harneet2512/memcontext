@@ -138,9 +138,13 @@ def run_extraction(
         return ExtractionResult((), (), ())
 
     if hasattr(extractor, "set_context"):
+        # Same session AND same namespace: session ids are caller-chosen and collide
+        # across tenants, and this context is sent to the extractor (often an LLM).
         prior_rows = conn.execute(
-            "SELECT * FROM turns WHERE session_id = ? AND ts < ? ORDER BY ts DESC LIMIT 8",
-            (session_id, turn.ts),
+            "SELECT * FROM turns WHERE session_id = ? AND ts < ?"
+            " AND namespace = (SELECT namespace FROM turns WHERE turn_id = ?)"
+            " ORDER BY ts DESC LIMIT 8",
+            (session_id, turn.ts, turn.turn_id),
         ).fetchall()
         prior_turns = [
             Turn(
