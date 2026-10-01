@@ -1,0 +1,895 @@
+{
+ "eval": "recall_ab",
+ "title": "Real Claude Code sessions: with vs without MemContext",
+ "promise": "3. It works where the user is: a fresh session acts on the current decision.",
+ "question": "Across separate real Claude Code sessions, does the agent answer and act on the current project decision with its own notes, with a hand-kept decision log, and with MemContext, both on short scenarios and on a long project history?",
+ "method": "Same scenarios, prompts, model and deterministic scoring as claude_code_recall (regex over a final CURRENT: line and over a file the agent writes). Every step is a new headless `claude -p` session; steps run in all arms before the next step. The self_notes arm has no memory tool and keeps whatever Claude writes. The notes arm also gets every user decision appended, dated, to DECISIONS.md.",
+ "commit": "2e924643d7e0139a78e849ee5bddebe0c7700ec5",
+ "code_under_test": {
+  "path": "D:/mc-demo",
+  "commit": "7ce571adc8a5b3937234723b038d2490c36a6f04",
+  "dirty": false
+ },
+ "product_code_dirty": false,
+ "timestamp_utc": "2026-10-01T20:47:28.740837+00:00",
+ "split": "dev",
+ "deterministic": false,
+ "model": "haiku",
+ "claude_version": "2.1.287 (Claude Code)",
+ "headline": {
+  "label": "long-horizon (15 decisions, 28 sessions before the questions): steps answered or acted on with a non-current decision (own notes / decision log / MemContext)",
+  "value": "0/9 / 0/9 / 0/9",
+  "pct": 0.0,
+  "better": "lower",
+  "by_arm": {
+   "Claude's own notes (no memory tool)": "0/9",
+   "Decision log kept by the harness (DECISIONS.md)": "0/9",
+   "MemContext": "0/9"
+  }
+ },
+ "metrics": [
+  {
+   "name": "long_horizon / Claude's own notes (no memory tool): wrong steps",
+   "value": "0/9",
+   "pct": 0.0,
+   "n": 9,
+   "definition": "recall/act steps where the answer or the written file is not the current decision",
+   "better": "lower"
+  },
+  {
+   "name": "long_horizon / Claude's own notes (no memory tool): stale answers",
+   "value": "0/7",
+   "pct": 0.0,
+   "n": 7,
+   "definition": "steps with an older decision on record whose CURRENT: line names an old value",
+   "better": "lower"
+  },
+  {
+   "name": "long_horizon / Claude's own notes (no memory tool): stale actions",
+   "value": "0/3",
+   "pct": 0.0,
+   "n": 3,
+   "definition": "act steps with an older decision on record where the written file holds an old value",
+   "better": "lower"
+  },
+  {
+   "name": "long_horizon / Decision log kept by the harness (DECISIONS.md): wrong steps",
+   "value": "0/9",
+   "pct": 0.0,
+   "n": 9,
+   "definition": "recall/act steps where the answer or the written file is not the current decision",
+   "better": "lower"
+  },
+  {
+   "name": "long_horizon / Decision log kept by the harness (DECISIONS.md): stale answers",
+   "value": "0/7",
+   "pct": 0.0,
+   "n": 7,
+   "definition": "steps with an older decision on record whose CURRENT: line names an old value",
+   "better": "lower"
+  },
+  {
+   "name": "long_horizon / Decision log kept by the harness (DECISIONS.md): stale actions",
+   "value": "0/3",
+   "pct": 0.0,
+   "n": 3,
+   "definition": "act steps with an older decision on record where the written file holds an old value",
+   "better": "lower"
+  },
+  {
+   "name": "long_horizon / MemContext: wrong steps",
+   "value": "0/9",
+   "pct": 0.0,
+   "n": 9,
+   "definition": "recall/act steps where the answer or the written file is not the current decision",
+   "better": "lower"
+  },
+  {
+   "name": "long_horizon / MemContext: stale answers",
+   "value": "0/7",
+   "pct": 0.0,
+   "n": 7,
+   "definition": "steps with an older decision on record whose CURRENT: line names an old value",
+   "better": "lower"
+  },
+  {
+   "name": "long_horizon / MemContext: stale actions",
+   "value": "0/3",
+   "pct": 0.0,
+   "n": 3,
+   "definition": "act steps with an older decision on record where the written file holds an old value",
+   "better": "lower"
+  },
+  {
+   "name": "short / Claude's own notes (no memory tool): wrong steps",
+   "value": "0/11",
+   "pct": 0.0,
+   "n": 11,
+   "definition": "recall/act steps where the answer or the written file is not the current decision",
+   "better": "lower"
+  },
+  {
+   "name": "short / Claude's own notes (no memory tool): stale answers",
+   "value": "0/8",
+   "pct": 0.0,
+   "n": 8,
+   "definition": "steps with an older decision on record whose CURRENT: line names an old value",
+   "better": "lower"
+  },
+  {
+   "name": "short / Claude's own notes (no memory tool): stale actions",
+   "value": "0/4",
+   "pct": 0.0,
+   "n": 4,
+   "definition": "act steps with an older decision on record where the written file holds an old value",
+   "better": "lower"
+  },
+  {
+   "name": "short / Decision log kept by the harness (DECISIONS.md): wrong steps",
+   "value": "1/11",
+   "pct": 9.1,
+   "n": 11,
+   "definition": "recall/act steps where the answer or the written file is not the current decision",
+   "better": "lower"
+  },
+  {
+   "name": "short / Decision log kept by the harness (DECISIONS.md): stale answers",
+   "value": "0/8",
+   "pct": 0.0,
+   "n": 8,
+   "definition": "steps with an older decision on record whose CURRENT: line names an old value",
+   "better": "lower"
+  },
+  {
+   "name": "short / Decision log kept by the harness (DECISIONS.md): stale actions",
+   "value": "0/4",
+   "pct": 0.0,
+   "n": 4,
+   "definition": "act steps with an older decision on record where the written file holds an old value",
+   "better": "lower"
+  },
+  {
+   "name": "short / MemContext: wrong steps",
+   "value": "1/11",
+   "pct": 9.1,
+   "n": 11,
+   "definition": "recall/act steps where the answer or the written file is not the current decision",
+   "better": "lower"
+  },
+  {
+   "name": "short / MemContext: stale answers",
+   "value": "1/8",
+   "pct": 12.5,
+   "n": 8,
+   "definition": "steps with an older decision on record whose CURRENT: line names an old value",
+   "better": "lower"
+  },
+  {
+   "name": "short / MemContext: stale actions",
+   "value": "0/4",
+   "pct": 0.0,
+   "n": 4,
+   "definition": "act steps with an older decision on record where the written file holds an old value",
+   "better": "lower"
+  }
+ ],
+ "tables": [
+  {
+   "title": "By arm",
+   "columns": [
+    "arm",
+    "wrong steps",
+    "current recall",
+    "stale answers",
+    "correct actions",
+    "stale actions",
+    "answer sources",
+    "sessions",
+    "mean tokens/session",
+    "mean $/session",
+    "mean s/session"
+   ],
+   "rows": [
+    [
+     "Claude's own notes (no memory tool)",
+     "0/20",
+     "20/20",
+     "0/15",
+     "9/9",
+     "0/7",
+     "file=3 claude_md=9 none=8",
+     62,
+     61655,
+     0.0168,
+     8.2097
+    ],
+    [
+     "Decision log kept by the harness (DECISIONS.md)",
+     "1/20",
+     "19/20",
+     "0/15",
+     "9/9",
+     "0/7",
+     "file=17 none=3",
+     62,
+     71821,
+     0.021,
+     11.4887
+    ],
+    [
+     "MemContext",
+     "1/20",
+     "19/20",
+     "1/15",
+     "9/9",
+     "0/7",
+     "injection=16 tool=3 none=1",
+     62,
+     68531,
+     0.0206,
+     12.8968
+    ]
+   ]
+  },
+  {
+   "title": "By scenario set (short vs long-horizon)",
+   "columns": [
+    "scenario set",
+    "arm",
+    "wrong steps",
+    "current recall",
+    "stale answers",
+    "correct actions",
+    "stale actions",
+    "answer sources",
+    "sessions",
+    "mean tokens/session",
+    "mean $/session",
+    "mean s/session"
+   ],
+   "rows": [
+    [
+     "long-horizon (15 decisions, 28 sessions before the questions)",
+     "Claude's own notes (no memory tool)",
+     "0/9",
+     "9/9",
+     "0/7",
+     "3/3",
+     "0/3",
+     "claude_md=9",
+     37,
+     61916,
+     0.017,
+     8.2405
+    ],
+    [
+     "long-horizon (15 decisions, 28 sessions before the questions)",
+     "Decision log kept by the harness (DECISIONS.md)",
+     "0/9",
+     "9/9",
+     "0/7",
+     "3/3",
+     "0/3",
+     "file=6 none=3",
+     37,
+     72915,
+     0.0222,
+     12.2892
+    ],
+    [
+     "long-horizon (15 decisions, 28 sessions before the questions)",
+     "MemContext",
+     "0/9",
+     "9/9",
+     "0/7",
+     "3/3",
+     "0/3",
+     "injection=7 tool=1 none=1",
+     37,
+     70525,
+     0.0215,
+     13.0568
+    ],
+    [
+     "short (2-5 sessions, one or two topics)",
+     "Claude's own notes (no memory tool)",
+     "0/11",
+     "11/11",
+     "0/8",
+     "6/6",
+     "0/4",
+     "file=3 none=8",
+     25,
+     61268,
+     0.0165,
+     8.164
+    ],
+    [
+     "short (2-5 sessions, one or two topics)",
+     "Decision log kept by the harness (DECISIONS.md)",
+     "1/11",
+     "10/11",
+     "0/8",
+     "6/6",
+     "0/4",
+     "file=11",
+     25,
+     70203,
+     0.0193,
+     10.304
+    ],
+    [
+     "short (2-5 sessions, one or two topics)",
+     "MemContext",
+     "1/11",
+     "10/11",
+     "1/8",
+     "6/6",
+     "0/4",
+     "injection=9 tool=2",
+     25,
+     65580,
+     0.0193,
+     12.66
+    ]
+   ]
+  }
+ ],
+ "examples": [
+  {
+   "scenario": "user_vs_assistant_suggestion",
+   "step": "#2 recall",
+   "arm": "notes",
+   "verdict": "missing",
+   "source": "file",
+   "answer_excerpt": ""
+  },
+  {
+   "scenario": "user_vs_assistant_suggestion",
+   "step": "#2 recall",
+   "arm": "memcontext",
+   "verdict": "current",
+   "source": "injection",
+   "answer_excerpt": "Based on the project memory, this API is built on **FastAPI**.\n\nCURRENT: FastAPI"
+  },
+  {
+   "scenario": "two_topics_no_interference",
+   "step": "#4 recall",
+   "arm": "memcontext",
+   "verdict": "stale",
+   "source": "tool",
+   "answer_excerpt": "Based on the project memory, the app is currently deployed on Fly.io. However, there's an episode indicating a planned move to Render, though that change hasn't been formally recorded in the decision log yet.\n\nCURRENT: Fly.io"
+  }
+ ],
+ "limits": [
+  "One model (haiku), one run per arm: LLM variance is not measured, and a difference of one or two steps is within noise.",
+  "Scenarios are hand-written. The long-horizon set is one project of 37 sessions; real projects run for months with far more decisions and code.",
+  "The notes arm is logged by the harness, perfectly and immediately; real logs are written late or not at all.",
+  "Cost and tokens include each arm's own overhead (MCP tool schemas, hooks, reading notes files).",
+  "The 'short' set comes from an earlier run (D:/mc_ab_runs/p-20261001T200115Z/raw.json) on the same product build and harness scoring, re-judged after the arm rename; its project files were not kept, so a CLAUDE.md source shows there as 'none'."
+ ],
+ "findings": [
+  "long-horizon (15 decisions, 28 sessions before the questions): MemContext shows no advantage over Claude's own notes (no memory tool) or Decision log kept by the harness (DECISIONS.md) (wrong steps: MemContext 0/9; Claude's own notes (no memory tool) 0/9; Decision log kept by the harness (DECISIONS.md) 0/9).",
+  "short (2-5 sessions, one or two topics): MemContext shows no advantage over Claude's own notes (no memory tool) or Decision log kept by the harness (DECISIONS.md) (wrong steps: MemContext 1/11; Claude's own notes (no memory tool) 0/11; Decision log kept by the harness (DECISIONS.md) 1/11)."
+ ],
+ "totals": {
+  "spent_usd": 3.6226,
+  "spent_this_run_usd": 2.2449,
+  "sessions": 186
+ },
+ "imported": [
+  {
+   "set": "short",
+   "raw": "D:/mc_ab_runs/p-20261001T200115Z/raw.json",
+   "spent_usd": 1.3777
+  }
+ ],
+ "summary_by_arm": {
+  "self_notes": {
+   "sessions": 62,
+   "current_recall": {
+    "n": 20,
+    "hits": 20,
+    "rate": 1.0
+   },
+   "stale_answer": {
+    "n": 15,
+    "hits": 0,
+    "rate": 0.0
+   },
+   "action_correct": {
+    "n": 9,
+    "hits": 9,
+    "rate": 1.0
+   },
+   "stale_action": {
+    "n": 7,
+    "hits": 0,
+    "rate": 0.0
+   },
+   "step_fully_correct": {
+    "n": 20,
+    "hits": 20,
+    "rate": 1.0
+   },
+   "injection_hit": {
+    "n": 20,
+    "hits": 0,
+    "rate": 0.0
+   },
+   "tool_fallback": {
+    "n": 20,
+    "hits": 0,
+    "rate": 0.0
+   },
+   "source_counts": {
+    "injection": 0,
+    "tool": 0,
+    "file": 3,
+    "claude_md": 9,
+    "none": 8
+   },
+   "total_cost_usd": 1.0406,
+   "mean_cost_usd": 0.0168,
+   "mean_wall_s": 8.2097,
+   "mean_tokens": 61655,
+   "wrong_steps": {
+    "n": 20,
+    "hits": 0
+   }
+  },
+  "notes": {
+   "sessions": 62,
+   "current_recall": {
+    "n": 20,
+    "hits": 19,
+    "rate": 0.95
+   },
+   "stale_answer": {
+    "n": 15,
+    "hits": 0,
+    "rate": 0.0
+   },
+   "action_correct": {
+    "n": 9,
+    "hits": 9,
+    "rate": 1.0
+   },
+   "stale_action": {
+    "n": 7,
+    "hits": 0,
+    "rate": 0.0
+   },
+   "step_fully_correct": {
+    "n": 20,
+    "hits": 19,
+    "rate": 0.95
+   },
+   "injection_hit": {
+    "n": 20,
+    "hits": 0,
+    "rate": 0.0
+   },
+   "tool_fallback": {
+    "n": 20,
+    "hits": 0,
+    "rate": 0.0
+   },
+   "source_counts": {
+    "injection": 0,
+    "tool": 0,
+    "file": 17,
+    "claude_md": 0,
+    "none": 3
+   },
+   "total_cost_usd": 1.3022,
+   "mean_cost_usd": 0.021,
+   "mean_wall_s": 11.4887,
+   "mean_tokens": 71821,
+   "wrong_steps": {
+    "n": 20,
+    "hits": 1
+   }
+  },
+  "memcontext": {
+   "sessions": 62,
+   "current_recall": {
+    "n": 20,
+    "hits": 19,
+    "rate": 0.95
+   },
+   "stale_answer": {
+    "n": 15,
+    "hits": 1,
+    "rate": 0.067
+   },
+   "action_correct": {
+    "n": 9,
+    "hits": 9,
+    "rate": 1.0
+   },
+   "stale_action": {
+    "n": 7,
+    "hits": 0,
+    "rate": 0.0
+   },
+   "step_fully_correct": {
+    "n": 20,
+    "hits": 19,
+    "rate": 0.95
+   },
+   "injection_hit": {
+    "n": 20,
+    "hits": 16,
+    "rate": 0.8
+   },
+   "tool_fallback": {
+    "n": 20,
+    "hits": 6,
+    "rate": 0.3
+   },
+   "state_steps_db_ok": {
+    "n": 42,
+    "hits": 41,
+    "rate": 0.976
+   },
+   "source_counts": {
+    "injection": 16,
+    "tool": 3,
+    "file": 0,
+    "claude_md": 0,
+    "none": 1
+   },
+   "failures_by_layer": {
+    "plumbing": 2
+   },
+   "total_cost_usd": 1.2797,
+   "mean_cost_usd": 0.0206,
+   "mean_wall_s": 12.8968,
+   "mean_tokens": 68531,
+   "wrong_steps": {
+    "n": 20,
+    "hits": 1
+   }
+  }
+ },
+ "summary_by_set": {
+  "long_horizon": {
+   "self_notes": {
+    "sessions": 37,
+    "current_recall": {
+     "n": 9,
+     "hits": 9,
+     "rate": 1.0
+    },
+    "stale_answer": {
+     "n": 7,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "action_correct": {
+     "n": 3,
+     "hits": 3,
+     "rate": 1.0
+    },
+    "stale_action": {
+     "n": 3,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "step_fully_correct": {
+     "n": 9,
+     "hits": 9,
+     "rate": 1.0
+    },
+    "injection_hit": {
+     "n": 9,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "tool_fallback": {
+     "n": 9,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "source_counts": {
+     "injection": 0,
+     "tool": 0,
+     "file": 0,
+     "claude_md": 9,
+     "none": 0
+    },
+    "total_cost_usd": 0.6278,
+    "mean_cost_usd": 0.017,
+    "mean_wall_s": 8.2405,
+    "mean_tokens": 61916,
+    "wrong_steps": {
+     "n": 9,
+     "hits": 0
+    }
+   },
+   "notes": {
+    "sessions": 37,
+    "current_recall": {
+     "n": 9,
+     "hits": 9,
+     "rate": 1.0
+    },
+    "stale_answer": {
+     "n": 7,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "action_correct": {
+     "n": 3,
+     "hits": 3,
+     "rate": 1.0
+    },
+    "stale_action": {
+     "n": 3,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "step_fully_correct": {
+     "n": 9,
+     "hits": 9,
+     "rate": 1.0
+    },
+    "injection_hit": {
+     "n": 9,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "tool_fallback": {
+     "n": 9,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "source_counts": {
+     "injection": 0,
+     "tool": 0,
+     "file": 6,
+     "claude_md": 0,
+     "none": 3
+    },
+    "total_cost_usd": 0.8208,
+    "mean_cost_usd": 0.0222,
+    "mean_wall_s": 12.2892,
+    "mean_tokens": 72915,
+    "wrong_steps": {
+     "n": 9,
+     "hits": 0
+    }
+   },
+   "memcontext": {
+    "sessions": 37,
+    "current_recall": {
+     "n": 9,
+     "hits": 9,
+     "rate": 1.0
+    },
+    "stale_answer": {
+     "n": 7,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "action_correct": {
+     "n": 3,
+     "hits": 3,
+     "rate": 1.0
+    },
+    "stale_action": {
+     "n": 3,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "step_fully_correct": {
+     "n": 9,
+     "hits": 9,
+     "rate": 1.0
+    },
+    "injection_hit": {
+     "n": 9,
+     "hits": 7,
+     "rate": 0.778
+    },
+    "tool_fallback": {
+     "n": 9,
+     "hits": 4,
+     "rate": 0.444
+    },
+    "state_steps_db_ok": {
+     "n": 28,
+     "hits": 28,
+     "rate": 1.0
+    },
+    "source_counts": {
+     "injection": 7,
+     "tool": 1,
+     "file": 0,
+     "claude_md": 0,
+     "none": 1
+    },
+    "failures_by_layer": {},
+    "total_cost_usd": 0.7963,
+    "mean_cost_usd": 0.0215,
+    "mean_wall_s": 13.0568,
+    "mean_tokens": 70525,
+    "wrong_steps": {
+     "n": 9,
+     "hits": 0
+    }
+   }
+  },
+  "short": {
+   "self_notes": {
+    "sessions": 25,
+    "current_recall": {
+     "n": 11,
+     "hits": 11,
+     "rate": 1.0
+    },
+    "stale_answer": {
+     "n": 8,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "action_correct": {
+     "n": 6,
+     "hits": 6,
+     "rate": 1.0
+    },
+    "stale_action": {
+     "n": 4,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "step_fully_correct": {
+     "n": 11,
+     "hits": 11,
+     "rate": 1.0
+    },
+    "injection_hit": {
+     "n": 11,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "tool_fallback": {
+     "n": 11,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "source_counts": {
+     "injection": 0,
+     "tool": 0,
+     "file": 3,
+     "claude_md": 0,
+     "none": 8
+    },
+    "total_cost_usd": 0.4129,
+    "mean_cost_usd": 0.0165,
+    "mean_wall_s": 8.164,
+    "mean_tokens": 61268,
+    "wrong_steps": {
+     "n": 11,
+     "hits": 0
+    }
+   },
+   "notes": {
+    "sessions": 25,
+    "current_recall": {
+     "n": 11,
+     "hits": 10,
+     "rate": 0.909
+    },
+    "stale_answer": {
+     "n": 8,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "action_correct": {
+     "n": 6,
+     "hits": 6,
+     "rate": 1.0
+    },
+    "stale_action": {
+     "n": 4,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "step_fully_correct": {
+     "n": 11,
+     "hits": 10,
+     "rate": 0.909
+    },
+    "injection_hit": {
+     "n": 11,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "tool_fallback": {
+     "n": 11,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "source_counts": {
+     "injection": 0,
+     "tool": 0,
+     "file": 11,
+     "claude_md": 0,
+     "none": 0
+    },
+    "total_cost_usd": 0.4814,
+    "mean_cost_usd": 0.0193,
+    "mean_wall_s": 10.304,
+    "mean_tokens": 70203,
+    "wrong_steps": {
+     "n": 11,
+     "hits": 1
+    }
+   },
+   "memcontext": {
+    "sessions": 25,
+    "current_recall": {
+     "n": 11,
+     "hits": 10,
+     "rate": 0.909
+    },
+    "stale_answer": {
+     "n": 8,
+     "hits": 1,
+     "rate": 0.125
+    },
+    "action_correct": {
+     "n": 6,
+     "hits": 6,
+     "rate": 1.0
+    },
+    "stale_action": {
+     "n": 4,
+     "hits": 0,
+     "rate": 0.0
+    },
+    "step_fully_correct": {
+     "n": 11,
+     "hits": 10,
+     "rate": 0.909
+    },
+    "injection_hit": {
+     "n": 11,
+     "hits": 9,
+     "rate": 0.818
+    },
+    "tool_fallback": {
+     "n": 11,
+     "hits": 2,
+     "rate": 0.182
+    },
+    "state_steps_db_ok": {
+     "n": 14,
+     "hits": 13,
+     "rate": 0.929
+    },
+    "source_counts": {
+     "injection": 9,
+     "tool": 2,
+     "file": 0,
+     "claude_md": 0,
+     "none": 0
+    },
+    "failures_by_layer": {
+     "plumbing": 2
+    },
+    "total_cost_usd": 0.4834,
+    "mean_cost_usd": 0.0193,
+    "mean_wall_s": 12.66,
+    "mean_tokens": 65580,
+    "wrong_steps": {
+     "n": 11,
+     "hits": 1
+    }
+   }
+  }
+ },
+ "raw_run_dir": "D:/mc_ab_runs/p-20261001T202537Z"
+}

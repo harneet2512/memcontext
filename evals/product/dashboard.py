@@ -291,19 +291,40 @@ def _split(value: str) -> tuple[int, int] | None:
     return (int(m[1]), int(m[2])) if m else None
 
 
+def _arm_name(raw: str) -> str:
+    low = raw.lower()
+    for key, name in (("memcontext", "MemContext"), ("own notes", "Claude's own notes"), ("self_notes", "Claude's own notes"),
+                      ("none", "Claude's own notes"), ("decision", "Decision log"), ("notes", "Decision log")):
+        if key in low:
+            return name
+    return raw
+
+
 def _normalize_ab(e: dict) -> None:
-    """A/B headline: the MemContext arm's number, with the best other arm as the baseline."""
-    by = e["headline"].get("by_arm")
-    if not by or "memcontext" not in by:
+    """A/B headline: the MemContext arm's total wrong steps against the best other arm.
+
+    Watch (not pass) whenever MemContext is no better than the best baseline: a low error rate
+    that a notes file matches is not evidence of value."""
+    arms = {}
+    table = next((t for t in e.get("tables", []) if t.get("title") == "By arm"), None)
+    if table and "wrong steps" in table["columns"]:
+        i = table["columns"].index("wrong steps")
+        arms = {_arm_name(r[0]): r[i] for r in table["rows"]}
+    elif e["headline"].get("by_arm"):
+        arms = {_arm_name(k): v for k, v in e["headline"]["by_arm"].items()}
+    if "MemContext" not in arms:
         return
-    others = {k: v for k, v in by.items() if k != "memcontext"}
-    best = min(others, key=lambda k: (_split(others[k]) or (0, 1))[0] / max(1, (_split(others[k]) or (0, 1))[1]))
-    e["headline"].update({"value": by["memcontext"], "pct": _pct_of(by["memcontext"]),
-                          "baseline": {"label": ARM_NAMES.get(best, best), "value": others[best],
-                                       "pct": _pct_of(others[best])}})
-    e["vs_label"] = ARM_NAMES.get(best, best)
-    e["card"] = {"type": "arms", "rows": [{"label": ARM_NAMES.get(k, k), "value": v, "pct": _pct_of(v) or 0,
-                                           "tone": "accent" if k == "memcontext" else "base"} for k, v in by.items()]}
+    rate = lambda v: (_split(v) or (0, 1))[0] / max(1, (_split(v) or (0, 1))[1])  # noqa: E731
+    others = {k: v for k, v in arms.items() if k != "MemContext"}
+    best = min(others, key=lambda k: rate(others[k]))
+    mc = arms["MemContext"]
+    e["headline"] = {"label": "steps answered or acted on with an outdated decision, all scenarios",
+                     "value": mc, "pct": _pct_of(mc), "better": "lower",
+                     "baseline": {"label": best, "value": others[best], "pct": _pct_of(others[best])}}
+    e["vs_label"], e["short"] = best, "wrong steps, MemContext arm"
+    e["ab_no_advantage"] = rate(mc) >= rate(others[best])
+    e["card"] = {"type": "arms", "rows": [{"label": k, "value": v, "pct": _pct_of(v) or 0,
+                                           "tone": "accent" if k == "MemContext" else "base"} for k, v in arms.items()]}
 
 
 def card_spec(e: dict) -> dict | None:
@@ -360,8 +381,9 @@ def finalize(e: dict) -> dict:
     e.setdefault("n", None)
     if e["eval"] == "recall_ab":
         _normalize_ab(e)
-        e["headline"]["better"] = "lower"
-        e["status"] = grade(e["headline"]["pct"], "lower")
+        e["status"] = grade(e["headline"].get("pct"), "lower")
+        if e.get("ab_no_advantage") and e["status"] == "pass":
+            e["status"], e["status_reason"] = "watch", f"no advantage over {e['vs_label']}"
     e["card"] = card_spec(e)
     e["commit"] = (e.get("commit") or "")[:10]
     ts = str(e.get("timestamp_utc") or "")
