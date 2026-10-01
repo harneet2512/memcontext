@@ -345,6 +345,21 @@ def print_hook_precision(perq: dict) -> None:
           f"{own}/{lines} injected lines were about the asked subject")
 
 
+def print_brief(s: dict, perq: dict, n_histories: int) -> None:
+    """Headline only: plain search over the raw history vs what the hook injects."""
+    def counts(cond: str) -> tuple[int, int, int]:
+        ch = [r for r in perq[cond] if r["changed"]]
+        return sum(1 for r in ch if r["stale_hit"]), sum(1 for r in ch if r["cur_hit"]), len(ch)
+    n = counts("D_mc_hook_injection")[2]
+    print(f"\nStale exposure at {s['repo_sha'][:10]}: {n_histories} decision histories, "
+          f"{n} questions about decisions that changed\n")
+    for label, cond in (("Plain search over the history (BM25 top 5)", "A_bm25_turns_top5"),
+                        ("MemContext context injected into Claude Code", "D_mc_hook_injection")):
+        stale, cur, n = counts(cond)
+        print(f"  {label:<46} outdated value: {stale:>2}/{n}    current value: {cur:>2}/{n}")
+    print()
+
+
 def print_examples(perq: dict) -> None:
     for cond, rows in perq.items():
         print(f"\n#### {cond}")
@@ -427,7 +442,8 @@ def cmd_run(a) -> None:
         results, perq = {}, {}
         for name, make in conds.items():
             results[name], perq[name] = score(make(), questions, mc.history_intent)
-            print(f"[done] {name}", flush=True)
+            if not a.brief:
+                print(f"[done] {name}", flush=True)
 
     summary = {"tag": a.tag, "repo": str(repo), "repo_sha": sha_at_import,
                "repo_sha_at_end": repo_sha(repo), "mode": a.mode,
@@ -442,6 +458,9 @@ def cmd_run(a) -> None:
     if summary["repo_sha_at_end"] != sha_at_import:
         print(f"WARNING: checkout moved during the run ({sha_at_import[:10]} -> "
               f"{summary['repo_sha_at_end'][:10]}); modules imported lazily may mix commits")
+    if a.brief:
+        print_brief(summary, perq, len(hist))
+        return
     print(json.dumps({k: v for k, v in summary.items() if k != "metrics"}, indent=1))
     print_table(summary)
     print_hook_precision(perq)
@@ -484,6 +503,8 @@ def main() -> None:
     r.add_argument("--repo", default=str(REPO), help="MemContext checkout under test")
     r.add_argument("--dataset", default=str(HERE / "datasets" / "stale_exposure.json"))
     r.add_argument("--examples", action="store_true", help="print 3 verbatim examples per condition")
+    r.add_argument("--brief", action="store_true",
+                   help="print only plain search vs hook injection (full results still written)")
     r.set_defaults(fn=cmd_run)
     c = sub.add_parser("compare", help="diff two finished runs")
     c.add_argument("tag1")
