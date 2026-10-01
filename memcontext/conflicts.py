@@ -199,6 +199,7 @@ def _topic_words(subject: str) -> frozenset[str]:
     return frozenset(re.findall(r"[a-z0-9]+", topic)) - _CONTAINER_WORDS
 
 
+_MIN_TOPIC_OVERLAP = 0.3  # same bar Pass-1 uses for value overlap
 _COMMON_WORD_MIN_SUBJECTS = 3
 _COMMON_WORD_SHARE = 0.5
 
@@ -254,7 +255,10 @@ def similar_subjects(
         shared = mine & theirs
         if not shared:
             continue
-        score = (len(shared) / len(mine | theirs), r["created_ts"], r)
+        overlap = len(shared) / len(mine | theirs)
+        if overlap < _MIN_TOPIC_OVERLAP:  # one common word among many is not the same topic
+            continue
+        score = (overlap, r["created_ts"], r)
         if r["subject"] not in best or score[1] > best[r["subject"]][1]:
             best[r["subject"]] = score
     ranked = sorted(best.values(), key=lambda x: (-x[0], -x[1]))[:limit]

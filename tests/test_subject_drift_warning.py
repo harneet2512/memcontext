@@ -119,3 +119,13 @@ def test_real_drift_under_a_shared_prefix_is_still_flagged(conn):
         _decide(conn, f"har95_{topic}", value)
     r = _decide(conn, "har95_authentication_method", "session cookies", session="s2")
     assert [m["subject"] for m in r["similar_subjects"]] == ["har95_auth_method"]
+
+
+def test_one_shared_word_among_many_is_not_drift(conn):
+    # Live rehearsal: a new memory_query provenance decision was flagged as resembling
+    # "memory granularity" and "memory storage model" through the word "memory" alone.
+    for topic in ("memory_granularity", "memory_storage_model", "context_grouping"):
+        _decide(conn, f"har95_{topic}", "x")
+    r = _decide(conn, "har95_memory_query_provenance_fields", "source_turn_id by default",
+                session="s2")
+    assert "similar_subjects" not in r

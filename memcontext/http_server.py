@@ -629,9 +629,14 @@ def _prompt_message(response: dict) -> str:
     return _facts_message("[MemContext] current project memory for this prompt:", facts)
 
 
+_VISIBLE_EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
+
+
 def _tool_message(tool_name: str, target: str, response: dict) -> str | None:
+    """Shown only before file edits: repeating context before every shell command
+    (each test run) is noise, not information."""
     facts = _injected_lines(response)
-    if not facts:
+    if not facts or tool_name not in _VISIBLE_EDIT_TOOLS:
         return None
     return _facts_message(f"[MemContext] in context before {tool_name} {target}:", facts[:1])
 

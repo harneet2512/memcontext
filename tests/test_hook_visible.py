@@ -84,3 +84,11 @@ def test_edit_shows_decisions_in_context(client):
             "file_path": "D:/repo/memcontext/mcp_tools.py", "old_string": "x",
             "new_string": "# memory_query provenance: return source_turn_id by default"}}).json()
     assert r["systemMessage"].startswith("[MemContext]") and "memory_query_provenance" in r["systemMessage"]
+
+
+def test_shell_commands_get_no_visible_message(client):
+    _decide(V1)
+    r = client.post("/api/hooks/pre_tool_use", json={
+        "session_id": "s1", "tool_name": "Bash",
+        "tool_input": {"command": "python -m pytest tests -q -k memory_query provenance"}}).json()
+    assert "systemMessage" not in r and "hookSpecificOutput" in r  # model context unchanged
