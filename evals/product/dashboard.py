@@ -444,8 +444,8 @@ def main() -> None:
     print(f"MemContext product evals: {out}")
     for e in evals:
         h = e["headline"]
-        base = f"   (baseline {h['baseline']['value']})" if h.get("baseline") else ""
-        print(f"  {e['status'].upper():<5}  {e['title']:<28} {h['value']:>8}  {h['label']}{base}")
+        base = f"   ({e.get('vs_label') or 'baseline'}: {h['baseline']['value']})" if h.get("baseline") else ""
+        print(f"  {e['status'].upper():<5}  {e['title']:<28} {h['value']:>6}  {e.get('short') or h['label']}{base}")
     print(f"  {len(issues(evals))} open findings with code locations")
     if not a.no_open:
         webbrowser.open(out.as_uri())
