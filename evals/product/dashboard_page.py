@@ -26,396 +26,373 @@ PAGE = r"""<title>MemContext Product Evals</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <style>
-/* Layout: fixed sidebar (overview, findings, one link per eval with status) + main column:
-   KPI row, eval health table, open findings, then one detail panel per eval. */
+/* Layout: light sidebar (Overview + one item per eval) and a single view at a time.
+   Overview = key result, one card per eval, issues list. Eval view = 4 tiles, chart, collapsed detail.
+   Deliberately single-theme (light), every color set explicitly. */
 :root {
   color-scheme: light;
-  --bg: #f4f6f9; --panel: #ffffff; --sunken: #f7f9fb; --line: #e3e8ef; --line2: #d4dbe5;
-  --fg: #111827; --fg2: #374151; --muted: #6b7686; --side: #0f1729; --side-fg: #c9d3e3; --side-muted: #7f8ba1;
-  --accent: #2f5bd3; --accent-bg: rgba(47, 91, 211, .08);
-  --pass: #16794a; --pass-bg: #e6f4ec; --watch: #a15c07; --watch-bg: #fdf1dc; --fail: #c0362c; --fail-bg: #fbe7e5;
-  --info: #556274; --info-bg: #eef1f5; --base: #94a3b8;
+  --bg: #f6f7f9; --panel: #ffffff; --line: #e6e8ec; --line2: #d9dde3; --hover: #f2f4f7;
+  --fg: #101828; --fg2: #344054; --muted: #667085; --faint: #98a2b3;
+  --accent: #2b59c3; --accent-bg: #eef3fd;
+  --good: #12805c; --good-bg: #ecf7f2; --warn: #b54708; --warn-bg: #fef4e6; --bad: #c4320a; --bad-bg: #fdf0ec;
+  --base: #c3c9d3;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --bg: #0b0f17; --panel: #121826; --sunken: #0f1520; --line: #1f2838; --line2: #2a3547;
-    --fg: #e7ecf3; --fg2: #c3ccd8; --muted: #8592a6; --side: #080c13; --side-fg: #c9d3e3; --side-muted: #6f7b90;
-    --accent: #7ea2ff; --accent-bg: rgba(126, 162, 255, .12);
-    --pass: #46c98a; --pass-bg: rgba(70, 201, 138, .13); --watch: #f0b450; --watch-bg: rgba(240, 180, 80, .13);
-    --fail: #ff7a6e; --fail-bg: rgba(255, 122, 110, .13); --info: #9aa6b8; --info-bg: rgba(154, 166, 184, .12); --base: #5c6a80;
-  }
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #0b0f17; --panel: #121826; --sunken: #0f1520; --line: #1f2838; --line2: #2a3547;
-  --fg: #e7ecf3; --fg2: #c3ccd8; --muted: #8592a6; --side: #080c13; --side-fg: #c9d3e3; --side-muted: #6f7b90;
-  --accent: #7ea2ff; --accent-bg: rgba(126, 162, 255, .12);
-  --pass: #46c98a; --pass-bg: rgba(70, 201, 138, .13); --watch: #f0b450; --watch-bg: rgba(240, 180, 80, .13);
-  --fail: #ff7a6e; --fail-bg: rgba(255, 122, 110, .13); --info: #9aa6b8; --info-bg: rgba(154, 166, 184, .12); --base: #5c6a80;
-}
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
 a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-code, .mono { font-family: var(--mono); font-size: 12.5px; }
+[hidden] { display: none !important; }
 
-.app { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; }
-.side { background: var(--side); color: var(--side-fg); position: sticky; top: env(safe-area-inset-top, 0px);
-  height: 100vh; overflow-y: auto; padding: 18px 14px; display: flex; flex-direction: column; gap: 18px; }
-.brand { display: flex; align-items: center; gap: 10px; padding: 2px 6px; }
-.mark { width: 30px; height: 30px; border-radius: 7px; background: linear-gradient(135deg, #3b6cf0, #19b394);
-  display: grid; place-items: center; color: #fff; font: 700 13px/1 var(--mono); letter-spacing: -.02em; }
-.brand b { display: block; color: #fff; font-size: 14.5px; }
-.brand span { display: block; color: var(--side-muted); font-size: 12px; }
+.app { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh; }
+.side { background: var(--panel); border-right: 1px solid var(--line); padding: 20px 12px; position: sticky;
+  top: env(safe-area-inset-top, 0px); height: 100vh; display: flex; flex-direction: column; gap: 22px; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
+.mark { width: 28px; height: 28px; border-radius: 7px; background: var(--accent); color: #fff;
+  display: grid; place-items: center; font: 600 12px/1 var(--mono); }
+.brand b { font-size: 14px; display: block; }
+.brand span { font-size: 12px; color: var(--muted); display: block; }
 .nav { display: grid; gap: 2px; }
-.nav .grp { color: var(--side-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; padding: 12px 8px 4px; }
-.nav a { color: var(--side-fg); display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 6px; font-size: 13.5px; }
-.nav a:hover { background: rgba(255, 255, 255, .06); text-decoration: none; }
-.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--info); }
-.dot.pass { background: #46c98a; } .dot.watch { background: #f0b450; } .dot.fail { background: #ff7a6e; }
-.side .foot { margin-top: auto; color: var(--side-muted); font-size: 12px; padding: 0 8px; }
+.nav .grp { font-size: 11px; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: .08em; padding: 14px 10px 6px; }
+.nav button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px;
+  color: var(--fg2); font-size: 13.5px; cursor: pointer; }
+.nav button:hover { background: var(--hover); }
+.nav button.on { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+.nav button:focus-visible { outline: 2px solid var(--accent); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--faint); }
+.dot.pass { background: var(--good); } .dot.watch { background: #f79009; } .dot.fail { background: var(--bad); }
+.side .foot { margin-top: auto; font-size: 12px; color: var(--faint); padding: 0 10px; }
 
-.main { min-width: 0; padding-inline: 28px; padding-block: 22px 56px; display: grid; gap: 22px; align-content: start; }
-.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
-.crumb { color: var(--muted); font-size: 12.5px; }
-h1 { font-size: 24px; line-height: 1.25; margin: 2px 0 6px; letter-spacing: -.01em; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 3px 8px; font-size: 12px; color: var(--fg2); }
-.chip b { font-weight: 600; color: var(--fg); }
-.summary { display: flex; gap: 8px; flex-wrap: wrap; }
-.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 9px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.main { min-width: 0; padding-inline: 32px; padding-block: 28px 56px; }
+.view { max-width: 1160px; display: grid; gap: 20px; }
+.vh h1 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
+.vh .meta { color: var(--muted); font-size: 13px; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.vh .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600; }
 .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.pill.pass { color: var(--pass); background: var(--pass-bg); } .pill.watch { color: var(--watch); background: var(--watch-bg); }
-.pill.fail { color: var(--fail); background: var(--fail-bg); } .pill.info { color: var(--info); background: var(--info-bg); }
+.pill.pass { color: var(--good); background: var(--good-bg); } .pill.watch { color: var(--warn); background: var(--warn-bg); }
+.pill.fail { color: var(--bad); background: var(--bad-bg); } .pill.info { color: var(--muted); background: var(--hover); }
 
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
-.panel > .ph { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
-  padding: 12px 16px; border-bottom: 1px solid var(--line); }
-.panel > .ph h2 { font-size: 14.5px; margin: 0; }
-.panel > .ph .sub { color: var(--muted); font-size: 12.5px; }
-.pb { padding: 16px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.card > h2 { font-size: 14px; font-weight: 600; margin: 0; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.cb { padding: 18px; }
 
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 12px; }
-.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 13px 14px 12px; display: grid; gap: 6px;
-  color: inherit; min-width: 0; border-top: 3px solid var(--info); }
-.kpi:hover { border-color: var(--line2); text-decoration: none; }
-.kpi.pass { border-top-color: var(--pass); } .kpi.watch { border-top-color: var(--watch); } .kpi.fail { border-top-color: var(--fail); }
-.kpi .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.kpi .pill { flex: none; }
-.kpi .name { flex: 1; min-width: 0; font-weight: 600; font-size: 13px; color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kpi .val { font-size: 28px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-.kpi .lbl { color: var(--muted); font-size: 12.5px; line-height: 1.35; }
-.kpi .why { font-size: 12px; font-weight: 600; }
-.kpi .why.watch { color: var(--watch); } .kpi .why.fail { color: var(--fail); }
-.kpi .ft { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; border-top: 1px dashed var(--line); padding-top: 6px; }
+/* key result */
+.key { display: grid; gap: 14px; }
+.key .t { font-size: 13px; color: var(--muted); }
+.cmp { display: grid; gap: 10px; }
+.cmp .r { display: grid; grid-template-columns: 200px minmax(0, 1fr) 72px; gap: 14px; align-items: center; }
+.cmp .n { font-size: 13.5px; color: var(--fg2); }
+.cmp .bar { height: 26px; background: var(--hover); border-radius: 5px; overflow: hidden; }
+.cmp .bar i { display: block; height: 100%; border-radius: 5px; min-width: 3px; }
+.cmp .v { font-size: 20px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
 
-.tw { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 13px; }
-th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; background: var(--sunken); white-space: nowrap; }
-tbody tr:hover td { background: var(--accent-bg); }
+/* eval cards */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.tile { all: unset; box-sizing: border-box; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px;
+  display: grid; gap: 10px; cursor: pointer; min-width: 0; }
+.tile:hover { border-color: var(--line2); box-shadow: 0 1px 3px rgba(16, 24, 40, .06); }
+.tile:focus-visible { outline: 2px solid var(--accent); }
+.tile .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tile .nm { font-size: 13.5px; font-weight: 600; color: var(--fg2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .pill { flex: none; }
+.tile .big { font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.tile .lb { font-size: 13px; color: var(--muted); }
+.tile .vs { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 9px; }
+.tile .vs b { color: var(--fg2); font-variant-numeric: tabular-nums; }
+
+/* issues */
+.issues { display: grid; }
+.iss { border-bottom: 1px solid var(--line); }
+.iss:last-child { border-bottom: 0; }
+.iss summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 10px 150px minmax(0, 1fr) auto; gap: 12px;
+  align-items: center; padding: 11px 18px; }
+.iss summary::-webkit-details-marker { display: none; }
+.iss summary:hover { background: var(--hover); }
+.iss .area { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.iss .txt { font-size: 13.5px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.loc { font: 12px/1 var(--mono); color: var(--fg2); background: var(--hover); border-radius: 4px; padding: 4px 7px; white-space: nowrap; }
+.iss .full { padding: 0 18px 14px 190px; color: var(--fg2); font-size: 13px; max-width: 110ch; }
+
+/* eval view */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.m { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; min-width: 0; }
+.m .k { font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.m .v { font-size: 24px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.m .v.pass { color: var(--good); } .m .v.watch { color: var(--warn); } .m .v.fail { color: var(--bad); }
+.m .s { font-size: 12px; color: var(--muted); }
+.m.hero { border-left: 3px solid var(--accent); }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 14px; }
+.ct { font-size: 13px; font-weight: 600; color: var(--fg2); margin: 0 0 14px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); margin: -6px 0 12px; }
+.legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: 3px; }
+.hb { display: grid; gap: 9px; }
+.hb .r { display: grid; grid-template-columns: minmax(0, 210px) minmax(0, 1fr) 52px; gap: 12px; align-items: center; font-size: 12.5px; }
+.hb .lb { color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb .tr { height: 10px; background: var(--hover); border-radius: 3px; overflow: hidden; }
+.hb .tr i { display: block; height: 100%; border-radius: 3px; }
+.hb .v { text-align: right; font-variant-numeric: tabular-nums; color: var(--fg2); }
+.gb .r { grid-template-columns: minmax(0, 170px) minmax(0, 1fr); align-items: start; }
+.gb .pair { display: grid; gap: 4px; }
+.gb .pair div { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 10px; align-items: center; }
+.gb .pair .tr { height: 7px; }
+.gb .pair span { text-align: right; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+svg.ln { width: 100%; height: auto; display: block; }
+svg.ln text { fill: var(--muted); font: 11px var(--sans); }
+svg.ln .g { stroke: var(--line); }
+.flist { display: grid; }
+.flist div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 10px 18px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--fg2); }
+.flist div:last-child { border-bottom: 0; }
+details.more { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+details.more > summary { list-style: none; cursor: pointer; padding: 13px 18px; font-size: 13.5px; font-weight: 600; color: var(--fg2);
+  display: flex; justify-content: space-between; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::after { content: "Show"; font-weight: 500; color: var(--accent); font-size: 13px; }
+details.more[open] > summary::after { content: "Hide"; }
+details.more[open] > summary { border-bottom: 1px solid var(--line); }
+.dbody { padding: 16px 18px; display: grid; gap: 18px; }
+.dbody h3 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+.dbody p, .dbody li { font-size: 13px; color: var(--fg2); margin: 0; max-width: 110ch; }
+.dbody ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.tw { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: #fafbfc; color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
 tr:last-child td { border-bottom: 0; }
-td.num { text-align: right; white-space: nowrap; }
-#health td:nth-child(6) { min-width: 150px; }
-.layer { font: 500 11.5px/1 var(--mono); border: 1px solid var(--line2); border-radius: 4px; padding: 3px 6px; color: var(--fg2); white-space: nowrap; }
-
-.eval { scroll-margin-top: 16px; }
-.eh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
-.eh h2 { font-size: 17px; margin: 0; margin-right: 4px; }
-.eh .q { flex-basis: 100%; color: var(--fg2); margin: 2px 0 0; max-width: 110ch; }
-.tag { font: 500 11.5px/1 var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
-.egrid { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); }
-.hero { padding: 16px; border-right: 1px solid var(--line); display: grid; gap: 14px; align-content: start; }
-.hero .big { font-size: 40px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-.hero .big.pass { color: var(--pass); } .hero .big.watch { color: var(--watch); } .hero .big.fail { color: var(--fail); }
-.hero .hl { color: var(--fg2); font-size: 13px; }
-.hero .bl { color: var(--muted); font-size: 12.5px; border-left: 3px solid var(--base); padding-left: 8px; }
-.hero .bl b { color: var(--fg); font-size: 18px; display: block; font-variant-numeric: tabular-nums; }
-.mlist { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.mrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
-.mrow:last-child { border-bottom: 0; }
-.mrow .mv { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.mrow .mv.pass { color: var(--pass); } .mrow .mv.watch { color: var(--watch); } .mrow .mv.fail { color: var(--fail); }
-.body { padding: 16px; display: grid; gap: 18px; min-width: 0; }
-.ct { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 10px; }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--fg2); margin-bottom: 8px; }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
-.hbar { display: grid; gap: 6px; }
-.hbar .r { display: grid; grid-template-columns: minmax(0, 260px) minmax(0, 1fr) 64px; gap: 10px; align-items: center; font-size: 12.5px; }
-.hbar .lb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); }
-.track { height: 12px; background: var(--sunken); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
-.fill { height: 100%; }
-.hbar .v { text-align: right; font-variant-numeric: tabular-nums; color: var(--fg2); }
-.grp { display: grid; gap: 9px; }
-.grp .r { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 1fr); gap: 10px; align-items: center; font-size: 12.5px; }
-.grp .bars { display: grid; gap: 3px; }
-.grp .b { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 8px; align-items: center; }
-.grp .b .track { height: 8px; }
-.grp .b span { text-align: right; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
-svg.line { width: 100%; height: auto; display: block; }
-svg.line text { fill: var(--muted); font: 11px var(--sans); }
-svg.line .grid { stroke: var(--line); }
-.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
-details > summary { cursor: pointer; list-style: none; color: var(--fg2); font-weight: 600; font-size: 13px; }
-details > summary::-webkit-details-marker { display: none; }
-details > summary::before { content: "\25B8"; display: inline-block; width: 16px; color: var(--muted); }
-details[open] > summary::before { content: "\25BE"; }
-details[open] > summary { margin-bottom: 8px; }
-.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; border-top: 1px solid var(--line); padding: 14px 16px; background: var(--sunken); border-radius: 0 0 10px 10px; }
-.notes h4 { margin: 0 0 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-.notes p, .notes li { font-size: 12.5px; color: var(--fg2); margin: 0; }
-.notes ul { margin: 0; padding-left: 16px; display: grid; gap: 4px; }
-pre.ex { margin: 0; background: var(--sunken); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
-  font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg2); }
 
 @media (max-width: 900px) {
   .app { grid-template-columns: minmax(0, 1fr); }
-  .side { position: static; height: auto; padding: 12px 16px; gap: 10px; }
-  .nav { display: flex; overflow-x: auto; gap: 4px; }
+  .side { position: static; height: auto; padding: 12px 16px; gap: 10px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .nav { display: flex; overflow-x: auto; }
   .nav .grp, .side .foot { display: none; }
-  .nav a { white-space: nowrap; }
+  .nav button { white-space: nowrap; }
   .main { padding-inline: 16px; }
-  .egrid { grid-template-columns: minmax(0, 1fr); }
-  .hero { border-right: 0; border-bottom: 1px solid var(--line); }
-  .hbar .r { grid-template-columns: minmax(0, 1fr) 56px; }
-  .hbar .track { grid-column: 1 / -1; grid-row: 2; }
-  .grp .r { grid-template-columns: minmax(0, 1fr); }
+  .cmp .r { grid-template-columns: minmax(0, 1fr) 60px; }
+  .cmp .bar { grid-column: 1 / -1; grid-row: 2; }
+  .iss summary { grid-template-columns: 10px minmax(0, 1fr); }
+  .iss .area, .iss .loc { display: none; }
+  .iss .full { padding-left: 18px; }
+  .charts { grid-template-columns: minmax(0, 1fr); }
+  .hb .r { grid-template-columns: minmax(0, 1fr) 52px; }
+  .hb .tr { grid-column: 1 / -1; grid-row: 2; }
 }
 </style>
 
 <div class="app">
-  <aside class="side" aria-label="Navigation">
+  <aside class="side">
     <div class="brand"><div class="mark">MC</div><div><b>MemContext</b><span>Product evals</span></div></div>
-    <nav class="nav" id="nav"></nav>
-    <div class="foot" id="sidefoot"></div>
+    <nav class="nav" id="nav" aria-label="Views"></nav>
+    <div class="foot" id="foot"></div>
   </aside>
-  <main class="main">
-    <header class="top" id="overview">
-      <div>
-        <div class="crumb">MemContext / Quality / Product evals</div>
-        <h1>Product evals</h1>
-        <div class="chips" id="chips"></div>
-      </div>
-      <div class="summary" id="summary"></div>
-    </header>
-    <section class="kpis" id="kpis" aria-label="Key metrics"></section>
-    <section class="panel">
-      <div class="ph"><h2>Eval health</h2><span class="sub">Status: pass / watch / fail against each eval's threshold</span></div>
-      <div class="tw"><table id="health"></table></div>
-    </section>
-    <section class="panel" id="findings">
-      <div class="ph"><h2>Open findings</h2><span class="sub" id="fsub"></span></div>
-      <div class="tw"><table id="ftable"></table></div>
-    </section>
-    <div id="evals" style="display:grid;gap:22px"></div>
-  </main>
+  <main class="main" id="main"></main>
 </div>
 <script>
 const D = __DATA__;
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-const when = s => { const d = new Date(s); return isNaN(d) ? String(s) : d.toISOString().slice(0, 16).replace("T", " ") + " UTC"; };
-const STATUS = {pass: "Pass", watch: "Watch", fail: "Fail", info: "Info"};
-const pill = s => el("span", "pill " + s, STATUS[s] || s);
-const TONE = {good: "var(--pass)", bad: "var(--fail)", warn: "var(--watch)", base: "var(--base)", accent: "var(--accent)", muted: "var(--info)"};
-const color = t => TONE[t] || t || "var(--accent)";
+const when = s => { const d = new Date(s); return isNaN(d) ? String(s || "") : d.toISOString().slice(0, 16).replace("T", " ") + " UTC"; };
+const NAME = {pass: "Pass", watch: "Watch", fail: "Fail", info: "Info"};
+const pill = s => el("span", "pill " + s, NAME[s] || s);
+const TONE = {good: "var(--good)", bad: "var(--bad)", warn: "#f79009", base: "var(--base)", accent: "var(--accent)"};
+const col = t => TONE[t] || "var(--accent)";
+const firstSentence = t => { const m = String(t).match(/^(.+?[.;])(\s|$)/); return (m ? m[1] : t).replace(/[.;]$/, ""); };
+const counts = {pass: 0, watch: 0, fail: 0};
+D.evals.forEach(e => { if (e.status in counts) counts[e.status]++; });
 
-function table(t, columns, rows, numeric) {
-  const thead = el("thead"), tr = el("tr");
-  columns.forEach((c, i) => { const th = el("th", numeric && numeric.includes(i) ? "num" : null, c); tr.append(th); });
-  thead.append(tr);
-  const tb = el("tbody");
-  for (const r of rows) {
-    const row = el("tr");
-    r.forEach((c, i) => { const td = el("td", numeric && numeric.includes(i) ? "num" : null); if (c instanceof Node) td.append(c); else td.textContent = c == null ? "" : String(c); row.append(td); });
-    tb.append(row);
+/* ---------- views ---------- */
+const views = {};
+function show(id) {
+  if (!views[id]) id = "overview";
+  for (const k in views) views[k].hidden = k !== id;
+  document.querySelectorAll(".nav button").forEach(b => b.classList.toggle("on", b.dataset.id === id));
+  try { history.replaceState(null, "", "#" + id); } catch (_) {}
+  window.scrollTo(0, 0);
+}
+
+function navButton(id, label, status) {
+  const b = el("button"); b.dataset.id = id; b.type = "button";
+  if (status) b.append(el("span", "dot " + status));
+  b.append(el("span", null, label)); b.onclick = () => show(id);
+  return b;
+}
+$("nav").append(navButton("overview", "Overview"), el("div", "grp", "Evals"));
+D.evals.forEach(e => $("nav").append(navButton(e.eval, e.title, e.status)));
+$("foot").textContent = "Built " + when(D.generated_utc);
+
+/* ---------- overview ---------- */
+const ov = el("section", "view"); views.overview = ov;
+{
+  const vh = el("div", "vh");
+  vh.append(el("h1", null, "Product evals"));
+  const meta = el("div", "meta");
+  meta.append(el("span", null, `${D.evals.length} evals`), el("span", null, `${counts.pass} pass · ${counts.watch} watch · ${counts.fail} fail`),
+              el("span", null, `${D.issues.length} open issues`), el("span", null, "Updated " + when(D.generated_utc)));
+  vh.append(meta); ov.append(vh);
+
+  if (D.key) {
+    const c = el("div", "card"), h = el("h2", null, D.key.title), b = el("div", "cb key");
+    b.append(el("div", "t", D.key.subtitle));
+    const cmp = el("div", "cmp");
+    for (const r of D.key.rows) {
+      const row = el("div", "r"), bar = el("div", "bar"), i = el("i");
+      i.style.width = r.pct + "%"; i.style.background = col(r.tone); bar.append(i);
+      const v = el("span", "v", r.value); v.style.color = col(r.tone);
+      row.append(el("span", "n", r.label), bar, v); cmp.append(row);
+    }
+    b.append(cmp); c.append(h, b); ov.append(c);
   }
-  t.replaceChildren(thead, tb);
-  return t;
+
+  const grid = el("div", "grid");
+  for (const e of D.evals) {
+    const t = el("button", "tile"); t.type = "button"; t.onclick = () => show(e.eval);
+    const top = el("div", "top"); top.append(el("span", "nm", e.title), pill(e.status));
+    t.append(top, el("div", "big", e.headline.value), el("div", "lb", e.short || e.headline.label));
+    if (e.headline.baseline) { const vs = el("div", "vs"); vs.append(e.vs_label || "Baseline", ": ", el("b", null, e.headline.baseline.value)); t.append(vs); }
+    grid.append(t);
+  }
+  ov.append(grid);
+
+  const ic = el("div", "card"); ic.append(el("h2", null, `Open issues (${D.issues.length})`));
+  const list = el("div", "issues");
+  for (const i of D.issues) {
+    const d = el("details", "iss"), s = el("summary");
+    s.append(el("span", "dot " + i.status), el("span", "area", i.eval_title), el("span", "txt", firstSentence(i.text)));
+    s.append(i.where ? el("span", "loc", i.where) : el("span"));
+    d.append(s, el("div", "full", i.text)); list.append(d);
+  }
+  ic.append(list); ov.append(ic);
 }
+$("main").append(ov);
 
-/* ---- header, sidebar, KPIs, health ---- */
-const counts = {pass: 0, watch: 0, fail: 0, info: 0};
-D.evals.forEach(e => counts[e.status] = (counts[e.status] || 0) + 1);
-for (const [k, v] of [["Evals", D.evals.length], ["Code", D.commit], ["Built", when(D.generated_utc)], ["Findings", D.issues.length]]) {
-  const c = el("span", "chip"); c.append(`${k} `); c.append(el("b", null, v)); $("chips").append(c);
-}
-for (const s of ["pass", "watch", "fail"]) if (counts[s]) { const p = pill(s); p.textContent = `${counts[s]} ${STATUS[s]}`; $("summary").append(p); }
-
-const nav = $("nav");
-const navLink = (href, label, s) => { const a = el("a"); a.href = href; if (s) a.append(el("span", "dot " + s)); a.append(el("span", null, label)); return a; };
-nav.append(navLink("#overview", "Overview"), navLink("#findings", "Open findings"), el("div", "grp", "Evals"));
-D.evals.forEach(e => nav.append(navLink("#" + e.eval, e.title, e.status)));
-$("sidefoot").textContent = "Built " + when(D.generated_utc);
-
-for (const e of D.evals) {
-  const h = e.headline, a = el("a", "kpi " + e.status); a.href = "#" + e.eval;
-  const row = el("div", "row"); row.append(el("span", "name", e.title), pill(e.status));
-  a.append(row, el("div", "val", h.value), el("div", "lbl", h.label));
-  if (e.status_reason) a.append(el("div", "why " + e.status, "Status set by " + e.status_reason));
-  const foot = [];
-  if (h.baseline) foot.push(`baseline ${h.baseline.value}`);
-  if (e.n) foot.push(`n = ${e.n}`);
-  foot.push(e.deterministic ? "deterministic" : "live sessions");
-  a.append(el("div", "ft", foot.join("  ·  ")));
-  $("kpis").append(a);
-}
-
-function statusCell(e) {
-  const d = el("div"); d.append(pill(e.status));
-  if (e.status_reason) { const w = el("div", null, e.status_reason); w.style.cssText = "color:var(--muted);font-size:12px;margin-top:4px"; d.append(w); }
-  return d;
-}
-table($("health"), ["Eval", "Promise", "Primary metric", "Result", "Baseline", "Status", "Type", "Run", "Code"],
-  D.evals.map(e => {
-    const link = el("a", null, e.title); link.href = "#" + e.eval;
-    return [link, e.promise_short, e.headline.label, e.headline.value, e.headline.baseline ? e.headline.baseline.value : "—",
-      statusCell(e), e.deterministic ? "Deterministic" : "LLM sessions", when(e.timestamp_utc), e.commit || ""];
-  }), [3, 4]);
-
-$("fsub").textContent = `${D.issues.length} diagnosed weaknesses, each with its code location. Not yet fixed.`;
-table($("ftable"), ["Eval", "Finding", "Layer", "Location"],
-  D.issues.map(i => {
-    const a = el("a", null, i.eval_title); a.href = "#" + i.eval;
-    return [a, i.text, i.layer ? el("span", "layer", i.layer) : "—", i.where ? el("code", null, i.where) : "—"];
-  }));
-
-/* ---- charts ---- */
+/* ---------- charts ---------- */
 function hbar(spec) {
-  const box = el("div");
-  box.append(el("div", "ct", spec.title));
-  const g = el("div", "hbar"), max = spec.max || 100;
+  const box = el("div", "card cb"); box.append(el("div", "ct", spec.title));
+  const g = el("div", "hb"), max = spec.max || 100;
   for (const it of spec.items) {
-    const r = el("div", "r"), t = el("div", "track"), f = el("div", "fill");
-    f.style.width = Math.max(0, Math.min(100, 100 * it.value / max)) + "%";
-    f.style.background = color(it.tone);
-    t.append(f);
-    r.append(el("span", "lb", it.label), t, el("span", "v", it.display ?? (it.value + (spec.unit || ""))));
-    r.firstChild.title = it.label;
-    g.append(r);
+    const r = el("div", "r"), tr = el("div", "tr"), i = el("i");
+    i.style.width = Math.max(0, Math.min(100, 100 * it.value / max)) + "%"; i.style.background = col(it.tone);
+    tr.append(i); const lb = el("span", "lb", it.label); lb.title = it.label;
+    r.append(lb, tr, el("span", "v", it.display ?? it.value)); g.append(r);
   }
-  box.append(g);
-  return box;
+  box.append(g); return box;
 }
-
 function grouped(spec) {
-  const box = el("div");
-  box.append(el("div", "ct", spec.title));
+  const box = el("div", "card cb"); box.append(el("div", "ct", spec.title));
   const lg = el("div", "legend");
-  spec.series.forEach(s => { const x = el("span"); const i = el("i"); i.style.background = color(s.tone); x.append(i, s.name); lg.append(x); });
+  spec.series.forEach(s => { const x = el("span"), i = el("i"); i.style.background = col(s.tone); x.append(i, s.name); lg.append(x); });
   box.append(lg);
-  const g = el("div", "grp");
+  const g = el("div", "hb gb");
   spec.categories.forEach((c, ci) => {
-    const r = el("div", "r"), bars = el("div", "bars");
+    const r = el("div", "r"), pair = el("div", "pair");
     spec.series.forEach(s => {
-      const v = s.values[ci], b = el("div", "b"), t = el("div", "track"), f = el("div", "fill");
-      f.style.width = (v == null ? 0 : Math.max(0, Math.min(100, v))) + "%"; f.style.background = color(s.tone);
-      t.append(f); b.append(t, el("span", null, v == null ? "—" : v + (spec.unit || ""))); bars.append(b);
+      const v = s.values[ci], d = el("div"), tr = el("div", "tr"), i = el("i");
+      i.style.width = (v == null ? 0 : v) + "%"; i.style.background = col(s.tone); tr.append(i);
+      d.append(tr, el("span", null, v == null ? "—" : v + "%")); pair.append(d);
     });
-    r.append(el("span", null, c), bars); g.append(r);
+    r.append(el("span", "lb", c), pair); g.append(r);
   });
-  box.append(g);
-  return box;
+  box.append(g); return box;
 }
-
 function line(spec) {
-  const NS = "http://www.w3.org/2000/svg", W = 600, H = 230, L = 46, R = 44, T = 12, B = 34;
-  const box = el("div");
-  box.append(el("div", "ct", spec.title));
+  const NS = "http://www.w3.org/2000/svg", W = 560, H = 220, L = 44, R = 46, T = 10, B = 30;
+  const box = el("div", "card cb"); box.append(el("div", "ct", spec.title));
   const lg = el("div", "legend");
-  spec.series.forEach(s => { const x = el("span"); const i = el("i"); i.style.background = color(s.tone); x.append(i, s.name); lg.append(x); });
+  spec.series.forEach(s => { const x = el("span"), i = el("i"); i.style.background = col(s.tone); x.append(i, s.name); lg.append(x); });
   box.append(lg);
-  const all = spec.series.flatMap(s => s.values).filter(v => v != null);
-  const raw = spec.ymax || Math.max(1, ...all);
-  const step = raw <= 100 && spec.unit === "%" ? 25 : Math.pow(10, Math.floor(Math.log10(raw))) * (raw / Math.pow(10, Math.floor(Math.log10(raw))) > 5 ? 2 : 1);
-  const ymax = spec.unit === "%" ? 100 : Math.ceil(raw / step) * step;
-  const xs = i => L + (spec.x.length === 1 ? (W - L - R) / 2 : i * (W - L - R) / (spec.x.length - 1));
+  const pctAxis = spec.unit === "%";
+  const raw = Math.max(1, ...spec.series.flatMap(s => s.values).filter(v => v != null));
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = pctAxis ? 25 : (raw / mag > 5 ? 2 * mag : raw / mag > 2 ? mag : mag / 2);
+  const ymax = pctAxis ? 100 : Math.ceil(raw / step) * step;
+  const xs = i => L + (spec.x.length < 2 ? (W - L - R) / 2 : i * (W - L - R) / (spec.x.length - 1));
   const ys = v => T + (H - T - B) * (1 - v / ymax);
   const svg = document.createElementNS(NS, "svg");
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("class", "line"); svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", spec.title);
-  const mk = (tag, attrs, text) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); if (text != null) n.textContent = text; svg.append(n); return n; };
-  for (let v = 0; v <= ymax + 1e-9; v += (spec.unit === "%" ? 25 : step)) {
-    mk("line", {x1: L, x2: W - R, y1: ys(v), y2: ys(v), class: "grid"});
-    mk("text", {x: L - 8, y: ys(v) + 4, "text-anchor": "end"}, v + (spec.unit === "%" ? "%" : ""));
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("class", "ln"); svg.setAttribute("role", "img"); svg.setAttribute("aria-label", spec.title);
+  const mk = (tag, a, text) => { const n = document.createElementNS(NS, tag); for (const k in a) n.setAttribute(k, a[k]); if (text != null) n.textContent = text; svg.append(n); return n; };
+  for (let v = 0; v <= ymax + 1e-9; v += step) {
+    mk("line", {x1: L, x2: W - R, y1: ys(v), y2: ys(v), class: "g"});
+    mk("text", {x: L - 8, y: ys(v) + 4, "text-anchor": "end"}, pctAxis ? v + "%" : String(+v.toFixed(2)));
   }
-  spec.x.forEach((x, i) => mk("text", {x: xs(i), y: H - 12, "text-anchor": "middle"}, String(x)));
-  if (spec.xlabel) mk("text", {x: (L + W - R) / 2, y: H - 0, "text-anchor": "middle"}, spec.xlabel);
+  spec.x.forEach((x, i) => mk("text", {x: xs(i), y: H - 8, "text-anchor": "middle"}, String(x)));
   for (const s of spec.series) {
     const pts = s.values.map((v, i) => v == null ? null : [xs(i), ys(v)]).filter(Boolean);
-    mk("polyline", {points: pts.map(p => p.join(",")).join(" "), fill: "none", stroke: color(s.tone), "stroke-width": 2.5, "stroke-linejoin": "round"});
-    pts.forEach(p => mk("circle", {cx: p[0], cy: p[1], r: 3.5, fill: color(s.tone)}));
-    const lastV = s.values[s.values.length - 1];
-    if (lastV != null) mk("text", {x: xs(s.values.length - 1) - 6, y: ys(lastV) - 8, "text-anchor": "end", style: `fill:${color(s.tone)};font-weight:600`}, lastV + (spec.unit || ""));
+    mk("polyline", {points: pts.map(p => p.join(",")).join(" "), fill: "none", stroke: col(s.tone), "stroke-width": 2.25, "stroke-linejoin": "round"});
+    pts.forEach(p => mk("circle", {cx: p[0], cy: p[1], r: 3, fill: "#fff", stroke: col(s.tone), "stroke-width": 2}));
+    const lv = s.values[s.values.length - 1];
+    if (lv != null) mk("text", {x: xs(s.values.length - 1) + 8, y: ys(lv) + 4, style: `fill:${col(s.tone)};font-weight:600`}, (pctAxis ? lv + "%" : String(Math.round(lv))));
   }
-  box.append(svg);
-  return box;
+  box.append(svg); return box;
 }
 const CHART = {hbar, grouped, line};
 
-/* ---- eval panels ---- */
-for (const e of D.evals) {
-  const s = el("section", "panel eval"); s.id = e.eval;
-  const eh = el("div", "eh");
-  eh.append(el("h2", null, e.title), pill(e.status), el("span", "tag", e.deterministic ? "deterministic" : "LLM sessions"));
-  if (e.commit) eh.append(el("span", "tag", "code " + e.commit + (e.product_code_dirty ? " + local edits" : "")));
-  if (e.split) eh.append(el("span", "tag", e.split + " split"));
-  eh.append(el("span", "tag", when(e.timestamp_utc)));
-  eh.append(el("p", "q", e.question || ""));
-  s.append(eh);
-
-  const grid = el("div", "egrid"), hero = el("div", "hero");
-  const h = e.headline;
-  const big = el("div", "big " + e.status, h.value);
-  hero.append(el("div", null), big, el("div", "hl", h.label));
-  hero.firstChild.remove();
-  if (h.baseline) { const b = el("div", "bl"); b.append(el("b", null, h.baseline.value), h.baseline.label); hero.append(b); }
-  if (e.metrics && e.metrics.length) {
-    const ml = el("div", "mlist");
-    for (const m of e.metrics) {
-      const r = el("div", "mrow"); r.title = m.definition || "";
-      r.append(el("span", null, m.name), el("span", "mv " + (m.status || ""), m.value));
-      ml.append(r);
-    }
-    hero.append(ml);
-  }
-  const body = el("div", "body");
-  if (e.charts && e.charts.length) {
-    const cg = el("div", "charts");
-    e.charts.forEach(c => cg.append(CHART[c.type](c)));
-    body.append(cg);
-  }
-  for (const tb of e.tables || []) {
-    const d = el("details"); if (tb.rows.length <= 6) d.open = true;
-    d.append(el("summary", null, `${tb.title} (${tb.rows.length})`));
-    const tw = el("div", "tw"); tw.append(table(el("table"), tb.columns, tb.rows)); d.append(tw);
-    body.append(d);
-  }
-  if (e.examples && e.examples.length) {
-    const d = el("details"); d.append(el("summary", null, `Examples (${e.examples.length})`));
-    const box = el("div"); box.style.display = "grid"; box.style.gap = "8px";
-    e.examples.forEach(x => box.append(el("pre", "ex", typeof x === "string" ? x : JSON.stringify(x, null, 1))));
-    d.append(box); body.append(d);
-  }
-  if (e.link) { const p = el("p"); p.style.margin = "0"; const a = el("a", null, "Open the per-question view →"); a.href = e.link; p.append(a); body.append(p); }
-  grid.append(hero, body);
-  s.append(grid);
-
-  const notes = el("div", "notes");
-  if (e.method) { const m = el("div"); m.append(el("h4", null, "Method"), el("p", null, e.method)); notes.append(m); }
-  for (const [title, items] of [["Findings", e.findings], ["Limits", e.limits]]) {
-    if (!items || !items.length) continue;
-    const box = el("div"), ul = el("ul");
-    box.append(el("h4", null, title)); items.forEach(i => ul.append(el("li", null, i))); box.append(ul); notes.append(box);
-  }
-  s.append(notes);
-  $("evals").append(s);
+/* ---------- one view per eval ---------- */
+function tableEl(tb) {
+  const w = el("div", "tw"), t = el("table"), th = el("thead"), tr = el("tr");
+  tb.columns.forEach(c => tr.append(el("th", null, c))); th.append(tr);
+  const body = el("tbody");
+  tb.rows.forEach(r => { const row = el("tr"); r.forEach(c => row.append(el("td", null, c == null ? "" : String(c)))); body.append(row); });
+  t.append(th, body); w.append(t); return w;
 }
+
+for (const e of D.evals) {
+  const v = el("section", "view"); v.hidden = true; views[e.eval] = v;
+  const vh = el("div", "vh"), row = el("div", "row");
+  row.append(el("h1", null, e.title), pill(e.status)); vh.append(row);
+  const meta = el("div", "meta");
+  meta.append(el("span", null, e.question || ""));
+  vh.append(meta);
+  const meta2 = el("div", "meta");
+  meta2.append(el("span", null, e.deterministic ? "Deterministic" : "Live Claude Code sessions"));
+  if (e.n) meta2.append(el("span", null, "n = " + e.n));
+  if (e.commit) meta2.append(el("span", null, "Code " + e.commit));
+  meta2.append(el("span", null, "Run " + when(e.timestamp_utc)));
+  vh.append(meta2); v.append(vh);
+
+  const tiles = el("div", "tiles");
+  const hero = el("div", "m hero");
+  hero.append(el("div", "k", e.short || e.headline.label), el("div", "v " + e.status, e.headline.value));
+  if (e.headline.baseline) hero.append(el("div", "s", `${e.vs_label || "Baseline"}: ${e.headline.baseline.value}`));
+  tiles.append(hero);
+  (e.metrics || []).filter(m => m.value !== e.headline.value).slice(0, 3).forEach(m => {
+    const t = el("div", "m"); t.title = m.definition || "";
+    t.append(el("div", "k", m.name), el("div", "v " + (m.status || ""), m.value));
+    tiles.append(t);
+  });
+  v.append(tiles);
+  if (e.status_reason) {
+    const why = el("div", "meta"); why.style.marginTop = "-6px";
+    why.append(el("span", null, "Status is set by " + e.status_reason)); v.append(why);
+  }
+
+  if (e.charts && e.charts.length) {
+    const cg = el("div", "charts"); e.charts.slice(0, 2).forEach(c => cg.append(CHART[c.type](c))); v.append(cg);
+  }
+
+  const mine = D.issues.filter(i => i.eval === e.eval);
+  if (mine.length) {
+    const c = el("div", "card"); c.append(el("h2", null, `Issues (${mine.length})`));
+    const l = el("div", "flist");
+    mine.forEach(i => { const d = el("div"); d.append(el("span", null, i.text), i.where ? el("span", "loc", i.where) : el("span")); l.append(d); });
+    c.append(l); v.append(c);
+  }
+
+  const more = el("details", "more");
+  more.append(el("summary", null, "Data, method and limits"));
+  const db = el("div", "dbody");
+  (e.tables || []).forEach(tb => { const s = el("div"); s.append(el("h3", null, tb.title), tableEl(tb)); db.append(s); });
+  if (e.method) { const s = el("div"); s.append(el("h3", null, "Method"), el("p", null, e.method)); db.append(s); }
+  const notes = (e.findings || []).filter(f => !D.issues.some(i => i.eval === e.eval && i.text === f));
+  for (const [title, items] of [["Notes", notes], ["Limits", e.limits || []]]) {
+    if (!items.length) continue;
+    const s = el("div"), ul = el("ul"); items.forEach(i => ul.append(el("li", null, i))); s.append(el("h3", null, title), ul); db.append(s);
+  }
+  if (e.link) { const a = el("a", null, "Open the per-question view"); a.href = e.link; db.append(a); }
+  more.append(db); v.append(more);
+  $("main").append(v);
+}
+
+show((location.hash || "").slice(1) || "overview");
 </script>
 """

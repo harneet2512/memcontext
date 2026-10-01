@@ -35,6 +35,12 @@ PROMISE = {"stale_exposure": "Current, not stale", "provenance_trace": "Traceabl
            "injection_noise": "Quiet when irrelevant", "scale": "Holds as memory grows",
            "supersession_matrix": "Right state decisions", "claude_code_recall": "Works where the user is",
            "recall_ab": "Value in real sessions"}
+# short, scannable labels for the overview cards (the full label stays in each eval's view)
+SHORT = {"stale_exposure": "outdated values served", "claude_code_recall": "outdated answers, fresh sessions",
+         "injection_noise": "unrelated prompts given memory", "provenance_trace": "histories fully correct",
+         "supersession_matrix": "changes handled correctly", "recall_ab": "wrong steps, MemContext arm"}
+VS = {"stale_exposure": "Plain search", "scale": "With no extra decisions"}
+TITLE = {"recall_ab": "With vs without MemContext"}
 CONDITION_NAMES = {
     "A_bm25_turns_top5": "Plain search, top 5 messages",
     "A_bm25_turns_top1": "Plain search, top message",
@@ -261,6 +267,7 @@ def _decorate_scale(e: dict) -> None:
     # the guarantee that holds (0 outdated) stays a metric; the headline is what degrades with size
     cur, top = s["hook_current_pct"], s["sizes"][-1]
     n = int(e["headline"]["value"].split("/")[1])
+    e["short"] = f"current decisions found, {top:,} stored"
     e["headline"] = {"label": f"current decision present with {top:,} unrelated decisions in memory",
                      "value": f"{round(cur[-1] * n / 100)}/{n}", "pct": cur[-1], "better": "higher",
                      "baseline": {"label": "with no unrelated decisions", "value": f"{round(cur[0] * n / 100)}/{n}",
@@ -291,6 +298,9 @@ def finalize(e: dict) -> dict:
             status, e["status_reason"] = m["status"], f"{m['name']}: {m['value']}"
     e["status"] = status
     e["promise_short"] = PROMISE.get(e["eval"], e.get("promise", ""))
+    e["title"] = TITLE.get(e["eval"], e["title"])
+    e.setdefault("short", SHORT.get(e["eval"], ""))
+    e.setdefault("vs_label", VS.get(e["eval"], "Baseline"))
     e.setdefault("n", None)
     e["commit"] = (e.get("commit") or "")[:10]
     ts = str(e.get("timestamp_utc") or "")
@@ -307,7 +317,7 @@ def issues(evals: list[dict]) -> list[dict]:
         for f in e.get("findings") or []:
             layer, where = LAYER_RE.search(f), WHERE_RE.search(f)
             if layer or where:
-                out.append({"eval": e["eval"], "eval_title": e["title"], "text": f,
+                out.append({"eval": e["eval"], "eval_title": e["title"], "text": f, "status": e.get("status", "info"),
                             "layer": layer[1] if layer else "", "where": where[1] if where else ""})
     return out
 
@@ -328,10 +338,24 @@ def collect() -> list[dict]:
     return [finalize(e) for e in ordered]
 
 
+def key_result(evals: list[dict]) -> dict | None:
+    """The one comparison the page leads with: outdated context, plain search vs MemContext."""
+    se = next((e for e in evals if e["eval"] == "stale_exposure"), None)
+    if not se or not se["headline"].get("baseline"):
+        return None
+    h, b = se["headline"], se["headline"]["baseline"]
+    n = h["value"].split("/")[1]
+    return {"title": "Outdated context handed to the agent",
+            "subtitle": f"{n} questions about decisions that changed. Lower is better.",
+            "rows": [{"label": "Plain search over history", "value": b["value"], "pct": b["pct"], "tone": "bad"},
+                     {"label": "MemContext", "value": h["value"], "pct": h["pct"], "tone": "good"}]}
+
+
 def render(evals: list[dict], standalone: bool = True) -> str:
     commits = sorted({e.get("commit") for e in evals if e.get("commit")}, key=lambda c: c or "")
     data = {"generated_utc": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"), "evals": evals,
-            "issues": issues(evals), "commit": commits[-1] if len(commits) == 1 else f"{len(commits)} commits"}
+            "issues": issues(evals), "commit": commits[-1] if len(commits) == 1 else f"{len(commits)} commits",
+            "key": key_result(evals)}
     return render_page(data, standalone)
 
 
