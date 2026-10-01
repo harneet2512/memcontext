@@ -24,6 +24,7 @@ import secrets
 import shutil
 import signal
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -142,6 +143,26 @@ def stop(project: Path) -> None:
     pid_file.unlink(missing_ok=True)
 
 
+def _start_server(workdir: Path, db: Path, port: int, env: dict[str, str], token: str) -> None:
+    """Start serve-http in the background (pid + log in ``workdir``) and wait for it."""
+    log = (workdir / "server.log").open("w", encoding="utf-8")
+    flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "memcontext.cli", "serve-http", "--db", str(db), "--port", str(port)],
+        env={**env, "PYTHONUNBUFFERED": "1"}, stdout=log, stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL, cwd=workdir, creationflags=flags,
+    )
+    (workdir / ".memcontext-server.pid").write_text(str(proc.pid))
+    _wait_ready(proc, port, token)
+
+
+def _require_free_port(port: int) -> None:
+    if _port_in_use(port):
+        raise SystemExit(
+            f"port {port} is already in use (another demo's memory server?). Run "
+            f"`claude_code_demo.py stop --dir <that demo dir>` or pass --port.")
+
+
 def setup(project: Path, port: int) -> None:
     stop(project)
     if _port_in_use(port):
@@ -182,15 +203,7 @@ def setup(project: Path, port: int) -> None:
         ".memcontext/\n.memcontext-server.pid\nserver.log\nstart-claude.cmd\n.mcp.json\n.claude/\n",
         encoding="utf-8")
 
-    log = (project / "server.log").open("w", encoding="utf-8")
-    flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "memcontext.cli", "serve-http", "--db", str(db), "--port", str(port)],
-        env={**env, "PYTHONUNBUFFERED": "1"}, stdout=log, stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL, cwd=project, creationflags=flags,
-    )
-    (project / ".memcontext-server.pid").write_text(str(proc.pid))
-    _wait_ready(proc, port, token)
+    _start_server(project, db, port, env, token)
 
     print(f"demo ready: {project}")
     print(f"  memory db : {db}")
@@ -199,16 +212,113 @@ def setup(project: Path, port: int) -> None:
           " --predicate decision_made")
 
 
+LIVE_BRIEF = ("Keep answers brief (3-6 sentences or a short list). Use the memcontext "
+              "tools as CLAUDE.local.md describes.")
+
+
+def _live_dir(db: Path) -> Path:
+    return db.parent / "live-session"
+
+
+def live(repo: Path, db: Path, port: int) -> None:
+    """Attach MemContext to a REAL repo and its existing memory DB, for a recording.
+
+    Nothing is reset: the session shows real memory. A consistent backup of the DB
+    is taken first; `restore` rolls a failed take back to it.
+    """
+    if not db.exists():
+        raise SystemExit(f"no memory database at {db}")
+    work = _live_dir(db)
+    work.mkdir(exist_ok=True)
+    stop(work)
+    _require_free_port(port)
+
+    backup = work / "memory-before-take.db"
+    with sqlite3.connect(db) as src, sqlite3.connect(backup) as dst:
+        src.backup(dst)
+
+    token = secrets.token_urlsafe(24)
+    env = _env(token)
+    _run(["hooks", "install", "--port", str(port), "--project-dir", str(repo)], env)
+
+    mcp_path = repo / ".mcp.json"
+    mcp = json.loads(mcp_path.read_text(encoding="utf-8")) if mcp_path.exists() else {}
+    mcp.setdefault("mcpServers", {})["memcontext"] = {
+        "command": _posix(Path(sys.executable)),
+        "args": ["-m", "memcontext.mcp_server", "--db", _posix(db)],
+        "env": {k: env[k] for k in ("ACTIVE_PACK", "MEMCONTEXT_EMBED_EPISODES",
+                                     "TRANSFORMERS_NO_TF", "USE_TF", "PYTHONUTF8")},
+    }
+    mcp_path.write_text(json.dumps(mcp, indent=2), encoding="utf-8")
+
+    # Claude Code's built-in auto-memory off for this repo, so anything recalled
+    # on camera provably came from MemContext. `restore` turns it back on.
+    local_path = repo / ".claude" / "settings.local.json"
+    local = json.loads(local_path.read_text(encoding="utf-8")) if local_path.exists() else {}
+    local.update({"enableAllProjectMcpServers": True, "autoMemoryEnabled": False})
+    perms = local.setdefault("permissions", {}).setdefault("allow", [])
+    if "mcp__memcontext" not in perms:
+        perms.append("mcp__memcontext")
+    local_path.parent.mkdir(exist_ok=True)
+    local_path.write_text(json.dumps(local, indent=2), encoding="utf-8")
+
+    _start_server(work, db, port, env, token)
+    (work / "start-claude.cmd").write_text(
+        f"@echo off\r\nset MEMCONTEXT_HTTP_TOKEN={token}\r\ncd /d \"{repo}\"\r\n"
+        f"claude --setting-sources project,local --append-system-prompt \"{LIVE_BRIEF}\" %*\r\n",
+        encoding="utf-8")
+
+    print(f"live session ready: {repo}")
+    print(f"  memory db : {db}  (backup: {backup})")
+    print(f"  start     : {work / 'start-claude.cmd'}")
+    print(f"  watch     : memcontext watch --db \"{db}\"")
+    print(f"  good take : python {Path(__file__).name} finish --db \"{db}\"   (keeps memory)")
+    print(f"  bad take  : python {Path(__file__).name} restore --db \"{db}\"  (rolls memory back)")
+
+
+def restore(repo: Path, db: Path) -> None:
+    """A bad take: stop the server and roll memory back to the pre-take backup."""
+    work = _live_dir(db)
+    stop(work)
+    backup = work / "memory-before-take.db"
+    if backup.exists():
+        with sqlite3.connect(backup) as src, sqlite3.connect(db) as dst:
+            src.backup(dst)
+        print(f"memory restored from {backup}")
+    finish(repo, db)
+
+
+def finish(repo: Path, db: Path) -> None:
+    """A good take: stop the server, keep the new memory, re-enable auto-memory."""
+    stop(_live_dir(db))
+    local_path = repo / ".claude" / "settings.local.json"
+    if local_path.exists():
+        local = json.loads(local_path.read_text(encoding="utf-8"))
+        local.pop("autoMemoryEnabled", None)
+        local_path.write_text(json.dumps(local, indent=2), encoding="utf-8")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Build or stop the Claude Code + MemContext demo.")
-    ap.add_argument("command", choices=["setup", "stop"])
+    ap.add_argument("command", choices=["setup", "stop", "live", "finish", "restore"])
     ap.add_argument("--dir", default="D:/demo/orders-service", type=Path)
+    ap.add_argument("--repo", default="D:/memcontext", type=Path, help="live/restore: repo")
+    ap.add_argument("--db", default="D:/memcontext-data/work.db", type=Path,
+                    help="live/restore: the real memory database")
     ap.add_argument("--port", default=8100, type=int)
     a = ap.parse_args()
     if a.command == "setup":
         setup(a.dir, a.port)
-    else:
+    elif a.command == "live":
+        live(a.repo, a.db, a.port)
+    elif a.command == "restore":
+        restore(a.repo, a.db)
+    elif a.command == "finish":
+        finish(a.repo, a.db)
+        print("stopped; memory kept")
+    elif a.command == "stop":
         stop(a.dir)
+        stop(_live_dir(a.db))
         print("stopped")
 
 
