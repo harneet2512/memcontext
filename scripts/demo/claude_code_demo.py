@@ -23,6 +23,7 @@ import os
 import secrets
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -102,11 +103,26 @@ def _isolation(project: Path) -> dict:
     }
 
 
-def _wait_ready(port: int, timeout_s: float = 90) -> None:
+def _port_in_use(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _wait_ready(proc: subprocess.Popen, port: int, token: str, timeout_s: float = 90) -> None:
+    """Ready = OUR server process is alive and accepts OUR token.
+
+    A bare /health check would also be satisfied by a stale server left on the
+    port, while every hook got 401 from it.
+    """
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/api/memory/status",
+                                 headers={"Authorization": f"Bearer {token}"})
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            raise SystemExit(f"memory server exited (code {proc.returncode}); see server.log")
         with (contextlib.suppress(urllib.error.URLError, OSError),
-              urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2) as r):
+              urllib.request.urlopen(req, timeout=2) as r):
             if r.status == 200:
                 return
         time.sleep(0.5)
@@ -128,6 +144,10 @@ def stop(project: Path) -> None:
 
 def setup(project: Path, port: int) -> None:
     stop(project)
+    if _port_in_use(port):
+        raise SystemExit(
+            f"port {port} is already in use (another demo's memory server?). Run "
+            f"`claude_code_demo.py stop --dir <that demo dir>` or pass --port.")
     if project.exists():
         shutil.rmtree(project)
     project.mkdir(parents=True)
@@ -170,7 +190,7 @@ def setup(project: Path, port: int) -> None:
         stdin=subprocess.DEVNULL, cwd=project, creationflags=flags,
     )
     (project / ".memcontext-server.pid").write_text(str(proc.pid))
-    _wait_ready(port)
+    _wait_ready(proc, port, token)
 
     print(f"demo ready: {project}")
     print(f"  memory db : {db}")
